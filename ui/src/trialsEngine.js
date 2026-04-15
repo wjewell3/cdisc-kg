@@ -109,8 +109,19 @@ export function resolveTrialQuery(text) {
 /**
  * Execute a trial query against the live AACT serverless endpoint.
  */
+
+// If VITE_TRIALS_API_BASE is set (e.g. http://your-oke-lb-ip), use the OKE
+// Express server; otherwise fall back to Vercel serverless (/api/trials).
+const TRIALS_API_BASE = import.meta.env.VITE_TRIALS_API_BASE || "";
+
+function trialsUrl(path = "/api/trials") {
+  return TRIALS_API_BASE
+    ? `${TRIALS_API_BASE.replace(/\/$/, "")}${path}`
+    : new URL("/api/trials", window.location.origin).toString();
+}
+
 export async function executeTrialQuery(params, limit = 50) {
-  const url = new URL("/api/trials", window.location.origin);
+  const url = new URL(trialsUrl());
   for (const [k, v] of Object.entries(params)) {
     if (v) url.searchParams.set(k, v);
   }
@@ -131,7 +142,7 @@ export async function executeTrialQuery(params, limit = 50) {
  * sponsor is [[name, count], ...] (top 20).
  */
 export async function executeTrialAgg(params) {
-  const url = new URL("/api/trials", window.location.origin);
+  const url = new URL(trialsUrl());
   url.searchParams.set("mode", "stats");
   for (const [k, v] of Object.entries(params)) {
     if (v) url.searchParams.set(k, v);

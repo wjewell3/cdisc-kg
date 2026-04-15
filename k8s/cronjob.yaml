@@ -1,0 +1,55 @@
+---
+# CronJob — refreshes the SQLite snapshot nightly at 2 AM UTC
+# Runs snapshot.js in a separate Job pod that mounts the same PVC.
+# The API pod picks up the new file within 10 minutes (hotswap polling).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aact-snapshot
+  namespace: cdisc-kg
+spec:
+  schedule: "0 2 * * *"          # 2:00 AM UTC daily
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid       # don't double-run
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200  # 2 hours max
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/arch: arm64
+          restartPolicy: OnFailure
+          containers:
+            - name: snapshot
+              image: REGISTRY/cdisc-kg-server:latest   # same image as API
+              command: ["node", "snapshot.js"]
+              env:
+                - name: DB_PATH
+                  value: /data/aact.db
+                - name: AACT_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: aact-credentials
+                      key: AACT_USER
+                - name: AACT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: aact-credentials
+                      key: AACT_PASSWORD
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "2"
+                  memory: "1Gi"
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: aact-data

@@ -1,0 +1,122 @@
+---
+# PersistentVolumeClaim — stores the SQLite snapshot on OCI block storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aact-data
+  namespace: cdisc-kg
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi          # ~600 MB compressed; 2 Gi gives headroom for .tmp swap
+  storageClassName: oci-bv  # OCI block volume (default on OKE)
+
+---
+# API Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trials-api
+  namespace: cdisc-kg
+  labels:
+    app: trials-api
+spec:
+  replicas: 1               # Only 1 replica — SQLite PVC is ReadWriteOnce
+  selector:
+    matchLabels:
+      app: trials-api
+  template:
+    metadata:
+      labels:
+        app: trials-api
+    spec:
+      # ARM64 node pool
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      containers:
+        - name: api
+          image: REGISTRY/cdisc-kg-server:latest   # replace with your OCIR or Docker Hub image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+          env:
+            - name: PORT
+              value: "3001"
+            - name: DB_PATH
+              value: /data/aact.db
+            - name: STALE_HOURS
+              value: "48"
+            - name: CORS_ORIGIN
+              value: "https://cdisc-kg.vercel.app"
+            - name: AACT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: aact-credentials
+                  key: AACT_USER
+            - name: AACT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aact-credentials
+                  key: AACT_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: aact-data
+
+---
+# Service — ClusterIP (fronted by the LoadBalancer below)
+apiVersion: v1
+kind: Service
+metadata:
+  name: trials-api
+  namespace: cdisc-kg
+spec:
+  selector:
+    app: trials-api
+  ports:
+    - port: 80
+      targetPort: 3001
+  type: ClusterIP
+
+---
+# LoadBalancer — exposes the API externally
+# Uses the existing OCI LB in your cluster (same as kagent cors-proxy pattern)
+apiVersion: v1
+kind: Service
+metadata:
+  name: trials-api-lb
+  namespace: cdisc-kg
+  annotations:
+    service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+spec:
+  selector:
+    app: trials-api
+  ports:
+    - port: 80
+      targetPort: 3001
+  type: LoadBalancer
