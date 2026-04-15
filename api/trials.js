@@ -45,7 +45,7 @@ export default async function handler(req, res) {
     intervention = "",
   } = req.query;
 
-  const limit = Math.min(parseInt(rawLimit, 10) || 50, 200);
+  const limit = Math.min(parseInt(rawLimit, 10) || 100, 500);
 
   try {
     if (mode === "stats") {
@@ -190,9 +190,15 @@ async function searchTrials({ q, condition, intervention, phase, status, sponsor
   `;
   params.push(limit);
 
-  const { rows } = await pool.query(sql, params);
+  const countSql = `SELECT COUNT(*) AS total FROM studies s ${whereClause}`;
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    pool.query(sql, params),
+    pool.query(countSql, params.slice(0, -1)),
+  ]);
+  const totalCount = parseInt(countRows[0]?.total || rows.length, 10);
   return {
-    total: rows.length,
+    total: totalCount,
+    returned: rows.length,
     limit,
     results: rows.map(normalizeRow),
   };

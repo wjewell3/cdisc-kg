@@ -18,6 +18,35 @@ function countBy(rows, fn) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
+const ENROLL_BUCKETS_MAP = {
+  "< 100": [0, 99], "100\u2013499": [100, 499], "500\u2013999": [500, 999],
+  "1k\u20134.9k": [1000, 4999], "5k\u201319k": [5000, 19999], "\u2265 20k": [20000, Infinity],
+};
+
+function filterTrials(trials, activeFilters, excludeField = null) {
+  const relevant = activeFilters.filter((f) => f.field !== excludeField);
+  if (!relevant.length) return trials;
+  const byField = {};
+  for (const { field, value } of relevant) {
+    if (!byField[field]) byField[field] = new Set();
+    byField[field].add(value);
+  }
+  return trials.filter((t) =>
+    Object.entries(byField).every(([field, values]) => {
+      if (field === "phase") return values.has(t.phase || "Unknown");
+      if (field === "status") return values.has(t.status || "Unknown");
+      if (field === "sponsor") return values.has(t.sponsor || "Unknown");
+      if (field === "_enroll_range") {
+        return [...values].some((v) => {
+          const r = ENROLL_BUCKETS_MAP[v];
+          return r && t.enrollment != null && t.enrollment >= r[0] && t.enrollment <= r[1];
+        });
+      }
+      return true;
+    })
+  );
+}
+
 function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8 }) {
   const displayData = data.slice(0, maxItems);
   const maxVal = Math.max(...displayData.map((d) => d[1]), 1);
@@ -215,19 +244,19 @@ function EnrollmentHistogram({ trials, activeEnrollRanges, onFilter }) {
 export default function TrialsCharts({ trials, activeFilters = [], onFilter }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
   const phaseData = useMemo(() => {
-    const raw = countBy(trials, (t) => t.phase || "Unknown");
+    const raw = countBy(filterTrials(trials, activeFilters, "phase"), (t) => t.phase || "Unknown");
     return raw.sort((a, b) => {
       const ai = PHASE_ORDER.indexOf(a[0]);
       const bi = PHASE_ORDER.indexOf(b[0]);
       return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
     });
-  }, [trials]);
+  }, [trials, activeFilters]);
 
-  const statusData = useMemo(() => countBy(trials, (t) => t.status || "Unknown"), [trials]);
+  const statusData = useMemo(() => countBy(filterTrials(trials, activeFilters, "status"), (t) => t.status || "Unknown"), [trials, activeFilters]);
 
   const sponsorData = useMemo(
-    () => countBy(trials, (t) => t.sponsor || "Unknown").slice(0, 8),
-    [trials]
+    () => countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown").slice(0, 8),
+    [trials, activeFilters]
   );
 
   const hasEnrollment = trials.some((t) => t.enrollment != null);
@@ -254,8 +283,6 @@ export default function TrialsCharts({ trials, activeFilters = [], onFilter }) {
     enrollBuckets.length > 1;
 
   if (!anyDistribution) return null;
-
-  const getActiveVal = (field) => activeFilter?.field === field ? activeFilter.value : null;
 
   return (
     <div className="trials-charts-section">
@@ -291,7 +318,7 @@ export default function TrialsCharts({ trials, activeFilters = [], onFilter }) {
         )}
         {hasEnrollment && (
           <EnrollmentHistogram
-            trials={trials}
+            trials={filterTrials(trials, activeFilters, "_enroll_range")}
             activeEnrollRanges={getActiveVals("_enroll_range")}
             onFilter={onFilter}
           />

@@ -210,6 +210,33 @@ function SvgDonutChart({ data, title, field, activeValues, onFilter }) {
 
 export { countBy, PALETTE };
 
+// Cross-filter: returns rows matching all activeFilters EXCEPT the one for excludeField
+function filterRows(rows, activeFilters, excludeField = null) {
+  const relevant = activeFilters.filter((f) => f.field !== excludeField);
+  if (!relevant.length) return rows;
+  const byField = {};
+  for (const { field, value } of relevant) {
+    if (!byField[field]) byField[field] = new Set();
+    byField[field].add(value);
+  }
+  return rows.filter((row) =>
+    Object.entries(byField).every(([field, values]) => {
+      if (field === "AESEV") return values.has(row.AESEV);
+      if (field === "AEBODSYS") return values.has(row.AEBODSYS);
+      if (field === "AEREL") return values.has(row.AEREL);
+      if (field === "AEOUT") return values.has(row.AEOUT);
+      if (field === "AESER_LABEL") return values.has(row.AESER === "Y" ? "Serious" : "Not Serious");
+      if (field === "_ARM") return values.has(row._dm?.ARM || row.ARM);
+      if (field === "_SEX_LABEL") {
+        const sex = row._dm?.SEX || row.SEX;
+        return values.has(sex === "F" ? "Female" : sex === "M" ? "Male" : sex);
+      }
+      if (field === "_SITE") return values.has(row._dm?.SITE || row.SITE);
+      return true;
+    })
+  );
+}
+
 export default function InsightCharts({ results, primaryDomain, activeFilters = [], onFilter }) {
   const getActiveValues = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
   const charts = useMemo(() => {
@@ -218,39 +245,39 @@ export default function InsightCharts({ results, primaryDomain, activeFilters = 
     const out = [];
 
     if (primaryDomain === "AE") {
-      const sevData = countBy(results, "AESEV");
+      const sevData = countBy(filterRows(results, activeFilters, "AESEV"), "AESEV");
       if (sevData.length > 0) out.push({ type: "donut", data: sevData, title: "Severity Distribution", field: "AESEV" });
 
-      const bodysysData = countBy(results, "AEBODSYS");
+      const bodysysData = countBy(filterRows(results, activeFilters, "AEBODSYS"), "AEBODSYS");
       if (bodysysData.length > 0) out.push({ type: "bar", data: bodysysData, title: "Body System (SOC)", field: "AEBODSYS" });
 
-      const relData = countBy(results, "AEREL");
+      const relData = countBy(filterRows(results, activeFilters, "AEREL"), "AEREL");
       if (relData.length > 0) out.push({ type: "donut", data: relData, title: "Causality", field: "AEREL" });
 
-      const outData = countBy(results, "AEOUT");
+      const outData = countBy(filterRows(results, activeFilters, "AEOUT"), "AEOUT");
       if (outData.length > 0) out.push({ type: "bar", data: outData, title: "Outcome", field: "AEOUT" });
 
-      const serData = countBy(results, "AESER");
+      const serData = countBy(filterRows(results, activeFilters, "AESER_LABEL"), "AESER");
       if (serData.length > 0) {
         const mapped = serData.map(([v, c]) => [v === "Y" ? "Serious" : "Not Serious", c]);
         out.push({ type: "donut", data: mapped, title: "Seriousness", field: "AESER_LABEL" });
       }
     }
 
-    const armData = countBy(results.map((r) => r._dm || r), "ARM");
+    const armData = countBy(filterRows(results, activeFilters, "_ARM").map((r) => r._dm || r), "ARM");
     if (armData.length > 0) out.push({ type: "donut", data: armData, title: "Treatment Arm", field: "_ARM" });
 
-    const sexData = countBy(results.map((r) => r._dm || r), "SEX");
+    const sexData = countBy(filterRows(results, activeFilters, "_SEX_LABEL").map((r) => r._dm || r), "SEX");
     if (sexData.length > 0) {
       const mapped = sexData.map(([v, c]) => [v === "F" ? "Female" : v === "M" ? "Male" : v, c]);
       out.push({ type: "donut", data: mapped, title: "Sex", field: "_SEX_LABEL" });
     }
 
-    const siteData = countBy(results.map((r) => r._dm || r), "SITE");
+    const siteData = countBy(filterRows(results, activeFilters, "_SITE").map((r) => r._dm || r), "SITE");
     if (siteData.length > 1) out.push({ type: "bar", data: siteData, title: "Clinical Site", field: "_SITE" });
 
     return out;
-  }, [results, primaryDomain]);
+  }, [results, primaryDomain, activeFilters]);
 
   if (!charts || charts.length === 0) return null;
 
