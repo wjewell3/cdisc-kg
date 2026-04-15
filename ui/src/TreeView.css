@@ -1,0 +1,310 @@
+/* ── Root ─────────────────────────────────────────── */
+.tv-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* ── Header ───────────────────────────────────────── */
+.tv-header {
+  flex-shrink: 0;
+  padding: 12px 20px 10px;
+  border-bottom: 1px solid #21262d;
+  background: #161b22;
+}
+.tv-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.tv-title-row h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e6edf3;
+  white-space: nowrap;
+}
+
+/* ── Legend ───────────────────────────────────────── */
+.tv-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.tv-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #8b949e;
+}
+.tv-legend-item span:first-child {
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ── Body ─────────────────────────────────────────── */
+.tv-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+/* ── SDTM standard row ────────────────────────────── */
+.tv-standard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px 10px;
+  font-size: 0.85rem;
+}
+.tv-std-badge {
+  background: #1f6feb;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.5px;
+}
+.tv-std-label {
+  font-weight: 600;
+  color: #e6edf3;
+}
+.tv-std-meta {
+  color: #8b949e;
+  font-size: 0.78rem;
+}
+
+/* ── Class block ──────────────────────────────────── */
+.tv-class {
+  border-left: 3px solid #e67e22;
+  margin: 0 12px 10px 28px;
+  border-radius: 0 6px 6px 0;
+  background: #161b22;
+  overflow: hidden;
+}
+.tv-class-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+  background: #1c2128;
+  transition: background 0.15s;
+}
+.tv-class-row:hover {
+  background: #21262d;
+}
+.tv-class-name {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #e67e22;
+  flex: 1;
+}
+.tv-class-meta {
+  font-size: 0.75rem;
+  color: #8b949e;
+}
+
+/* ── Domain block ─────────────────────────────────── */
+.tv-domain {
+  border-left: 2px solid #3498db;
+  margin: 6px 10px 6px 14px;
+  border-radius: 0 4px 4px 0;
+  background: #0d1117;
+}
+.tv-domain-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+  border-radius: 0 4px 0 0;
+}
+.tv-domain-row:hover {
+  background: #161b22;
+}
+.tv-domain-code {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  color: #58a6ff;
+  min-width: 36px;
+}
+.tv-domain-name {
+  font-size: 0.85rem;
+  color: #e6edf3;
+  flex: 1;
+}
+.tv-domain-meta {
+  font-size: 0.75rem;
+}
+.tv-domain-desc {
+  font-size: 0.78rem;
+  color: #8b949e;
+  padding: 0 12px 8px 32px;
+  line-height: 1.4;
+  border-bottom: 1px solid #21262d;
+  margin-bottom: 2px;
+}
+
+/* ── Variable header row ──────────────────────────── */
+.tv-var-header-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #21262d;
+  gap: 6px;
+}
+.tv-tree-indent { width: 16px; flex-shrink: 0; }
+.tv-vh-name  { width: 80px; flex-shrink: 0; }
+.tv-vh-label { flex: 1; }
+.tv-vh-type  { width: 36px; flex-shrink: 0; text-align: center; }
+.tv-vh-core  { width: 34px; flex-shrink: 0; text-align: center; }
+
+/* ── Variable row ─────────────────────────────────── */
+.tv-vars { padding-bottom: 4px; }
+.tv-var { border-bottom: 1px solid #161b22; }
+.tv-var.tv-last { border-bottom: none; }
+.tv-var-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+  font-size: 0.8rem;
+}
+.tv-var-row:hover { background: #161b22; }
+.tv-var-open .tv-var-row { background: #161b22; }
+.tv-toggle-icon {
+  width: 10px;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: #8b949e;
+}
+.tv-var-name {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  color: #79c0ff;
+  width: 74px;
+  flex-shrink: 0;
+}
+.tv-var-label {
+  flex: 1;
+  color: #e6edf3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-type-pill {
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #21262d;
+  color: #8b949e;
+  width: 34px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.tv-core-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  width: 34px;
+  text-align: center;
+  flex-shrink: 0;
+  cursor: help;
+}
+
+/* ── Codelist ─────────────────────────────────────── */
+.tv-cl-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  position: relative;
+}
+.tv-cl-btn {
+  font-size: 0.67rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #2d1f47;
+  color: #bc8cff;
+  border: 1px solid #6e40c9;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  transition: background 0.12s;
+  line-height: 1.6;
+}
+.tv-cl-btn:hover { background: #3d2b60; }
+.tv-cl-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 4px 0 0;
+  max-width: 320px;
+}
+.tv-cl-chip {
+  font-size: 0.65rem;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+/* ── Variable detail (expanded description) ──────── */
+.tv-var-detail {
+  padding: 4px 12px 8px 38px;
+  font-size: 0.78rem;
+  background: #0d1117;
+}
+.tv-role {
+  font-size: 0.72rem;
+  color: #8b949e;
+  display: block;
+  margin-bottom: 2px;
+}
+.tv-desc {
+  margin: 0;
+  color: #adbac7;
+  line-height: 1.5;
+}
+
+/* ── Arrow toggle ─────────────────────────────────── */
+.tv-toggle {
+  width: 14px;
+  flex-shrink: 0;
+  color: #8b949e;
+  font-size: 0.85rem;
+}
+
+/* ── Scrollbar ────────────────────────────────────── */
+.tv-body::-webkit-scrollbar { width: 6px; }
+.tv-body::-webkit-scrollbar-track { background: #0d1117; }
+.tv-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+/* ── Mobile ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  .tv-class { margin: 0 6px 8px 10px; }
+  .tv-domain { margin: 4px 6px 4px 8px; }
+  .tv-domain-meta { display: none; }
+  .tv-legend { display: none; }
+  .tv-var-label { max-width: 120px; }
+  .tv-cl-values { max-width: 220px; }
+  .tv-std-meta { display: none; }
+}

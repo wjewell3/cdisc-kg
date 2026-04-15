@@ -1,0 +1,16 @@
+{
+  "name": "cdisc-kg",
+  "version": "1.0.0",
+  "description": "An interactive knowledge graph for CDISC SDTM IG v3.4 standards, built as a portfolio piece for clinical data management roles.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pg": "^8.20.0"
+  }
+}

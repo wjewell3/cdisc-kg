@@ -1,0 +1,327 @@
+{
+  "standard": {
+    "name": "SDTM",
+    "version": "3.4",
+    "description": "Study Data Tabulation Model Implementation Guide v3.4",
+    "organization": "CDISC"
+  },
+  "classes": [
+    {
+      "id": "special_purpose",
+      "name": "Special Purpose",
+      "description": "Domains that do not conform to one of the three general observation classes"
+    },
+    {
+      "id": "interventions",
+      "name": "Interventions",
+      "description": "Data that reflect study treatments, such as drug exposure or procedures"
+    },
+    {
+      "id": "events",
+      "name": "Events",
+      "description": "Data that reflect occurrences, such as adverse events or disposition"
+    },
+    {
+      "id": "findings",
+      "name": "Findings",
+      "description": "Data that reflect observations, such as laboratory tests or vital signs"
+    },
+    {
+      "id": "trial_design",
+      "name": "Trial Design",
+      "description": "Domains describing the design of the clinical trial"
+    }
+  ],
+  "domains": [
+    {
+      "id": "DM",
+      "name": "Demographics",
+      "class": "special_purpose",
+      "description": "One record per subject. Contains demographic and baseline information.",
+      "structure": "One record per subject",
+      "variables": [
+        {"name": "STUDYID", "label": "Study Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Unique identifier for a study"},
+        {"name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Two-character abbreviation for the domain"},
+        {"name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Identifier used to uniquely identify a subject across all studies for all applications"},
+        {"name": "SUBJID", "label": "Subject Identifier for the Study", "type": "Char", "core": "Req", "role": "Topic", "codelist": null, "description": "Subject identifier within a study"},
+        {"name": "RFSTDTC", "label": "Subject Reference Start Date/Time", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Reference start date/time for the subject in ISO 8601"},
+        {"name": "RFENDTC", "label": "Subject Reference End Date/Time", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Reference end date/time for the subject in ISO 8601"},
+        {"name": "RFXSTDTC", "label": "Date/Time of First Study Treatment", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "First date/time of study treatment exposure"},
+        {"name": "RFXENDTC", "label": "Date/Time of Last Study Treatment", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Last date/time of study treatment exposure"},
+        {"name": "RFICDTC", "label": "Date/Time of Informed Consent", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Date/time of informed consent in ISO 8601"},
+        {"name": "RFPENDTC", "label": "Date/Time of End of Participation", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Date/time of the end of a subject's participation in a study"},
+        {"name": "DTHDTC", "label": "Date/Time of Death", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Date/time of death of the subject in ISO 8601"},
+        {"name": "DTHFL", "label": "Subject Death Flag", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "NY", "description": "Indicates the subject died (Y or N)"},
+        {"name": "SITEID", "label": "Study Site Identifier", "type": "Char", "core": "Req", "role": "Record Qualifier", "codelist": null, "description": "Unique identifier for a site"},
+        {"name": "BRTHDTC", "label": "Date/Time of Birth", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": null, "description": "Date/time of birth"},
+        {"name": "AGE", "label": "Age", "type": "Num", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Age at reference start date"},
+        {"name": "AGEU", "label": "Age Units", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "AGEU", "description": "Units associated with AGE"},
+        {"name": "SEX", "label": "Sex", "type": "Char", "core": "Req", "role": "Record Qualifier", "codelist": "SEX", "description": "Sex of the subject"},
+        {"name": "RACE", "label": "Race", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "RACE", "description": "Race of the subject (from a multi-race code list)"},
+        {"name": "ETHNIC", "label": "Ethnicity", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "ETHNIC", "description": "The ethnicity of the subject"},
+        {"name": "ARMCD", "label": "Planned Arm Code", "type": "Char", "core": "Req", "role": "Record Qualifier", "codelist": null, "description": "Short description of the planned arm for a subject"},
+        {"name": "ARM", "label": "Description of Planned Arm", "type": "Char", "core": "Req", "role": "Synonym Qualifier", "codelist": null, "description": "Name of the arm to which the subject was assigned"},
+        {"name": "ACTARMCD", "label": "Actual Arm Code", "type": "Char", "core": "Req", "role": "Record Qualifier", "codelist": null, "description": "Code for the actual arm for a subject"},
+        {"name": "ACTARM", "label": "Description of Actual Arm", "type": "Char", "core": "Req", "role": "Synonym Qualifier", "codelist": null, "description": "Description of the actual arm for a subject"},
+        {"name": "COUNTRY", "label": "Country", "type": "Char", "core": "Req", "role": "Record Qualifier", "codelist": "COUNTRY", "description": "Country of the investigational site (ISO 3166-1 Alpha-3)"},
+        {"name": "DMDTC", "label": "Date/Time of Collection", "type": "Char", "core": "Perm", "role": "Timing", "codelist": null, "description": "Date/time of demographic data collection"},
+        {"name": "DMDY", "label": "Study Day of Collection", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of demographic data collection"}
+      ]
+    },
+    {
+      "id": "AE",
+      "name": "Adverse Events",
+      "class": "events",
+      "description": "One record per adverse event per subject. Contains adverse event data.",
+      "structure": "One record per adverse event per subject",
+      "variables": [
+        {"name": "STUDYID", "label": "Study Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Unique identifier for a study"},
+        {"name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Two-character abbreviation for the domain"},
+        {"name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Identifier used to uniquely identify a subject across all studies"},
+        {"name": "AESEQ", "label": "Sequence Number", "type": "Num", "core": "Req", "role": "Identifier", "codelist": null, "description": "Sequence number given to ensure uniqueness of subject records"},
+        {"name": "AETERM", "label": "Reported Term for the Adverse Event", "type": "Char", "core": "Req", "role": "Topic", "codelist": null, "description": "Verbatim name of the adverse event as reported by the investigator"},
+        {"name": "AEMODIFY", "label": "Modified Reported Term", "type": "Char", "core": "Perm", "role": "Synonym Qualifier", "codelist": null, "description": "Modified reported term if different from AETERM"},
+        {"name": "AEDECOD", "label": "Dictionary-Derived Term", "type": "Char", "core": "Req", "role": "Synonym Qualifier", "codelist": null, "description": "Dictionary-derived term (MedDRA Preferred Term)"},
+        {"name": "AEBODSYS", "label": "Body System or Organ Class", "type": "Char", "core": "Req", "role": "Record Qualifier", "codelist": null, "description": "Dictionary-derived (MedDRA System Organ Class)"},
+        {"name": "AESEV", "label": "Severity/Intensity", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "AESEV", "description": "The severity or intensity of the event"},
+        {"name": "AESER", "label": "Serious Event", "type": "Char", "core": "Req", "role": "Record Qualifier", "codelist": "NY", "description": "Is the event classified as serious?"},
+        {"name": "AEACN", "label": "Action Taken with Study Treatment", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "ACN", "description": "Action taken with study treatment as a result of the event"},
+        {"name": "AEREL", "label": "Causality", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Investigator's opinion of the relationship of the event to treatment"},
+        {"name": "AEOUT", "label": "Outcome of Adverse Event", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "OUT", "description": "Description of the outcome of the event"},
+        {"name": "AESCAN", "label": "Involves Cancer", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Is the event a cancer?"},
+        {"name": "AESCONG", "label": "Congenital Anomaly or Birth Defect", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Is the event a congenital anomaly?"},
+        {"name": "AESDISAB", "label": "Persist or Signif Disability/Incapacity", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Event results in persistent or significant disability?"},
+        {"name": "AESDTH", "label": "Results in Death", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Is the event associated with the outcome of death?"},
+        {"name": "AESHOSP", "label": "Requires or Prolongs Hospitalization", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Event requires or prolongs hospitalization?"},
+        {"name": "AESLIFE", "label": "Is Life Threatening", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Is the event life threatening?"},
+        {"name": "AESOD", "label": "Occurred with Overdose", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Event occurred with an overdose?"},
+        {"name": "AESTDTC", "label": "Start Date/Time of Adverse Event", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "Start date/time of the adverse event in ISO 8601"},
+        {"name": "AEENDTC", "label": "End Date/Time of Adverse Event", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "End date/time of the adverse event in ISO 8601"},
+        {"name": "AESTDY", "label": "Study Day of Start of Adverse Event", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of start of adverse event relative to reference date"},
+        {"name": "AEENDY", "label": "Study Day of End of Adverse Event", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of end of adverse event relative to reference date"},
+        {"name": "AEENRF", "label": "End Relative to Reference Period", "type": "Char", "core": "Perm", "role": "Timing", "codelist": "STENRF", "description": "Describes the end of the event relative to the reference period"}
+      ]
+    },
+    {
+      "id": "CM",
+      "name": "Concomitant Medications",
+      "class": "interventions",
+      "description": "One record per medication per subject. Contains concomitant and prior medication data.",
+      "structure": "One record per recorded medication occurrence per subject",
+      "variables": [
+        {"name": "STUDYID", "label": "Study Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Unique identifier for a study"},
+        {"name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Two-character abbreviation for the domain"},
+        {"name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Identifier used to uniquely identify a subject across all studies"},
+        {"name": "CMSEQ", "label": "Sequence Number", "type": "Num", "core": "Req", "role": "Identifier", "codelist": null, "description": "Sequence number to ensure uniqueness of records"},
+        {"name": "CMTRT", "label": "Reported Name of Drug, Med, or Therapy", "type": "Char", "core": "Req", "role": "Topic", "codelist": null, "description": "Verbatim medication name as reported"},
+        {"name": "CMMODIFY", "label": "Modified Reported Name", "type": "Char", "core": "Perm", "role": "Synonym Qualifier", "codelist": null, "description": "Modified reported name, if different from CMTRT"},
+        {"name": "CMDECOD", "label": "Standardized Medication Name", "type": "Char", "core": "Exp", "role": "Synonym Qualifier", "codelist": null, "description": "Standardized or dictionary-derived name (WHODrug preferred name)"},
+        {"name": "CMCAT", "label": "Category for Medication", "type": "Char", "core": "Perm", "role": "Grouping Qualifier", "codelist": null, "description": "Used to define a category of medication"},
+        {"name": "CMSCAT", "label": "Subcategory for Medication", "type": "Char", "core": "Perm", "role": "Grouping Qualifier", "codelist": null, "description": "Used to define a subcategory of medication"},
+        {"name": "CMPRESP", "label": "CM Pre-Specified", "type": "Char", "core": "Perm", "role": "Variable Qualifier", "codelist": "NY", "description": "Was medication pre-specified on CRF?"},
+        {"name": "CMOCCUR", "label": "CM Occurrence", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Did the medication occur? Used with CMPRESP"},
+        {"name": "CMDOSE", "label": "Dose per Administration", "type": "Num", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Amount of medication administered per dose"},
+        {"name": "CMDOSU", "label": "Dose Units", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "UNIT", "description": "Units for CMDOSE"},
+        {"name": "CMDOSFRQ", "label": "Dosing Frequency per Interval", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "FREQ", "description": "Usually expressed as the number of doses per time period"},
+        {"name": "CMROUTE", "label": "Route of Administration", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "ROUTE", "description": "Route of administration"},
+        {"name": "CMSTDTC", "label": "Start Date/Time of Medication", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "Start date/time in ISO 8601"},
+        {"name": "CMENDTC", "label": "End Date/Time of Medication", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "End date/time in ISO 8601"},
+        {"name": "CMSTDY", "label": "Study Day of Start of Medication", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of start of medication"},
+        {"name": "CMENDY", "label": "Study Day of End of Medication", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of end of medication"},
+        {"name": "CMINDC", "label": "Indication", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": null, "description": "Indication for the medication, can be linked to AE"}
+      ]
+    },
+    {
+      "id": "EX",
+      "name": "Exposure",
+      "class": "interventions",
+      "description": "One record per constant-dosing interval per subject. Contains study drug exposure data.",
+      "structure": "One record per constant-dosing interval per subject",
+      "variables": [
+        {"name": "STUDYID", "label": "Study Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Unique identifier for a study"},
+        {"name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Two-character abbreviation for the domain"},
+        {"name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Identifier used to uniquely identify a subject across all studies"},
+        {"name": "EXSEQ", "label": "Sequence Number", "type": "Num", "core": "Req", "role": "Identifier", "codelist": null, "description": "Sequence number to ensure uniqueness of records"},
+        {"name": "EXTRT", "label": "Name of Treatment", "type": "Char", "core": "Req", "role": "Topic", "codelist": null, "description": "Name of the study drug or treatment administered"},
+        {"name": "EXCAT", "label": "Category of Treatment", "type": "Char", "core": "Perm", "role": "Grouping Qualifier", "codelist": null, "description": "Category for the treatment"},
+        {"name": "EXDOSE", "label": "Dose", "type": "Num", "core": "Req", "role": "Record Qualifier", "codelist": null, "description": "Amount of study treatment administered"},
+        {"name": "EXDOSU", "label": "Dose Units", "type": "Char", "core": "Req", "role": "Variable Qualifier", "codelist": "UNIT", "description": "Units for EXDOSE"},
+        {"name": "EXDOSFRM", "label": "Dose Form", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "FRM", "description": "Pharmaceutical dose form of study treatment"},
+        {"name": "EXDOSFRQ", "label": "Dosing Frequency per Interval", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "FREQ", "description": "Frequency of dosing"},
+        {"name": "EXROUTE", "label": "Route of Administration", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "ROUTE", "description": "Route of administration"},
+        {"name": "EXLOT", "label": "Lot Number", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": null, "description": "Lot number of study treatment"},
+        {"name": "EXSTDTC", "label": "Start Date/Time of Treatment", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "Start date/time of treatment in ISO 8601"},
+        {"name": "EXENDTC", "label": "End Date/Time of Treatment", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "End date/time of treatment in ISO 8601"},
+        {"name": "EXSTDY", "label": "Study Day of Start of Treatment", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of start of treatment"},
+        {"name": "EXENDY", "label": "Study Day of End of Treatment", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of end of treatment"}
+      ]
+    },
+    {
+      "id": "LB",
+      "name": "Laboratory Test Results",
+      "class": "findings",
+      "description": "One record per lab test per time point per subject. Contains laboratory test result data.",
+      "structure": "One record per lab test per time point per subject",
+      "variables": [
+        {"name": "STUDYID", "label": "Study Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Unique identifier for a study"},
+        {"name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Two-character abbreviation for the domain"},
+        {"name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Identifier used to uniquely identify a subject across all studies"},
+        {"name": "LBSEQ", "label": "Sequence Number", "type": "Num", "core": "Req", "role": "Identifier", "codelist": null, "description": "Sequence number to ensure uniqueness"},
+        {"name": "LBTESTCD", "label": "Lab Test or Examination Short Name", "type": "Char", "core": "Req", "role": "Topic", "codelist": "LBTESTCD", "description": "Short name of the lab test (e.g., ALT, AST, CREAT)"},
+        {"name": "LBTEST", "label": "Lab Test or Examination Name", "type": "Char", "core": "Req", "role": "Synonym Qualifier", "codelist": "LBTEST", "description": "Verbatim name of the test (e.g., Alanine Aminotransferase)"},
+        {"name": "LBCAT", "label": "Category for Lab Test", "type": "Char", "core": "Exp", "role": "Grouping Qualifier", "codelist": null, "description": "Used to define a category of lab tests (e.g., HEMATOLOGY, CHEMISTRY)"},
+        {"name": "LBSCAT", "label": "Subcategory for Lab Test", "type": "Char", "core": "Perm", "role": "Grouping Qualifier", "codelist": null, "description": "Subcategory for the lab test"},
+        {"name": "LBORRES", "label": "Result or Finding in Original Units", "type": "Char", "core": "Exp", "role": "Result Qualifier", "codelist": null, "description": "Result of the lab test as originally received"},
+        {"name": "LBORRESU", "label": "Original Units", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "UNIT", "description": "Original units for LBORRES"},
+        {"name": "LBORNRLO", "label": "Reference Range Lower Limit-Orig Unit", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": null, "description": "Lower limit of the reference range in original units"},
+        {"name": "LBORNRHI", "label": "Reference Range Upper Limit-Orig Unit", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": null, "description": "Upper limit of the reference range in original units"},
+        {"name": "LBSTRESC", "label": "Character Result/Finding in Std Format", "type": "Char", "core": "Exp", "role": "Result Qualifier", "codelist": null, "description": "Contains the result value for all findings in character format"},
+        {"name": "LBSTRESN", "label": "Numeric Result/Finding in Standard Units", "type": "Num", "core": "Exp", "role": "Result Qualifier", "codelist": null, "description": "Numeric result value in standard units"},
+        {"name": "LBSTRESU", "label": "Standard Units", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "UNIT", "description": "Standardized units for LBSTRESN"},
+        {"name": "LBSTNRLO", "label": "Reference Range Lower Limit-Std Units", "type": "Num", "core": "Exp", "role": "Variable Qualifier", "codelist": null, "description": "Lower limit of the reference range in standard units"},
+        {"name": "LBSTNRHI", "label": "Reference Range Upper Limit-Std Units", "type": "Num", "core": "Exp", "role": "Variable Qualifier", "codelist": null, "description": "Upper limit of the reference range in standard units"},
+        {"name": "LBNRIND", "label": "Reference Range Indicator", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "NRIND", "description": "Indicates where the value falls relative to the reference range (NORMAL, LOW, HIGH)"},
+        {"name": "LBSPEC", "label": "Specimen Type", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "SPEC", "description": "Type of specimen (e.g., BLOOD, SERUM, URINE, PLASMA)"},
+        {"name": "LBMETHOD", "label": "Method of Test or Examination", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "METHOD", "description": "Method of the laboratory test"},
+        {"name": "LBBLFL", "label": "Baseline Flag", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "NY", "description": "Indicator for whether the result is a baseline value"},
+        {"name": "LBFAST", "label": "Fasting Status", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "NY", "description": "Was the subject fasting for this specimen collection?"},
+        {"name": "VISITNUM", "label": "Visit Number", "type": "Num", "core": "Exp", "role": "Timing", "codelist": null, "description": "Numeric version of VISIT"},
+        {"name": "VISIT", "label": "Visit Name", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "Protocol-defined description of clinical encounter"},
+        {"name": "LBDTC", "label": "Date/Time of Specimen Collection", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "Date/time of specimen collection in ISO 8601"},
+        {"name": "LBDY", "label": "Study Day of Specimen Collection", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of specimen collection"}
+      ]
+    },
+    {
+      "id": "VS",
+      "name": "Vital Signs",
+      "class": "findings",
+      "description": "One record per vital sign measurement per time point per subject.",
+      "structure": "One record per vital sign per time point per subject",
+      "variables": [
+        {"name": "STUDYID", "label": "Study Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Unique identifier for a study"},
+        {"name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Two-character abbreviation for the domain"},
+        {"name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "core": "Req", "role": "Identifier", "codelist": null, "description": "Identifier used to uniquely identify a subject across all studies"},
+        {"name": "VSSEQ", "label": "Sequence Number", "type": "Num", "core": "Req", "role": "Identifier", "codelist": null, "description": "Sequence number to ensure uniqueness"},
+        {"name": "VSTESTCD", "label": "Vital Signs Test Short Name", "type": "Char", "core": "Req", "role": "Topic", "codelist": "VSTESTCD", "description": "Short name (e.g., SYSBP, DIABP, PULSE, TEMP, WEIGHT, HEIGHT)"},
+        {"name": "VSTEST", "label": "Vital Signs Test Name", "type": "Char", "core": "Req", "role": "Synonym Qualifier", "codelist": "VSTEST", "description": "Verbatim name of the vital signs test"},
+        {"name": "VSCAT", "label": "Category of Vital Signs", "type": "Char", "core": "Perm", "role": "Grouping Qualifier", "codelist": null, "description": "Category of vital signs test"},
+        {"name": "VSPOS", "label": "Vital Signs Position of Subject", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "POSITION", "description": "Position of the subject during observations (e.g., STANDING, SITTING, SUPINE)"},
+        {"name": "VSORRES", "label": "Result or Finding in Original Units", "type": "Char", "core": "Exp", "role": "Result Qualifier", "codelist": null, "description": "Result of the vital signs measurement as originally collected"},
+        {"name": "VSORRESU", "label": "Original Units", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "UNIT", "description": "Units for VSORRES"},
+        {"name": "VSSTRESC", "label": "Character Result/Finding in Std Format", "type": "Char", "core": "Exp", "role": "Result Qualifier", "codelist": null, "description": "Character result in standard format"},
+        {"name": "VSSTRESN", "label": "Numeric Result/Finding in Standard Units", "type": "Num", "core": "Exp", "role": "Result Qualifier", "codelist": null, "description": "Numeric result/finding in standard units"},
+        {"name": "VSSTRESU", "label": "Standard Units", "type": "Char", "core": "Exp", "role": "Variable Qualifier", "codelist": "UNIT", "description": "Standardized units"},
+        {"name": "VSSTAT", "label": "Completion Status", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "STAT", "description": "Used to indicate when a test was not done (NOT DONE)"},
+        {"name": "VSLOC", "label": "Location of Vital Signs Measurement", "type": "Char", "core": "Perm", "role": "Record Qualifier", "codelist": "LOC", "description": "Location on body used for measurement"},
+        {"name": "VSBLFL", "label": "Baseline Flag", "type": "Char", "core": "Exp", "role": "Record Qualifier", "codelist": "NY", "description": "About whether this is a baseline value"},
+        {"name": "VISITNUM", "label": "Visit Number", "type": "Num", "core": "Exp", "role": "Timing", "codelist": null, "description": "Numeric visit"},
+        {"name": "VISIT", "label": "Visit Name", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "Protocol-defined name of encounter"},
+        {"name": "VSDTC", "label": "Date/Time of Measurements", "type": "Char", "core": "Exp", "role": "Timing", "codelist": null, "description": "Date/time in ISO 8601"},
+        {"name": "VSDY", "label": "Study Day of Vital Signs", "type": "Num", "core": "Perm", "role": "Timing", "codelist": null, "description": "Study day of vital signs measurement"}
+      ]
+    }
+  ],
+  "codelists": [
+    {"id": "NY", "name": "No Yes Response", "values": ["N", "Y"]},
+    {"id": "SEX", "name": "Sex", "values": ["F", "M", "U", "UNDIFFERENTIATED"]},
+    {"id": "RACE", "name": "Race", "values": ["AMERICAN INDIAN OR ALASKA NATIVE", "ASIAN", "BLACK OR AFRICAN AMERICAN", "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER", "WHITE", "MULTIPLE", "NOT REPORTED", "UNKNOWN"]},
+    {"id": "ETHNIC", "name": "Ethnicity", "values": ["HISPANIC OR LATINO", "NOT HISPANIC OR LATINO", "NOT REPORTED", "UNKNOWN"]},
+    {"id": "AGEU", "name": "Age Unit", "values": ["YEARS", "MONTHS", "WEEKS", "DAYS", "HOURS"]},
+    {"id": "COUNTRY", "name": "Country", "values": ["USA", "GBR", "DEU", "FRA", "JPN", "CHN", "IND", "BRA", "CAN", "AUS", "KOR", "ESP", "ITA", "NLD", "CHE", "SWE", "POL", "BEL", "AUT", "CZE"]},
+    {"id": "AESEV", "name": "Severity/Intensity Scale for Adverse Events", "values": ["MILD", "MODERATE", "SEVERE"]},
+    {"id": "ACN", "name": "Action Taken with Study Treatment", "values": ["DOSE INCREASED", "DOSE NOT CHANGED", "DOSE REDUCED", "DRUG INTERRUPTED", "DRUG WITHDRAWN", "NOT APPLICABLE", "UNKNOWN"]},
+    {"id": "OUT", "name": "Outcome of Event", "values": ["FATAL", "NOT RECOVERED/NOT RESOLVED", "RECOVERED/RESOLVED", "RECOVERED/RESOLVED WITH SEQUELAE", "RECOVERING/RESOLVING", "UNKNOWN"]},
+    {"id": "STENRF", "name": "Start/End Relative to Reference Period", "values": ["BEFORE", "DURING", "DURING/AFTER", "AFTER"]},
+    {"id": "UNIT", "name": "Units", "values": ["kg", "LB", "cm", "IN", "mmHg", "beats/min", "C", "F", "mg", "mg/dL", "g/dL", "U/L", "mmol/L", "mEq/L", "10^9/L", "10^12/L", "g/L", "%", "mL/min", "ng/mL", "pg/mL", "umol/L"]},
+    {"id": "FREQ", "name": "Frequency", "values": ["BID", "TID", "QD", "QID", "Q12H", "Q8H", "Q6H", "Q4H", "QOD", "QW", "Q2W", "QM", "PRN", "ONCE"]},
+    {"id": "ROUTE", "name": "Route of Administration", "values": ["ORAL", "INTRAVENOUS", "INTRAMUSCULAR", "SUBCUTANEOUS", "TOPICAL", "TRANSDERMAL", "INHALATION", "RECTAL", "OPHTHALMIC", "NASAL"]},
+    {"id": "FRM", "name": "Pharmaceutical Dosage Form", "values": ["TABLET", "CAPSULE", "INJECTION", "SOLUTION", "SUSPENSION", "CREAM", "OINTMENT", "PATCH", "POWDER", "INHALER"]},
+    {"id": "NRIND", "name": "Reference Range Indicator", "values": ["NORMAL", "LOW", "HIGH", "ABNORMAL", "ABNORMAL LOW", "ABNORMAL HIGH"]},
+    {"id": "SPEC", "name": "Specimen Type", "values": ["BLOOD", "SERUM", "PLASMA", "URINE", "WHOLE BLOOD", "CEREBROSPINAL FLUID"]},
+    {"id": "METHOD", "name": "Method of Test or Examination", "values": ["ENZYMATIC", "COLORIMETRIC", "IMMUNOASSAY", "FLOW CYTOMETRY", "ELECTROCHEMILUMINESCENCE", "SPECTROPHOTOMETRY"]},
+    {"id": "POSITION", "name": "Position", "values": ["STANDING", "SITTING", "SUPINE"]},
+    {"id": "STAT", "name": "Completion Status", "values": ["NOT DONE"]},
+    {"id": "LOC", "name": "Location of Vital Signs Measurement", "values": ["ARM", "FOREARM", "THIGH", "CALF"]},
+    {"id": "LBTESTCD", "name": "Lab Test Code", "values": ["ALB", "ALP", "ALT", "AST", "BILI", "BUN", "CA", "CHOL", "CK", "CL", "CREAT", "GGT", "GLUC", "HBA1C", "HCT", "HGB", "K", "LDH", "LYMPH", "MCH", "MCHC", "MCV", "MONO", "NA", "NEUT", "PHOS", "PLAT", "PROT", "RBC", "TRIG", "URATE", "WBC"]},
+    {"id": "LBTEST", "name": "Lab Test Name", "values": ["Albumin", "Alkaline Phosphatase", "Alanine Aminotransferase", "Aspartate Aminotransferase", "Bilirubin", "Blood Urea Nitrogen", "Calcium", "Cholesterol", "Creatine Kinase", "Chloride", "Creatinine", "Gamma Glutamyl Transferase", "Glucose", "Hemoglobin A1C", "Hematocrit", "Hemoglobin", "Potassium", "Lactate Dehydrogenase", "Lymphocytes", "Ery. Mean Corpuscular Hemoglobin", "Ery. Mean Corpuscular HGB Concentration", "Ery. Mean Corpuscular Volume", "Monocytes", "Sodium", "Neutrophils", "Phosphate", "Platelet", "Protein", "Erythrocytes", "Triglycerides", "Urate", "Leukocytes"]},
+    {"id": "VSTESTCD", "name": "Vital Signs Test Code", "values": ["SYSBP", "DIABP", "PULSE", "TEMP", "RESP", "WEIGHT", "HEIGHT", "BMI"]},
+    {"id": "VSTEST", "name": "Vital Signs Test Name", "values": ["Systolic Blood Pressure", "Diastolic Blood Pressure", "Pulse Rate", "Temperature", "Respiratory Rate", "Weight", "Height", "BMI"]}
+  ],
+  "cross_domain_relationships": [
+    {
+      "from_domain": "DM",
+      "to_domain": "AE",
+      "relationship": "subject_link",
+      "via_variable": "USUBJID",
+      "description": "Each adverse event in AE links to a subject in DM via USUBJID"
+    },
+    {
+      "from_domain": "DM",
+      "to_domain": "CM",
+      "relationship": "subject_link",
+      "via_variable": "USUBJID",
+      "description": "Each medication record in CM links to a subject in DM via USUBJID"
+    },
+    {
+      "from_domain": "DM",
+      "to_domain": "EX",
+      "relationship": "subject_link",
+      "via_variable": "USUBJID",
+      "description": "Each exposure record in EX links to a subject in DM via USUBJID"
+    },
+    {
+      "from_domain": "DM",
+      "to_domain": "LB",
+      "relationship": "subject_link",
+      "via_variable": "USUBJID",
+      "description": "Each lab result in LB links to a subject in DM via USUBJID"
+    },
+    {
+      "from_domain": "DM",
+      "to_domain": "VS",
+      "relationship": "subject_link",
+      "via_variable": "USUBJID",
+      "description": "Each vital sign measurement in VS links to a subject in DM via USUBJID"
+    },
+    {
+      "from_domain": "AE",
+      "to_domain": "CM",
+      "relationship": "clinical_link",
+      "via_variable": "CMINDC",
+      "description": "Concomitant medications may be taken in response to adverse events (CM.CMINDC references AE)"
+    },
+    {
+      "from_domain": "AE",
+      "to_domain": "EX",
+      "relationship": "clinical_link",
+      "via_variable": "AEACN",
+      "description": "Adverse events may result in changes to study treatment exposure (AEACN: DOSE REDUCED, DRUG WITHDRAWN, etc.)"
+    },
+    {
+      "from_domain": "LB",
+      "to_domain": "AE",
+      "relationship": "clinical_link",
+      "via_variable": null,
+      "description": "Abnormal lab values (LBNRIND = HIGH/LOW) may correlate with or trigger adverse events"
+    },
+    {
+      "from_domain": "EX",
+      "to_domain": "LB",
+      "relationship": "temporal_link",
+      "via_variable": null,
+      "description": "Laboratory tests are often scheduled relative to treatment exposure to monitor drug effects"
+    },
+    {
+      "from_domain": "EX",
+      "to_domain": "VS",
+      "relationship": "temporal_link",
+      "via_variable": null,
+      "description": "Vital signs are often measured relative to dosing events to monitor treatment impact"
+    }
+  ],
+  "standard_flow": [
+    {"from": "CDASH", "to": "SDTM", "relationship": "collected_to_tabulated", "description": "CDASH (Clinical Data Acquisition Standards Harmonization) defines collection standards that map to SDTM tabulation domains"},
+    {"from": "SDTM", "to": "ADaM", "relationship": "tabulated_to_analysis", "description": "SDTM tabulation datasets are transformed into ADaM analysis datasets for statistical analysis"},
+    {"from": "ADaM", "to": "TLF", "relationship": "analysis_to_reporting", "description": "ADaM datasets are used to produce Tables, Listings, and Figures for regulatory submissions"}
+  ]
+}
