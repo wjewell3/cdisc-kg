@@ -110,9 +110,11 @@ metadata:
   name: trials-api-lb
   namespace: cdisc-kg
   annotations:
+    oci.oraclecloud.com/load-balancer-type: "lb"
     service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
     service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
     service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+    service.beta.kubernetes.io/oci-load-balancer-subnet1: "ocid1.subnet.oc1.iad.aaaaaaaaihdgynbdnu6vsz4b4bqyoqgdrpxtgirt73riyxhiiouj4r5vdduq"
 spec:
   selector:
     app: trials-api
