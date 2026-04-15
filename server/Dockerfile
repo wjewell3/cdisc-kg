@@ -4,8 +4,8 @@ FROM node:22-alpine AS deps
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+COPY package.json ./
+RUN npm install --omit=dev
 
 # ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime

@@ -36,7 +36,7 @@ spec:
         kubernetes.io/arch: arm64
       containers:
         - name: api
-          image: REGISTRY/cdisc-kg-server:latest   # replace with your OCIR or Docker Hub image
+          image: ghcr.io/wjewell3/cdisc-kg-server:latest   # built by .github/workflows/build-server.yml
           imagePullPolicy: Always
           ports:
             - containerPort: 3001

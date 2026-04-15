@@ -24,7 +24,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: snapshot
-              image: REGISTRY/cdisc-kg-server:latest   # same image as API
+              image: ghcr.io/wjewell3/cdisc-kg-server:latest   # built by .github/workflows/build-server.yml
               command: ["node", "snapshot.js"]
               env:
                 - name: DB_PATH
