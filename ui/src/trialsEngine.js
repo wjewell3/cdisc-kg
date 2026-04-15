@@ -124,6 +124,26 @@ export async function executeTrialQuery(params, limit = 50) {
   return res.json();
 }
 
+/**
+ * Fetch full-database aggregate counts for charts.
+ * Returns { total, phase, status, sponsor, enrollment } where
+ * phase/status/enrollment are { key: count } objects and
+ * sponsor is [[name, count], ...] (top 20).
+ */
+export async function executeTrialAgg(params) {
+  const url = new URL("/api/trials", window.location.origin);
+  url.searchParams.set("mode", "stats");
+  for (const [k, v] of Object.entries(params)) {
+    if (v) url.searchParams.set(k, v);
+  }
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 /** Browsable filter catalog — all available options per param, for the filter picker UI */
 export const FILTER_CATALOG = [
   {

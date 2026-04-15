@@ -197,19 +197,21 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
   );
 }
 
-function EnrollmentHistogram({ trials, activeEnrollRanges, onFilter }) {
+function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilter }) {
   const BUCKETS = [
     { label: "< 100", min: 0, max: 99 },
-    { label: "100–499", min: 100, max: 499 },
-    { label: "500–999", min: 500, max: 999 },
-    { label: "1k–4.9k", min: 1000, max: 4999 },
-    { label: "5k–19k", min: 5000, max: 19999 },
-    { label: "≥ 20k", min: 20000, max: Infinity },
+    { label: "100\u2013499", min: 100, max: 499 },
+    { label: "500\u2013999", min: 500, max: 999 },
+    { label: "1k\u20134.9k", min: 1000, max: 4999 },
+    { label: "5k\u201319k", min: 5000, max: 19999 },
+    { label: "\u2265 20k", min: 20000, max: Infinity },
   ];
 
   const data = BUCKETS.map((b) => ({
     ...b,
-    count: trials.filter((t) => t.enrollment != null && t.enrollment >= b.min && t.enrollment <= b.max).length,
+    count: bucketCounts
+      ? (bucketCounts[b.label] || 0)
+      : (trials || []).filter((t) => t.enrollment != null && t.enrollment >= b.min && t.enrollment <= b.max).length,
   })).filter((b) => b.count > 0);
 
   const maxVal = Math.max(...data.map((d) => d.count), 1);
@@ -241,46 +243,50 @@ function EnrollmentHistogram({ trials, activeEnrollRanges, onFilter }) {
   );
 }
 
-export default function TrialsCharts({ trials, activeFilters = [], onFilter }) {
+export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
+
   const phaseData = useMemo(() => {
+    if (aggData?.phase) {
+      return Object.entries(aggData.phase).sort((a, b) => {
+        const ai = PHASE_ORDER.indexOf(a[0]); const bi = PHASE_ORDER.indexOf(b[0]);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+    }
     const raw = countBy(filterTrials(trials, activeFilters, "phase"), (t) => t.phase || "Unknown");
-    return raw.sort((a, b) => {
-      const ai = PHASE_ORDER.indexOf(a[0]);
-      const bi = PHASE_ORDER.indexOf(b[0]);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-    });
-  }, [trials, activeFilters]);
+    return raw.sort((a, b) => { const ai = PHASE_ORDER.indexOf(a[0]); const bi = PHASE_ORDER.indexOf(b[0]); return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi); });
+  }, [trials, activeFilters, aggData]);
 
-  const statusData = useMemo(() => countBy(filterTrials(trials, activeFilters, "status"), (t) => t.status || "Unknown"), [trials, activeFilters]);
+  const statusData = useMemo(() => {
+    if (aggData?.status) return Object.entries(aggData.status).sort((a, b) => b[1] - a[1]);
+    return countBy(filterTrials(trials, activeFilters, "status"), (t) => t.status || "Unknown");
+  }, [trials, activeFilters, aggData]);
 
-  const sponsorData = useMemo(
-    () => countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown").slice(0, 8),
-    [trials, activeFilters]
-  );
+  const sponsorData = useMemo(() => {
+    if (aggData?.sponsor) return aggData.sponsor.slice(0, 8);
+    return countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown").slice(0, 8);
+  }, [trials, activeFilters, aggData]);
 
-  const hasEnrollment = trials.some((t) => t.enrollment != null);
+  const totalCount = aggData?.total ?? trials.length;
+  const hasEnrollment = aggData?.enrollment
+    ? Object.values(aggData.enrollment).some((c) => c > 0)
+    : trials.some((t) => t.enrollment != null);
 
   // Don't show a chart if all results share the same single value (no distribution)
   const hasDistribution = (data) => data.length > 1;
 
-  if (trials.length === 0) return null;
+  if (!aggData && trials.length === 0) return null;
 
   // Hide entire section if nothing has meaningful distribution
   const enrollBuckets = hasEnrollment
-    ? ["< 100","100–499","500–999","1k–4.9k","5k–19k","≥ 20k"].filter(
-        (label, _, arr) => {
-          const RANGES = {"< 100":[0,99],"100–499":[100,499],"500–999":[500,999],"1k–4.9k":[1000,4999],"5k–19k":[5000,19999],"≥ 20k":[20000,Infinity]};
-          const r = RANGES[label];
-          return trials.some(t => t.enrollment != null && t.enrollment >= r[0] && t.enrollment <= r[1]);
-        }
-      )
+    ? (aggData?.enrollment ? Object.keys(aggData.enrollment).filter((k) => aggData.enrollment[k] > 0) :
+        ["< 100","100\u2013499","500\u2013999","1k\u20134.9k","5k\u201319k","\u2265 20k"].filter((label) => {
+          const RANGES = {"< 100":[0,99],"100\u2013499":[100,499],"500\u2013999":[500,999],"1k\u20134.9k":[1000,4999],"5k\u201319k":[5000,19999],"\u2265 20k":[20000,Infinity]};
+          const r = RANGES[label]; return trials.some(t => t.enrollment != null && t.enrollment >= r[0] && t.enrollment <= r[1]);
+        }))
     : [];
   const anyDistribution =
-    hasDistribution(phaseData) ||
-    hasDistribution(statusData) ||
-    hasDistribution(sponsorData) ||
-    enrollBuckets.length > 1;
+    hasDistribution(phaseData) || hasDistribution(statusData) || hasDistribution(sponsorData) || enrollBuckets.length > 1;
 
   if (!anyDistribution) return null;
 
@@ -289,7 +295,7 @@ export default function TrialsCharts({ trials, activeFilters = [], onFilter }) {
       <div className="trials-charts-header">
         <div className="section-icon">📊</div>
         <h3>Cross-Trial Analytics</h3>
-        <span className="tchart-count-badge">{trials.length} trial{trials.length !== 1 ? "s" : ""}</span>
+        <span className="tchart-count-badge">{totalCount.toLocaleString()} trial{totalCount !== 1 ? "s" : ""}</span>
         {activeFilters.length > 0 && (
           <button className="tchart-clear-btn" onClick={() => onFilter(null, null)}>
             Clear all ×
@@ -318,7 +324,8 @@ export default function TrialsCharts({ trials, activeFilters = [], onFilter }) {
         )}
         {hasEnrollment && (
           <EnrollmentHistogram
-            trials={filterTrials(trials, activeFilters, "_enroll_range")}
+            trials={aggData ? null : filterTrials(trials, activeFilters, "_enroll_range")}
+            bucketCounts={aggData?.enrollment}
             activeEnrollRanges={getActiveVals("_enroll_range")}
             onFilter={onFilter}
           />

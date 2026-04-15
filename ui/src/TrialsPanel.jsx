@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { resolveTrialQuery, executeTrialQuery, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts from "./TrialsCharts";
 import "./TrialsPanel.css";
 
@@ -48,13 +48,19 @@ export default function TrialsPanel() {
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const [baseResults, setBaseResults] = useState(null);
   const [baseLoading, setBaseLoading] = useState(true);
+  const [aggData, setAggData] = useState(null);
   const [displayCount, setDisplayCount] = useState(25);
 
-  // Auto-load a browse dataset on mount so charts appear before any NL query
+  // Auto-load browse dataset + full-DB aggregates in parallel on mount
   useEffect(() => {
-    executeTrialQuery({}, 500)
-      .then((data) => { setBaseResults(data); setBaseLoading(false); })
-      .catch(() => { setBaseLoading(false); }); // silently fail if DB is down
+    Promise.all([
+      executeTrialQuery({}, 500),
+      executeTrialAgg({}),
+    ]).then(([rows, agg]) => {
+      setBaseResults(rows);
+      setAggData(agg);
+      setBaseLoading(false);
+    }).catch(() => { setBaseLoading(false); });
   }, []);
 
   const rerunWithResolutions = useCallback(async (resols) => {
@@ -68,8 +74,12 @@ export default function TrialsPanel() {
       }
     }
     try {
-      const data = await executeTrialQuery(params, 500);
+      const [data, agg] = await Promise.all([
+        executeTrialQuery(params, 500),
+        executeTrialAgg(params),
+      ]);
       setResults(data);
+      setAggData(agg);
       setStep(resols.length === 0 ? "question" : "results");
     } catch (err) {
       setError(err.message);
@@ -121,8 +131,12 @@ export default function TrialsPanel() {
     setActiveResolutions(resolved);
 
     try {
-      const data = await executeTrialQuery(params, 500);
+      const [data, agg] = await Promise.all([
+        executeTrialQuery(params, 500),
+        executeTrialAgg(params),
+      ]);
       setResults(data);
+      setAggData(agg);
       setStep("results");
     } catch (err) {
       setError(err.message);
@@ -217,6 +231,8 @@ export default function TrialsPanel() {
     setActiveResolutions([]);
     setShowFilterPicker(false);
     setDisplayCount(25);
+    // Re-fetch base agg when resetting
+    executeTrialAgg({}).then(setAggData).catch(() => {});
   }, []);
 
   return (
@@ -440,6 +456,7 @@ export default function TrialsPanel() {
                 {/* Charts */}
                 <TrialsCharts
                   trials={(results || baseResults).results}
+                  aggData={aggData}
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
                 />
