@@ -155,8 +155,8 @@ function sqliteSearch({ q, condition, intervention, phase, status, sponsor, limi
       s.nct_id, s.brief_title, s.overall_status, s.phase, s.study_type,
       s.enrollment, s.enrollment_type, s.start_date, s.completion_date,
       s.has_dmc, s.why_stopped,
-      (SELECT group_concat(DISTINCT c.name, '; ') FROM (SELECT DISTINCT name FROM conditions WHERE nct_id = s.nct_id LIMIT 5) c) AS conditions,
-      (SELECT group_concat(DISTINCT i.intervention_type || ': ' || i.name, '; ') FROM (SELECT DISTINCT intervention_type, name FROM interventions WHERE nct_id = s.nct_id LIMIT 5) i) AS interventions,
+      (SELECT group_concat(c.name, '; ') FROM (SELECT DISTINCT name FROM conditions WHERE nct_id = s.nct_id LIMIT 5) c) AS conditions,
+      (SELECT group_concat(i.intervention_type || ': ' || i.name, '; ') FROM (SELECT DISTINCT intervention_type, name FROM interventions WHERE nct_id = s.nct_id LIMIT 5) i) AS interventions,
       (SELECT sp.name FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' LIMIT 1) AS sponsor,
       NULL AS primary_outcome,
       NULL AS arm_count
