@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { resolveTrialQuery, executeTrialQuery, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts from "./TrialsCharts";
 import "./TrialsPanel.css";
@@ -43,18 +43,32 @@ export default function TrialsPanel() {
   const [selectedTrial, setSelectedTrial] = useState(null);
   const [error, setError] = useState(null);
   const [activeQuery, setActiveQuery] = useState("");
-  const [chartFilter, setChartFilter] = useState(null); // { field, value }
+  const [chartFilters, setChartFilters] = useState([]); // [{ field, value }, ...]
   const [activeResolutions, setActiveResolutions] = useState([]);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const [baseResults, setBaseResults] = useState(null);
+  const [baseLoading, setBaseLoading] = useState(true);
+  const [displayCount, setDisplayCount] = useState(25);
+
+  // Auto-load a browse dataset on mount so charts appear before any NL query
+  useEffect(() => {
+    executeTrialQuery({}, 500)
+      .then((data) => { setBaseResults(data); setBaseLoading(false); })
+      .catch(() => { setBaseLoading(false); }); // silently fail if DB is down
+  }, []);
 
   const rerunWithResolutions = useCallback(async (resols) => {
     setSelectedTrial(null);
-    setChartFilter(null);
-    setStep("loading");
+    setChartFilters([]);
+    setDisplayCount(25);
     const params = {};
-    for (const r of resols) { if (r.value) params[r.param] = r.value; }
+    for (const r of resols) {
+      if (r.value) {
+        params[r.param] = params[r.param] ? `${params[r.param]},${r.value}` : r.value;
+      }
+    }
     try {
-      const data = await executeTrialQuery(params, 100);
+      const data = await executeTrialQuery(params, 500);
       setResults(data);
       setStep(resols.length === 0 ? "question" : "results");
     } catch (err) {
@@ -78,15 +92,13 @@ export default function TrialsPanel() {
 
   const toggleFilterOption = useCallback((param, value, label) => {
     setActiveResolutions((prev) => {
-      const existing = prev.findIndex((r) => r.param === param);
+      const existingIdx = prev.findIndex((r) => r.param === param && r.value === value);
       let next;
-      if (existing !== -1 && prev[existing].value === value) {
-        // same value — remove it
-        next = prev.filter((_, i) => i !== existing);
-      } else if (existing !== -1) {
-        // different value for same param — replace
-        next = prev.map((r, i) => i === existing ? { ...r, value, label, kgPath: `${param} → ${value}` } : r);
+      if (existingIdx !== -1) {
+        // already selected — deselect
+        next = prev.filter((_, i) => i !== existingIdx);
       } else {
+        // add (multiple same-param entries allowed)
         next = [...prev, { param, value, label, kgPath: `${param} → ${value}` }];
       }
       if (next.length === 0) { setStep("question"); setResults(null); return []; }
@@ -102,13 +114,14 @@ export default function TrialsPanel() {
     setError(null);
     setStep("loading");
     setShowFilterPicker(false);
+    setDisplayCount(25);
 
     const { params, resolutions: resolved } = resolveTrialQuery(text);
     setResolutions(resolved);
     setActiveResolutions(resolved);
 
     try {
-      const data = await executeTrialQuery(params, 100);
+      const data = await executeTrialQuery(params, 500);
       setResults(data);
       setStep("results");
     } catch (err) {
@@ -128,30 +141,46 @@ export default function TrialsPanel() {
   );
 
   const filteredTrials = useMemo(() => {
-    if (!results?.results) return [];
-    if (!chartFilter) return results.results;
-    const { field, value } = chartFilter;
+    const source = results || baseResults;
+    if (!source?.results) return [];
+    if (chartFilters.length === 0) return source.results;
     const ENROLL_BUCKETS = {
       "< 100": [0, 99], "100–499": [100, 499], "500–999": [500, 999],
       "1k–4.9k": [1000, 4999], "5k–19k": [5000, 19999], "≥ 20k": [20000, Infinity],
     };
-    return results.results.filter((t) => {
-      if (field === "phase") return (t.phase || "Unknown") === value;
-      if (field === "status") return (t.status || "Unknown") === value;
-      if (field === "sponsor") return (t.sponsor || "Unknown") === value;
-      if (field === "_enroll_range") {
-        const range = ENROLL_BUCKETS[value];
-        if (!range) return true;
-        return t.enrollment != null && t.enrollment >= range[0] && t.enrollment <= range[1];
-      }
-      return true;
-    });
-  }, [results, chartFilter]);
+    const byField = {};
+    for (const { field, value } of chartFilters) {
+      if (!byField[field]) byField[field] = new Set();
+      byField[field].add(value);
+    }
+    return source.results.filter((t) =>
+      Object.entries(byField).every(([field, values]) => {
+        if (field === "phase") return values.has(t.phase || "Unknown");
+        if (field === "status") return values.has(t.status || "Unknown");
+        if (field === "sponsor") return values.has(t.sponsor || "Unknown");
+        if (field === "_enroll_range") {
+          return [...values].some((v) => {
+            const range = ENROLL_BUCKETS[v];
+            return range && t.enrollment != null && t.enrollment >= range[0] && t.enrollment <= range[1];
+          });
+        }
+        return true;
+      })
+    );
+  }, [results, baseResults, chartFilters]);
 
   const handleChartFilter = useCallback((field, value) => {
     setSelectedTrial(null);
-    if (field === null || value === null) setChartFilter(null);
-    else setChartFilter({ field, value });
+    if (field === null || value === null) {
+      setChartFilters([]);
+    } else {
+      setChartFilters((prev) => {
+        const exists = prev.some((f) => f.field === field && f.value === value);
+        return exists
+          ? prev.filter((f) => !(f.field === field && f.value === value))
+          : [...prev, { field, value }];
+      });
+    }
   }, []);
 
   // Count how many current results match each filter option (for hiding empties)
@@ -177,16 +206,17 @@ export default function TrialsPanel() {
   }, [results]);
 
   const reset = useCallback(() => {
-    setStep("question");
-    setQuery("");
-    setResolutions([]);
+    setChartFilters([]);
     setResults(null);
     setSelectedTrial(null);
     setError(null);
     setActiveQuery("");
-    setChartFilter(null);
+    setStep("question");
+    setQuery("");
+    setResolutions([]);
     setActiveResolutions([]);
     setShowFilterPicker(false);
+    setDisplayCount(25);
   }, []);
 
   return (
@@ -207,8 +237,8 @@ export default function TrialsPanel() {
       </div>
 
       <div className="trials-body">
-        {/* Question / search section */}
-        <div className={`trials-section ${step !== "question" ? "compact-section" : ""}`}>
+        {/* Search section — always compact so charts are the primary view */}
+        <div className="trials-section compact-section">
           <div className="section-header">
             <div className="section-icon">💬</div>
             <h2>Ask a Cross-Trial Question</h2>
@@ -218,51 +248,63 @@ export default function TrialsPanel() {
               </button>
             )}
           </div>
-
           {step === "question" ? (
-            <>
-              <p className="section-desc">
-                The Knowledge Graph maps your plain-English question into AACT query parameters,
-                then runs it live against all ClinicalTrials.gov studies.
-              </p>
-              <form onSubmit={handleSubmit} className="query-form">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder='e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
-                  className="query-input"
-                  autoFocus
-                />
-                <button type="submit" className="query-submit" disabled={!query.trim()}>
-                  Search →
-                </button>
-              </form>
-              <div className="preset-section">
-                <h3>Suggested queries:</h3>
-                <div className="preset-grid">
-                  {TRIAL_QUERIES.map((q) => (
-                    <button key={q.id} className="preset-card" onClick={() => handlePreset(q)}>
-                      <span className="preset-text">"{q.text}"</span>
-                      <span className="preset-desc">{q.description}</span>
-                      <div className="preset-tags">
-                        {q.tags.map((t) => (
-                          <span key={t} className="preset-tag">
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
+            <form onSubmit={handleSubmit} className="query-form" style={{ margin: 0 }}>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder='e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
+                className="query-input"
+              />
+              <button type="submit" className="query-submit" disabled={!query.trim()}>
+                Search →
+              </button>
+            </form>
           ) : (
             <div className="compact-query">
               <span className="compact-q">"{activeQuery}"</span>
             </div>
           )}
+          {/* Suggested queries — only while initial data is loading (1-2s) */}
+          {step === "question" && baseLoading && (
+            <div className="preset-section">
+              <h3>Suggested queries:</h3>
+              <div className="preset-grid">
+                {TRIAL_QUERIES.map((q) => (
+                  <button key={q.id} className="preset-card" onClick={() => handlePreset(q)}>
+                    <span className="preset-text">"{q.text}"</span>
+                    <span className="preset-desc">{q.description}</span>
+                    <div className="preset-tags">
+                      {q.tags.map((t) => (
+                        <span key={t} className="preset-tag">{t}</span>
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Chart filter pills in browse mode */}
+        {step === "question" && chartFilters.length > 0 && (
+          <div className="kg-params-bar">
+            <span className="kg-params-label">🔍 Browse filters →</span>
+            {chartFilters.map((cf, i) => (
+              <React.Fragment key={i}>
+                <span className="kg-param-pill kg-filter-pill">
+                  <span className="kg-filter-icon">🔍</span>
+                  <span>{cf.field.replace(/^_/, "").replace(/_LABEL$/, "")}</span>
+                  <span className="kg-eq">=</span>
+                  <span className="kg-val">{cf.value}</span>
+                  <button className="kg-filter-clear" onClick={() => setChartFilters((prev) => prev.filter((_, j) => j !== i))} aria-label="Clear filter">×</button>
+                </span>
+              </React.Fragment>
+            ))}
+            <button className="kg-filter-clear" style={{marginLeft:"auto"}} onClick={() => setChartFilters([])}>Clear all ×</button>
+          </div>
+        )}
 
         {/* KG resolution — compact param bar */}
         {(step === "loading" || step === "results" || step === "error") && (activeResolutions.length > 0 || step === "results") && (
@@ -276,19 +318,18 @@ export default function TrialsPanel() {
                   <button className="kg-param-remove" onClick={() => removeResolution(i)} aria-label={`Remove ${r.param}`}>×</button>
                 </span>
               ))}
-              {chartFilter && (
-                <>
+              {chartFilters.map((cf, i) => (
+                <React.Fragment key={i}>
                   <span className="kg-filter-sep">·</span>
                   <span className="kg-param-pill kg-filter-pill">
                     <span className="kg-filter-icon">🔍</span>
-                    <span>{chartFilter.field.replace(/^_/, "").replace(/_LABEL$/, "")}</span>
+                    <span>{cf.field.replace(/^_/, "").replace(/_LABEL$/, "")}</span>
                     <span className="kg-eq">=</span>
-                    <span className="kg-val">{chartFilter.value}</span>
-                    <span className="kg-filter-count">({filteredTrials.length}/{results?.total})</span>
-                    <button className="kg-filter-clear" onClick={() => setChartFilter(null)} aria-label="Clear filter">×</button>
+                    <span className="kg-val">{cf.value}</span>
+                    <button className="kg-filter-clear" onClick={() => setChartFilters((prev) => prev.filter((_, j) => j !== i))} aria-label="Clear filter">×</button>
                   </span>
-                </>
-              )}
+                </React.Fragment>
+              ))}
               <button
                 className={`kg-add-filter-btn ${showFilterPicker ? "active" : ""}`}
                 onClick={() => setShowFilterPicker((v) => !v)}
@@ -301,32 +342,33 @@ export default function TrialsPanel() {
             {showFilterPicker && (
               <div className="filter-picker slide-in">
                 {FILTER_CATALOG.map((group) => {
-                  const activeVal = activeResolutions.find((r) => r.param === group.param)?.value;
+                  const activeVals = new Set(
+                    activeResolutions.filter((r) => r.param === group.param).map((r) => r.value)
+                  );
                   const visibleOpts = group.options.filter((opt) => {
                     const count = filterOptionCounts[`${group.param}::${opt.value}`] ?? 0;
-                    return activeVal === opt.value || count > 0;
+                    return activeVals.has(opt.value) || count > 0;
                   });
                   if (visibleOpts.length === 0) return null;
                   return (
                     <div key={group.param} className="filter-picker-group">
                       <span className="filter-picker-label">{group.label}:</span>
                       <div className="filter-picker-options">
-                        {group.options
-                          .filter((opt) => {
-                            const count = filterOptionCounts[`${group.param}::${opt.value}`] ?? 0;
-                            return activeVal === opt.value || count > 0;
-                          })
-                          .map((opt) => {
-                            return (
-                              <button
-                                key={opt.value}
-                                className={`filter-picker-opt ${activeVal === opt.value ? "filter-opt-active" : ""}`}
-                                onClick={() => toggleFilterOption(group.param, opt.value, opt.label)}
-                              >
-                                {opt.label}
-                              </button>
-                            );
-                          })}
+                        {visibleOpts.map((opt) => {
+                          const isActive = activeVals.has(opt.value);
+                          return (
+                            <button
+                              key={opt.value}
+                              className={`filter-picker-opt ${isActive ? "filter-opt-active" : ""}`}
+                              onClick={() => toggleFilterOption(group.param, opt.value, opt.label)}
+                            >
+                              {opt.label}
+                              {filterOptionCounts[`${group.param}::${opt.value}`] > 0 && (
+                                <span className="filter-opt-count">({filterOptionCounts[`${group.param}::${opt.value}`]})</span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -336,8 +378,8 @@ export default function TrialsPanel() {
           </>
         )}
 
-        {/* Loading state */}
-        {step === "loading" && (
+        {/* Main content — always rendered; shows spinner until data arrives */}
+        {step === "loading" ? (
           <div className="trials-section slide-in">
             <div className="loading-state">
               <div className="loading-spinner" />
@@ -345,49 +387,66 @@ export default function TrialsPanel() {
               <p className="loading-sub">aact-db.ctti-clinicaltrials.org</p>
             </div>
           </div>
-        )}
-
-        {/* Error state */}
-        {step === "error" && (
+        ) : step === "error" ? (
           <div className="trials-section slide-in">
             <div className="error-state">
               <div className="error-icon">⚠️</div>
-              <p className="error-msg">Query failed: {error}</p>
+              <p className="error-msg">
+                {error?.includes("ECONNREFUSED") || error?.includes("connect")
+                  ? "AACT database is temporarily unavailable (nightly refresh or maintenance). Please try again in a few minutes."
+                  : `Query failed: ${error}`}
+              </p>
               <button className="reset-btn" onClick={reset}>
                 Try Again
               </button>
             </div>
           </div>
-        )}
-
-        {/* Results section */}
-        {step === "results" && results && (
+        ) : (
           <div className="trials-section slide-in">
-            <div className="section-header">
-              <div className="section-icon">📊</div>
-              <h2>Trial Results</h2>
-              <span className="result-count">
-                {results.total} stud{results.total !== 1 ? "ies" : "y"} found
-                {results.total === results.limit ? ` (showing top ${results.limit})` : ""}
-              </span>
-            </div>
-
-            {results.total === 0 ? (
+            {baseLoading && !results ? (
+              <div className="loading-state">
+                <div className="loading-spinner" />
+                <p>Loading trial data…</p>
+                <p className="loading-sub">aact-db.ctti-clinicaltrials.org</p>
+              </div>
+            ) : !(results || baseResults) ? (
+              <div className="no-results">Trial data unavailable — AACT database may be offline.</div>
+            ) : (results || baseResults).total === 0 ? (
               <div className="no-results">
-                No trials found matching your query. Try broadening the search.
+                {step === "results" ? "No trials found matching your query. Try broadening the search." : "No trials available."}
               </div>
             ) : (
+              <>
+                <div className="section-header">
+                  <div className="section-icon">📊</div>
+                  {step === "results" ? (
+                    <>
+                      <h2>Trial Results</h2>
+                      <span className="result-count">
+                        {results.total?.toLocaleString()} total{results.returned < results.total ? ` · ${results.returned} loaded` : ""}
+                        {chartFilters.length > 0 ? ` · ${filteredTrials.length} matching` : ""}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <h2>Browse Trials</h2>
+                      <span className="result-count">
+                        {(results || baseResults).total?.toLocaleString()} total{(results || baseResults).returned < (results || baseResults).total ? ` · ${(results || baseResults).returned} loaded` : ""}{chartFilters.length > 0 ? ` · ${filteredTrials.length} matching` : ""}
+                      </span>
+                    </>
+                  )}
+                </div>
               <div className="results-layout">
                 {/* Charts */}
                 <TrialsCharts
-                  trials={results.results}
-                  activeFilter={chartFilter}
+                  trials={(results || baseResults).results}
+                  activeFilters={chartFilters}
                   onFilter={handleChartFilter}
                 />
 
-                {/* Results list */}
+                {/* Results list — paginated */}
                 <div className={`results-list ${selectedTrial ? "with-detail" : ""}`}>
-                  {filteredTrials.map((trial) => (
+                  {filteredTrials.slice(0, displayCount).map((trial) => (
                     <div
                       key={trial.nct_id}
                       className={`trial-card ${selectedTrial?.nct_id === trial.nct_id ? "selected" : ""}`}
@@ -429,6 +488,15 @@ export default function TrialsPanel() {
                       )}
                     </div>
                   ))}
+                  {filteredTrials.length > displayCount && (
+                    <button
+                      className="load-more-btn"
+                      onClick={() => setDisplayCount((n) => n + 25)}
+                    >
+                      Load {Math.min(25, filteredTrials.length - displayCount)} more
+                      <span className="load-more-sub"> ({displayCount}/{filteredTrials.length} shown)</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Detail panel */}
@@ -558,10 +626,11 @@ export default function TrialsPanel() {
                   </div>
                 )}
               </div>
+              </>
             )}
           </div>
         )}
       </div>
-  </div>
+    </div>
   );
 }
