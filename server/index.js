@@ -99,7 +99,7 @@ function getPgPool() {
  * Build WHERE clauses compatible with SQLite positional params ($1 → ?).
  * Returns { where: string, params: any[] } for SQLite.
  */
-function buildSqliteWhere({ q = "", condition = "", intervention = "", phase = "", status = "", sponsor = "" }) {
+function buildSqliteWhere({ q = "", condition = "", intervention = "", phase = "", status = "", sponsor = "", min_enrollment = "", max_enrollment = "" }) {
   const where = [];
   const params = [];
 
@@ -142,13 +142,22 @@ function buildSqliteWhere({ q = "", condition = "", intervention = "", phase = "
     for (const v of vals) params.push(`%${v}%`);
   }
 
+  if (min_enrollment !== "") {
+    where.push(`s.enrollment >= ?`);
+    params.push(parseInt(min_enrollment));
+  }
+  if (max_enrollment !== "" && parseInt(max_enrollment) < 999999999) {
+    where.push(`s.enrollment <= ?`);
+    params.push(parseInt(max_enrollment));
+  }
+
   return { where: where.length ? `WHERE ${where.join(" AND ")}` : "", params };
 }
 
 // ── SQLite query functions ─────────────────────────────────────────────────────
 
-function sqliteSearch({ q, condition, intervention, phase, status, sponsor, limit }) {
-  const { where, params } = buildSqliteWhere({ q, condition, intervention, phase, status, sponsor });
+function sqliteSearch({ q, condition, intervention, phase, status, sponsor, limit, min_enrollment, max_enrollment }) {
+  const { where, params } = buildSqliteWhere({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment });
 
   const sql = `
     SELECT
@@ -173,8 +182,8 @@ function sqliteSearch({ q, condition, intervention, phase, status, sponsor, limi
   return { total: parseInt(total), returned: rows.length, limit, results: rows.map(normalizeRow) };
 }
 
-function sqliteStats({ q, condition, intervention, phase, status, sponsor }) {
-  const { where, params } = buildSqliteWhere({ q, condition, intervention, phase, status, sponsor });
+function sqliteStats({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment }) {
+  const { where, params } = buildSqliteWhere({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment });
   const enrollWhere = where ? `${where} AND s.enrollment IS NOT NULL` : "WHERE s.enrollment IS NOT NULL";
   const enrollParams = [...params]; // same params, no extras needed
 
@@ -292,6 +301,7 @@ app.get("/api/trials", async (req, res) => {
     q = "", phase = "", status = "", sponsor = "",
     limit: rawLimit = "50", mode = "search",
     condition = "", intervention = "",
+    min_enrollment = "", max_enrollment = "",
   } = req.query;
 
   const limit = Math.min(parseInt(rawLimit, 10) || 100, 500);
@@ -299,13 +309,13 @@ app.get("/api/trials", async (req, res) => {
   try {
     if (mode === "stats") {
       const result = db
-        ? sqliteStats({ q, condition, intervention, phase, status, sponsor })
+        ? sqliteStats({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment })
         : await pgStats({ q, condition, intervention, phase, status, sponsor });
       return res.json(result);
     }
 
     const result = db
-      ? sqliteSearch({ q, condition, intervention, phase, status, sponsor, limit })
+      ? sqliteSearch({ q, condition, intervention, phase, status, sponsor, limit, min_enrollment, max_enrollment })
       : await pgSearch({ q, condition, intervention, phase, status, sponsor, limit });
     return res.json(result);
   } catch (err) {

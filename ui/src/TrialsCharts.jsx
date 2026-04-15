@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 const PALETTE = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
 
@@ -198,6 +198,7 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
 }
 
 function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilter }) {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
   const BUCKETS = [
     { label: "< 100", min: 0, max: 99 },
     { label: "100\u2013499", min: 100, max: 499 },
@@ -214,6 +215,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
       : (trials || []).filter((t) => t.enrollment != null && t.enrollment >= b.min && t.enrollment <= b.max).length,
   })).filter((b) => b.count > 0);
 
+  const total = data.reduce((s, d) => s + d.count, 0);
   const maxVal = Math.max(...data.map((d) => d.count), 1);
   const barH = 22, gap = 6, padTop = 30, padLeft = 8, padRight = 8, padBottom = 8;
   const svgH = padTop + data.length * (barH + gap) - gap + padBottom;
@@ -229,8 +231,16 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
           const isActive = activeEnrollRanges?.has(b.label);
           const hasAny = activeEnrollRanges?.size > 0;
           const color = PALETTE[i % PALETTE.length];
+          const pct = total > 0 ? ((b.count / total) * 100).toFixed(1) : "0.0";
           return (
-            <g key={b.label} onClick={() => onFilter("_enroll_range", b.label)} style={{ cursor: "pointer" }}>
+            <g
+              key={b.label}
+              onClick={() => onFilter("_enroll_range", b.label)}
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
+              style={{ cursor: "pointer" }}
+            >
+              <title>{`${b.label}: ${b.count.toLocaleString()} trials (${pct}%)`}</title>
               <rect x={padLeft} y={y} width={barW} height={barH} rx={4} fill={color} opacity={hasAny && !isActive ? 0.3 : 1} />
               {isActive && <rect x={padLeft - 2} y={y - 2} width={barW + 4} height={barH + 4} rx={5} fill="none" stroke={color} strokeWidth={2} />}
               <text x={padLeft + barW + 6} y={y + barH / 2 + 4} className="tchart-count">{b.count}</text>
@@ -238,6 +248,21 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
             </g>
           );
         })}
+        {hoveredIdx !== null && (() => {
+          const b = data[hoveredIdx];
+          const pct = total > 0 ? ((b.count / total) * 100).toFixed(1) : "0.0";
+          const y = padTop + hoveredIdx * (barH + gap);
+          const ttText = `${b.count.toLocaleString()}\u00a0(${pct}%)`;
+          const ttW = ttText.length * 6.5 + 12;
+          const ttY = y - 22;
+          const finalY = ttY >= 4 ? ttY : y + barH + 4;
+          return (
+            <g style={{ pointerEvents: "none" }}>
+              <rect x={padLeft} y={finalY} width={ttW} height={18} rx={3} fill="#1c2128" stroke="#388bfd" strokeWidth={1} opacity={0.95} />
+              <text x={padLeft + 6} y={finalY + 12} fontSize={10} fill="#e6edf3">{ttText}</text>
+            </g>
+          );
+        })()}
       </svg>
     </div>
   );
@@ -304,14 +329,25 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
       </div>
       <div className="trials-charts-grid">
         {hasDistribution(phaseData) && (
-          <SvgDonutChart
-            data={phaseData}
-            title="Phase Distribution"
-            field="phase"
-            displayMap={PHASE_DISPLAY}
-            activeValues={getActiveVals("phase")}
-            onFilter={onFilter}
-          />
+          phaseData.length > 3 ? (
+            <SvgBarChart
+              data={phaseData}
+              title="Phase Distribution"
+              field="phase"
+              displayMap={PHASE_DISPLAY}
+              activeValues={getActiveVals("phase")}
+              onFilter={onFilter}
+            />
+          ) : (
+            <SvgDonutChart
+              data={phaseData}
+              title="Phase Distribution"
+              field="phase"
+              displayMap={PHASE_DISPLAY}
+              activeValues={getActiveVals("phase")}
+              onFilter={onFilter}
+            />
+          )
         )}
         {hasDistribution(statusData) && (
           <SvgBarChart

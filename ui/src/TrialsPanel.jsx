@@ -65,12 +65,14 @@ export default function TrialsPanel() {
     }).catch(() => { setBaseLoading(false); });
   }, []);
 
-  // When server-filterable chart filters (phase/status/sponsor) change,
-  // re-query the server to get real matching rows.
-  // Enrollment-range stays client-side since the API has no range param.
+  // When chart filters change, re-query the server for filtered rows + stats.
+  // All filter types (phase/status/sponsor/enrollment-range) go to the server.
+  const ENROLL_BUCKETS_SERVER = {
+    "< 100": [0, 99], "100\u2013499": [100, 499], "500\u2013999": [500, 999],
+    "1k\u20134.9k": [1000, 4999], "5k\u201319k": [5000, 19999], "\u2265 20k": [20000, Infinity],
+  };
   useEffect(() => {
-    const serverFilters = chartFilters.filter((f) => f.field !== "_enroll_range");
-    if (serverFilters.length === 0) {
+    if (chartFilters.length === 0) {
       setChartResults(null);
       setChartAggData(null);
       return;
@@ -79,9 +81,18 @@ export default function TrialsPanel() {
     for (const r of activeResolutions) {
       if (r.value) params[r.param] = params[r.param] ? `${params[r.param]},${r.value}` : r.value;
     }
-    for (const f of serverFilters) {
-      const key = f.field === "phase" ? "phase" : f.field === "status" ? "status" : f.field === "sponsor" ? "sponsor" : null;
-      if (key) params[key] = params[key] ? `${params[key]},${f.value}` : f.value;
+    for (const f of chartFilters) {
+      if (f.field === "phase" || f.field === "status" || f.field === "sponsor") {
+        params[f.field] = params[f.field] ? `${params[f.field]},${f.value}` : f.value;
+      } else if (f.field === "_enroll_range") {
+        const [min, max] = ENROLL_BUCKETS_SERVER[f.value] || [];
+        if (min !== undefined) {
+          const curMin = params.min_enrollment !== undefined ? parseInt(params.min_enrollment) : Infinity;
+          const curMax = params.max_enrollment !== undefined ? parseInt(params.max_enrollment) : -1;
+          params.min_enrollment = String(Math.min(curMin === Infinity ? min : curMin, min));
+          if (isFinite(max)) params.max_enrollment = String(Math.max(curMax, max));
+        }
+      }
     }
     const tid = setTimeout(async () => {
       try {
@@ -192,21 +203,8 @@ export default function TrialsPanel() {
     // chartResults takes priority — real server-filtered rows when chart filters are active
     const source = chartResults || results || baseResults;
     if (!source?.results) return [];
-    // Only enrollment-range is filtered client-side; phase/status/sponsor are server-side
-    const enrollFilters = chartFilters.filter((f) => f.field === "_enroll_range");
-    if (enrollFilters.length === 0) return source.results;
-    const ENROLL_BUCKETS = {
-      "< 100": [0, 99], "100\u2013499": [100, 499], "500\u2013999": [500, 999],
-      "1k\u20134.9k": [1000, 4999], "5k\u201319k": [5000, 19999], "\u2265 20k": [20000, Infinity],
-    };
-    const enrollVals = new Set(enrollFilters.map((f) => f.value));
-    return source.results.filter((t) =>
-      [...enrollVals].some((v) => {
-        const r = ENROLL_BUCKETS[v];
-        return r && t.enrollment != null && t.enrollment >= r[0] && t.enrollment <= r[1];
-      })
-    );
-  }, [chartResults, results, baseResults, chartFilters]);
+    return source.results;
+  }, [chartResults, results, baseResults]);
 
   const handleChartFilter = useCallback((field, value) => {
     setSelectedTrial(null);

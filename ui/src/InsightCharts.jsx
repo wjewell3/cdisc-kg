@@ -14,6 +14,8 @@ function countBy(rows, field) {
 }
 
 function SvgBarChart({ data, title, field, activeValues, onFilter }) {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+  const total = data.reduce((s, d) => s + d[1], 0);
   const maxVal = Math.max(...data.map((d) => d[1]), 1);
   const barH = 22;
   const gap = 6;
@@ -40,16 +42,20 @@ function SvgBarChart({ data, title, field, activeValues, onFilter }) {
           const hasAny = activeValues?.size > 0;
           const color = PALETTE[i % PALETTE.length];
           const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
+          const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
           return (
             <g
               key={label}
               className={`chart-bar-group ${isActive ? "chart-active" : ""}`}
               onClick={() => onFilter(field, label)}
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
               style={{ cursor: "pointer" }}
               role="button"
               aria-pressed={isActive}
               aria-label={`Filter by ${label}: ${count}`}
             >
+              <title>{`${label}: ${count.toLocaleString()} (${pct}%)`}</title>
               <rect
                 x={padLeft}
                 y={y}
@@ -89,12 +95,28 @@ function SvgBarChart({ data, title, field, activeValues, onFilter }) {
             </g>
           );
         })}
+        {hoveredIdx !== null && (() => {
+          const [label, count] = data[hoveredIdx];
+          const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
+          const y = padTop + hoveredIdx * (barH + gap);
+          const ttText = `${count.toLocaleString()} (${pct}%)`;
+          const ttW = ttText.length * 6.5 + 12;
+          const ttY = y - 22;
+          const finalY = ttY >= 4 ? ttY : y + barH + 4;
+          return (
+            <g style={{ pointerEvents: "none" }}>
+              <rect x={padLeft} y={finalY} width={ttW} height={18} rx={3} fill="#1c2128" stroke="#388bfd" strokeWidth={1} opacity={0.95} />
+              <text x={padLeft + 6} y={finalY + 12} fontSize={10} fill="#e6edf3">{ttText}</text>
+            </g>
+          );
+        })()}
       </svg>
     </div>
   );
 }
 
 function SvgDonutChart({ data, title, field, activeValues, onFilter }) {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
   const total = data.reduce((s, d) => s + d[1], 0);
   const cx = 90, cy = 90, outerR = 62, innerR = 38;
   let startAngle = -Math.PI / 2;
@@ -145,27 +167,48 @@ function SvgDonutChart({ data, title, field, activeValues, onFilter }) {
 
           const outerLargeArc = s.end - s.start > Math.PI ? 1 : 0;
           const d = `M ${ox2} ${oy2} A ${outerR} ${outerR} 0 ${outerLargeArc} 1 ${ox1} ${oy1} L ${ix1} ${iy1} A ${innerR} ${innerR} 0 ${outerLargeArc} 0 ${ix2} ${iy2} Z`;
+          const pct = total > 0 ? ((s.count / total) * 100).toFixed(1) : "0.0";
 
           return (
-            <path
+            <g
               key={s.label}
-              d={d}
-              fill={s.color}
-              opacity={hasAny && !isActive ? 0.3 : 1}
-              className="chart-slice"
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
               onClick={() => onFilter(field, s.label)}
               style={{ cursor: "pointer" }}
               role="button"
               aria-pressed={isActive}
               aria-label={`Filter by ${s.label}: ${s.count}`}
-            />
+            >
+              <title>{`${s.label}: ${s.count.toLocaleString()} (${pct}%)`}</title>
+              <path
+                d={d}
+                fill={s.color}
+                opacity={hasAny && !isActive ? 0.3 : 1}
+                className="chart-slice"
+              />
+            </g>
           );
         })}
 
-        {/* Center label */}
-        <text x={cx} y={cy + 20} className="donut-total" textAnchor="middle" dominantBaseline="middle">
-          {total}
-        </text>
+        {/* Center: total or hovered slice info */}
+        {hoveredIdx !== null ? (
+          <g style={{ pointerEvents: "none" }}>
+            <text x={cx} y={cy + 20 - 9} textAnchor="middle" fontSize={9} fill="#8b949e">
+              {slices[hoveredIdx].label.length > 11 ? slices[hoveredIdx].label.slice(0, 10) + "…" : slices[hoveredIdx].label}
+            </text>
+            <text x={cx} y={cy + 20 + 6} className="donut-total" textAnchor="middle" dominantBaseline="middle">
+              {slices[hoveredIdx].count.toLocaleString()}
+            </text>
+            <text x={cx} y={cy + 20 + 20} textAnchor="middle" fontSize={9} fill="#8b949e">
+              {((slices[hoveredIdx].count / total) * 100).toFixed(1)}%
+            </text>
+          </g>
+        ) : (
+          <text x={cx} y={cy + 20} className="donut-total" textAnchor="middle" dominantBaseline="middle">
+            {total}
+          </text>
+        )}
 
         {/* Legend */}
         {data.map((d, i) => {
@@ -181,8 +224,11 @@ function SvgDonutChart({ data, title, field, activeValues, onFilter }) {
               key={d[0]}
               className={`legend-item ${isActive ? "chart-active" : ""}`}
               onClick={() => onFilter(field, d[0])}
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
               style={{ cursor: "pointer" }}
             >
+              <title>{`${d[0]}: ${d[1].toLocaleString()} (${total > 0 ? ((d[1]/total)*100).toFixed(1) : 0}%)`}</title>
               <rect
                 x={lx}
                 y={ly}
