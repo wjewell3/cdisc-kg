@@ -105,6 +105,11 @@
   margin-bottom: 0;
 }
 
+/* In browse mode, charts section floats above search via flex order */
+.charts-browse-first {
+  order: -1;
+}
+
 .compact-query {
   margin-top: 8px;
 }
