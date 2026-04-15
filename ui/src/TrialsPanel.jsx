@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts from "./TrialsCharts";
 import "./TrialsPanel.css";
@@ -308,7 +308,7 @@ export default function TrialsPanel() {
           <div className="kg-params-bar">
             <span className="kg-params-label">🔍 Browse filters →</span>
             {chartFilters.map((cf, i) => (
-              <React.Fragment key={i}>
+              <Fragment key={i}>
                 <span className="kg-param-pill kg-filter-pill">
                   <span className="kg-filter-icon">🔍</span>
                   <span>{cf.field.replace(/^_/, "").replace(/_LABEL$/, "")}</span>
@@ -316,7 +316,7 @@ export default function TrialsPanel() {
                   <span className="kg-val">{cf.value}</span>
                   <button className="kg-filter-clear" onClick={() => setChartFilters((prev) => prev.filter((_, j) => j !== i))} aria-label="Clear filter">×</button>
                 </span>
-              </React.Fragment>
+              </Fragment>
             ))}
             <button className="kg-filter-clear" style={{marginLeft:"auto"}} onClick={() => setChartFilters([])}>Clear all ×</button>
           </div>
@@ -335,7 +335,7 @@ export default function TrialsPanel() {
                 </span>
               ))}
               {chartFilters.map((cf, i) => (
-                <React.Fragment key={i}>
+                <Fragment key={i}>
                   <span className="kg-filter-sep">·</span>
                   <span className="kg-param-pill kg-filter-pill">
                     <span className="kg-filter-icon">🔍</span>
@@ -344,7 +344,7 @@ export default function TrialsPanel() {
                     <span className="kg-val">{cf.value}</span>
                     <button className="kg-filter-clear" onClick={() => setChartFilters((prev) => prev.filter((_, j) => j !== i))} aria-label="Clear filter">×</button>
                   </span>
-                </React.Fragment>
+                </Fragment>
               ))}
               <button
                 className={`kg-add-filter-btn ${showFilterPicker ? "active" : ""}`}
