@@ -147,8 +147,7 @@ async function main() {
       brief_title,
       conditions_text,
       interventions_text,
-      summary_text,
-      content=''
+      summary_text
     );
 
     -- Metadata
