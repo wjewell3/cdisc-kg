@@ -49,6 +49,7 @@ export default function TrialsPanel() {
   const [baseResults, setBaseResults] = useState(null);
   const [baseLoading, setBaseLoading] = useState(true);
   const [aggData, setAggData] = useState(null);
+  const [chartResults, setChartResults] = useState(null); // rows re-fetched on chart filter clicks
   const [displayCount, setDisplayCount] = useState(25);
 
   // Auto-load browse dataset + full-DB aggregates in parallel on mount
@@ -62,6 +63,33 @@ export default function TrialsPanel() {
       setBaseLoading(false);
     }).catch(() => { setBaseLoading(false); });
   }, []);
+
+  // When server-filterable chart filters (phase/status/sponsor) change,
+  // re-query the server to get real matching rows.
+  // Enrollment-range stays client-side since the API has no range param.
+  useEffect(() => {
+    const serverFilters = chartFilters.filter((f) => f.field !== "_enroll_range");
+    if (serverFilters.length === 0) {
+      setChartResults(null);
+      return;
+    }
+    const params = {};
+    for (const r of activeResolutions) {
+      if (r.value) params[r.param] = params[r.param] ? `${params[r.param]},${r.value}` : r.value;
+    }
+    for (const f of serverFilters) {
+      const key = f.field === "phase" ? "phase" : f.field === "status" ? "status" : f.field === "sponsor" ? "sponsor" : null;
+      if (key) params[key] = params[key] ? `${params[key]},${f.value}` : f.value;
+    }
+    const tid = setTimeout(async () => {
+      try {
+        const data = await executeTrialQuery(params, 500);
+        setChartResults(data);
+        setDisplayCount(25);
+      } catch {}
+    }, 150);
+    return () => clearTimeout(tid);
+  }, [chartFilters, activeResolutions]);
 
   const rerunWithResolutions = useCallback(async (resols) => {
     setSelectedTrial(null);
@@ -155,33 +183,24 @@ export default function TrialsPanel() {
   );
 
   const filteredTrials = useMemo(() => {
-    const source = results || baseResults;
+    // chartResults takes priority — real server-filtered rows when chart filters are active
+    const source = chartResults || results || baseResults;
     if (!source?.results) return [];
-    if (chartFilters.length === 0) return source.results;
+    // Only enrollment-range is filtered client-side; phase/status/sponsor are server-side
+    const enrollFilters = chartFilters.filter((f) => f.field === "_enroll_range");
+    if (enrollFilters.length === 0) return source.results;
     const ENROLL_BUCKETS = {
-      "< 100": [0, 99], "100–499": [100, 499], "500–999": [500, 999],
-      "1k–4.9k": [1000, 4999], "5k–19k": [5000, 19999], "≥ 20k": [20000, Infinity],
+      "< 100": [0, 99], "100\u2013499": [100, 499], "500\u2013999": [500, 999],
+      "1k\u20134.9k": [1000, 4999], "5k\u201319k": [5000, 19999], "\u2265 20k": [20000, Infinity],
     };
-    const byField = {};
-    for (const { field, value } of chartFilters) {
-      if (!byField[field]) byField[field] = new Set();
-      byField[field].add(value);
-    }
+    const enrollVals = new Set(enrollFilters.map((f) => f.value));
     return source.results.filter((t) =>
-      Object.entries(byField).every(([field, values]) => {
-        if (field === "phase") return values.has(t.phase || "Unknown");
-        if (field === "status") return values.has(t.status || "Unknown");
-        if (field === "sponsor") return values.has(t.sponsor || "Unknown");
-        if (field === "_enroll_range") {
-          return [...values].some((v) => {
-            const range = ENROLL_BUCKETS[v];
-            return range && t.enrollment != null && t.enrollment >= range[0] && t.enrollment <= range[1];
-          });
-        }
-        return true;
+      [...enrollVals].some((v) => {
+        const r = ENROLL_BUCKETS[v];
+        return r && t.enrollment != null && t.enrollment >= r[0] && t.enrollment <= r[1];
       })
     );
-  }, [results, baseResults, chartFilters]);
+  }, [chartResults, results, baseResults, chartFilters]);
 
   const handleChartFilter = useCallback((field, value) => {
     setSelectedTrial(null);
@@ -221,6 +240,7 @@ export default function TrialsPanel() {
 
   const reset = useCallback(() => {
     setChartFilters([]);
+    setChartResults(null);
     setResults(null);
     setSelectedTrial(null);
     setError(null);
@@ -439,15 +459,20 @@ export default function TrialsPanel() {
                     <>
                       <h2>Trial Results</h2>
                       <span className="result-count">
-                        {results.total?.toLocaleString()} total{results.returned < results.total ? ` · ${results.returned} loaded` : ""}
-                        {chartFilters.length > 0 ? ` · ${filteredTrials.length} matching` : ""}
+                        {(chartResults || results).total?.toLocaleString()} total
+                        {chartResults
+                          ? ` · ${filteredTrials.length} matching`
+                          : results.returned < results.total ? ` · ${results.returned} loaded` : ""}
                       </span>
                     </>
                   ) : (
                     <>
                       <h2>Browse Trials</h2>
                       <span className="result-count">
-                        {(results || baseResults).total?.toLocaleString()} total{(results || baseResults).returned < (results || baseResults).total ? ` · ${(results || baseResults).returned} loaded` : ""}{chartFilters.length > 0 ? ` · ${filteredTrials.length} matching` : ""}
+                        {(chartResults || results || baseResults).total?.toLocaleString()} total
+                        {chartResults
+                          ? ` · ${filteredTrials.length} matching`
+                          : (results || baseResults)?.returned < (results || baseResults)?.total ? ` · ${(results || baseResults).returned} loaded` : ""}
                       </span>
                     </>
                   )}
