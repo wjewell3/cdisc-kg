@@ -52,6 +52,26 @@ export default function TrialsPanel() {
   const [chartResults, setChartResults] = useState(null); // rows re-fetched on chart filter clicks
   const [chartAggData, setChartAggData] = useState(null); // aggregates re-fetched on chart filter clicks
   const [displayCount, setDisplayCount] = useState(25);
+  const [intelligence, setIntelligence] = useState(null); // { data, loading, error }
+
+  const analyzeTrialIntelligence = useCallback(async (nct_id) => {
+    setIntelligence({ loading: true, data: null, error: null });
+    try {
+      const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+      const url = base
+        ? `${base}/api/trial-intelligence?nct_id=${nct_id}`
+        : `/api/intelligence?nct_id=${nct_id}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      setIntelligence({ loading: false, data, error: null });
+    } catch (e) {
+      setIntelligence({ loading: false, data: null, error: e.message });
+    }
+  }, []);
 
   // Auto-load browse dataset + full-DB aggregates in parallel on mount
   useEffect(() => {
@@ -497,7 +517,7 @@ export default function TrialsPanel() {
                     <div
                       key={trial.nct_id}
                       className={`trial-card ${selectedTrial?.nct_id === trial.nct_id ? "selected" : ""}`}
-                      onClick={() => setSelectedTrial(trial.nct_id === selectedTrial?.nct_id ? null : trial)}
+                      onClick={() => { setSelectedTrial(trial.nct_id === selectedTrial?.nct_id ? null : trial); setIntelligence(null); }}
                     >
                       <div className="trial-card-top">
                         <div className="trial-badges">
@@ -670,6 +690,120 @@ export default function TrialsPanel() {
                         ClinicalTrials.gov Protocol → KG Semantic Layer → SDTM Domain → Subject-Level Data
                       </div>
                     </div>
+
+                    {/* Trial Intelligence */}
+                    {!intelligence && (
+                      <button
+                        className="intelligence-analyze-btn"
+                        onClick={() => analyzeTrialIntelligence(selectedTrial.nct_id)}
+                      >
+                        🔍 Analyze Trial Risk
+                      </button>
+                    )}
+                    {intelligence?.loading && (
+                      <div className="intelligence-loading">
+                        <span className="intelligence-spinner" />
+                        Analyzing {selectedTrial.nct_id} against historical comparables…
+                      </div>
+                    )}
+                    {intelligence?.error && (
+                      <div className="intelligence-error">
+                        ⚠ Intelligence unavailable: {intelligence.error}
+                      </div>
+                    )}
+                    {intelligence?.data && (() => {
+                      const { risk_signals: rs, briefing, comparable_examples } = intelligence.data;
+                      return (
+                        <div className="intelligence-panel">
+                          <div className="intelligence-header">
+                            <span className="intelligence-icon">🧠</span>
+                            <h4>Trial Intelligence Briefing</h4>
+                            <button className="intelligence-close" onClick={() => setIntelligence(null)}>×</button>
+                          </div>
+
+                          <div className="intelligence-metrics">
+                            <div className={`intel-metric ${rs.high_termination_risk ? "intel-risk" : "intel-ok"}`}>
+                              <span className="intel-metric-val">
+                                {rs.termination_rate_pct !== null ? `${rs.termination_rate_pct}%` : "—"}
+                              </span>
+                              <span className="intel-metric-label">Early Termination Rate</span>
+                              <span className="intel-metric-sub">vs ~15% industry avg</span>
+                            </div>
+                            <div className="intel-metric">
+                              <span className="intel-metric-val">
+                                {rs.median_duration_days ? `${Math.round(rs.median_duration_days / 30.4)} mo` : "—"}
+                              </span>
+                              <span className="intel-metric-label">Median Duration</span>
+                              <span className="intel-metric-sub">
+                                {rs.duration_p25_days && rs.duration_p75_days
+                                  ? `P25–P75: ${Math.round(rs.duration_p25_days / 30.4)}–${Math.round(rs.duration_p75_days / 30.4)} mo`
+                                  : "comparable trials"}
+                              </span>
+                            </div>
+                            <div className={`intel-metric ${rs.enrollment_vs_median !== null && Math.abs(rs.enrollment_vs_median) > 50 ? "intel-warn" : "intel-ok"}`}>
+                              <span className="intel-metric-val">
+                                {rs.median_comparable_enrollment
+                                  ? rs.median_comparable_enrollment.toLocaleString()
+                                  : "—"}
+                              </span>
+                              <span className="intel-metric-label">Median Comparable Enroll</span>
+                              <span className="intel-metric-sub">
+                                {rs.enrollment_vs_median !== null
+                                  ? `This trial: ${rs.enrollment_vs_median > 0 ? "+" : ""}${rs.enrollment_vs_median}% vs median`
+                                  : `${rs.comparable_count} comparable trials`}
+                              </span>
+                            </div>
+                          </div>
+
+                          {rs.common_stop_reasons?.length > 0 && (
+                            <div className="intel-stop-reasons">
+                              <span className="intel-label">Common early stop reasons:</span>
+                              {rs.common_stop_reasons.map((r, i) => (
+                                <span key={i} className="intel-stop-tag">{r}</span>
+                              ))}
+                            </div>
+                          )}
+
+                          {briefing ? (
+                            <div className="intelligence-briefing">
+                              {briefing.split("\n\n").map((para, i) => (
+                                <p key={i}>{para}</p>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="intelligence-no-llm">
+                              <em>AI narrative unavailable — add ANTHROPIC_API_KEY to enable plain-English briefing.</em>
+                            </div>
+                          )}
+
+                          {comparable_examples?.length > 0 && (
+                            <details className="intel-comparables">
+                              <summary>View {rs.comparable_count} comparable trials sampled</summary>
+                              <table className="intel-comparables-table">
+                                <thead>
+                                  <tr><th>NCT ID</th><th>Status</th><th>Duration</th><th>Enrollment</th><th>Stop Reason</th></tr>
+                                </thead>
+                                <tbody>
+                                  {comparable_examples.map((c) => (
+                                    <tr key={c.nct_id}>
+                                      <td>
+                                        <a href={`https://clinicaltrials.gov/study/${c.nct_id}`} target="_blank" rel="noreferrer">
+                                          {c.nct_id}
+                                        </a>
+                                      </td>
+                                      <td>{c.status}</td>
+                                      <td>{c.duration_months != null ? `${c.duration_months} mo` : "—"}</td>
+                                      <td>{c.enrollment ? c.enrollment.toLocaleString() : "—"}</td>
+                                      <td>{c.why_stopped || "—"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

@@ -297,23 +297,14 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
     ? Object.values(aggData.enrollment).some((c) => c > 0)
     : trials.some((t) => t.enrollment != null);
 
-  // Don't show a chart if all results share the same single value (no distribution)
-  const hasDistribution = (data) => data.length > 1;
+  const hasData = (data) => data.length > 0;
 
   if (!aggData && trials.length === 0) return null;
 
-  // Hide entire section if nothing has meaningful distribution
-  const enrollBuckets = hasEnrollment
-    ? (aggData?.enrollment ? Object.keys(aggData.enrollment).filter((k) => aggData.enrollment[k] > 0) :
-        ["< 100","100\u2013499","500\u2013999","1k\u20134.9k","5k\u201319k","\u2265 20k"].filter((label) => {
-          const RANGES = {"< 100":[0,99],"100\u2013499":[100,499],"500\u2013999":[500,999],"1k\u20134.9k":[1000,4999],"5k\u201319k":[5000,19999],"\u2265 20k":[20000,Infinity]};
-          const r = RANGES[label]; return trials.some(t => t.enrollment != null && t.enrollment >= r[0] && t.enrollment <= r[1]);
-        }))
-    : [];
-  const anyDistribution =
-    hasDistribution(phaseData) || hasDistribution(statusData) || hasDistribution(sponsorData) || enrollBuckets.length > 1;
+  const hasAnyData =
+    hasData(phaseData) || hasData(statusData) || hasData(sponsorData) || hasEnrollment;
 
-  if (!anyDistribution) return null;
+  if (!hasAnyData) return null;
 
   return (
     <div className="trials-charts-section">
@@ -328,10 +319,10 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
         )}
       </div>
       <div className="trials-charts-grid">
-        {hasDistribution(phaseData) && (
+        {hasData(phaseData) && (
           phaseData.length > 3 ? (
             <SvgBarChart
-              data={phaseData}
+              data={[...phaseData].sort((a, b) => b[1] - a[1])}
               title="Phase Distribution"
               field="phase"
               displayMap={PHASE_DISPLAY}
@@ -349,7 +340,7 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
             />
           )
         )}
-        {hasDistribution(statusData) && (
+        {hasData(statusData) && (
           <SvgBarChart
             data={statusData}
             title="Recruitment Status"
@@ -366,7 +357,7 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
             onFilter={onFilter}
           />
         )}
-        {hasDistribution(sponsorData) && (
+        {hasData(sponsorData) && (
           <SvgBarChart
             data={sponsorData}
             title="Top Sponsors"

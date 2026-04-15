@@ -324,6 +324,207 @@ app.get("/api/trials", async (req, res) => {
   }
 });
 
+// ── Trial Intelligence ────────────────────────────────────────────────────────
+
+app.get("/api/trial-intelligence", async (req, res) => {
+  const { nct_id } = req.query;
+  if (!nct_id || !/^NCT\d{8}$/.test(nct_id.toUpperCase())) {
+    return res.status(400).json({ error: "Valid nct_id required (e.g. NCT01234567)" });
+  }
+  const id = nct_id.toUpperCase();
+
+  if (!db) {
+    return res.status(503).json({ error: "SQLite snapshot required for trial intelligence" });
+  }
+
+  // 1. Fetch target trial
+  const trial = db.prepare(`
+    SELECT s.*,
+      bs.description,
+      (SELECT group_concat(c.name, '; ') FROM conditions c WHERE c.nct_id = s.nct_id) AS conditions_text,
+      (SELECT group_concat(i.name, '; ')  FROM interventions i WHERE i.nct_id = s.nct_id) AS interventions_text,
+      (SELECT sp.name FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' LIMIT 1) AS lead_sponsor
+    FROM studies s
+    LEFT JOIN brief_summaries bs ON bs.nct_id = s.nct_id
+    WHERE s.nct_id = ?
+  `).get(id);
+
+  if (!trial) return res.status(404).json({ error: `Trial ${id} not found in snapshot` });
+
+  // 2. Find condition-similar completed/terminated trials via FTS5 then same-phase filter
+  const topKeyword = (trial.conditions_text || trial.brief_title || "")
+    .split(/[;,]/)[0]
+    .replace(/[^a-zA-Z0-9 ]/g, " ")
+    .trim();
+
+  let comparables = [];
+  if (topKeyword) {
+    try {
+      const ftsRows = db.prepare(
+        `SELECT nct_id FROM studies_fts WHERE studies_fts MATCH ? LIMIT 300`
+      ).all(`"${topKeyword.replace(/"/g, '""')}"`);
+      const ids = ftsRows.map((r) => r.nct_id).filter((x) => x !== id);
+      if (ids.length > 0) {
+        const ph = ids.map(() => "?").join(",");
+        comparables = db.prepare(`
+          SELECT nct_id, brief_title, overall_status, phase, enrollment, enrollment_type,
+            start_date, completion_date, why_stopped,
+            CAST(julianday(completion_date) - julianday(start_date) AS INTEGER) AS duration_days
+          FROM studies
+          WHERE overall_status IN ('COMPLETED','TERMINATED')
+            AND phase = ?
+            AND nct_id IN (${ph})
+            AND start_date IS NOT NULL AND completion_date IS NOT NULL
+          LIMIT 80
+        `).all(trial.phase, ...ids);
+      }
+    } catch (_) { /* FTS error — fall through */ }
+  }
+
+  // Phase-only fallback
+  if (comparables.length < 10) {
+    comparables = db.prepare(`
+      SELECT nct_id, brief_title, overall_status, phase, enrollment, enrollment_type,
+        start_date, completion_date, why_stopped,
+        CAST(julianday(completion_date) - julianday(start_date) AS INTEGER) AS duration_days
+      FROM studies
+      WHERE overall_status IN ('COMPLETED','TERMINATED')
+        AND phase = ?
+        AND nct_id != ?
+        AND start_date IS NOT NULL AND completion_date IS NOT NULL
+      ORDER BY RANDOM() LIMIT 80
+    `).all(trial.phase, id);
+  }
+
+  // 3. Compute risk signals
+  const completed = comparables.filter((c) => c.overall_status === "COMPLETED");
+  const terminated = comparables.filter((c) => c.overall_status === "TERMINATED");
+  const termRate = comparables.length > 0
+    ? parseFloat(((terminated.length / comparables.length) * 100).toFixed(1))
+    : null;
+
+  const durations = comparables.map((c) => c.duration_days).filter((d) => d > 30 && d < 5475);
+  durations.sort((a, b) => a - b);
+  const medianDuration = durations.length > 0 ? durations[Math.floor(durations.length / 2)] : null;
+  const p25Duration = durations.length > 0 ? durations[Math.floor(durations.length * 0.25)] : null;
+  const p75Duration = durations.length > 0 ? durations[Math.floor(durations.length * 0.75)] : null;
+
+  const enrollments = comparables.filter((c) => c.enrollment > 0).map((c) => parseInt(c.enrollment));
+  enrollments.sort((a, b) => a - b);
+  const medianEnroll = enrollments.length > 0 ? enrollments[Math.floor(enrollments.length / 2)] : null;
+
+  const stopReasons = terminated
+    .filter((c) => c.why_stopped)
+    .map((c) => c.why_stopped)
+    .slice(0, 6);
+
+  const riskSignals = {
+    comparable_count: comparables.length,
+    completed_count: completed.length,
+    terminated_count: terminated.length,
+    termination_rate_pct: termRate,
+    high_termination_risk: termRate !== null && termRate > 20,
+    median_duration_days: medianDuration,
+    duration_p25_days: p25Duration,
+    duration_p75_days: p75Duration,
+    median_comparable_enrollment: medianEnroll,
+    target_enrollment: trial.enrollment ? parseInt(trial.enrollment) : null,
+    enrollment_vs_median: trial.enrollment && medianEnroll
+      ? parseFloat(((parseInt(trial.enrollment) / medianEnroll - 1) * 100).toFixed(1))
+      : null,
+    common_stop_reasons: stopReasons,
+  };
+
+  // 4. Optional LLM briefing via Anthropic
+  let briefing = null;
+  const { ANTHROPIC_API_KEY } = process.env;
+  if (ANTHROPIC_API_KEY) {
+    try {
+      const systemPrompt = `You are a senior clinical trial operations expert advising a CRO sponsor executive.
+Respond in concise, plain English — no bullet overload, 3-5 short paragraphs.
+Focus on practical operational risk, not academic commentary.`;
+
+      const userMsg = `Analyze this clinical trial and provide an operational risk briefing.
+
+TRIAL:
+- NCT ID: ${trial.nct_id}
+- Title: ${trial.brief_title}
+- Status: ${trial.overall_status}
+- Phase: ${trial.phase || "Unknown"}
+- Study Type: ${trial.study_type || "Unknown"}
+- Target Enrollment: ${trial.enrollment ? trial.enrollment.toLocaleString() : "not specified"}
+- Start Date: ${trial.start_date || "unknown"}
+- Primary Completion: ${trial.primary_completion_date || "unknown"}
+- Lead Sponsor: ${trial.lead_sponsor || "unknown"}
+- Conditions: ${trial.conditions_text || "not specified"}
+- Interventions: ${trial.interventions_text || "not specified"}
+${trial.why_stopped ? `- Why Stopped: ${trial.why_stopped}` : ""}
+
+COMPARABLE TRIAL BENCHMARK (${riskSignals.comparable_count} completed/terminated ${trial.phase} trials for ${topKeyword}):
+- Early termination rate: ${termRate !== null ? termRate + "%" : "unknown"} (industry benchmark ~15%)
+- Median trial duration: ${medianDuration ? Math.round(medianDuration / 30.4) + " months" : "unknown"}
+- Duration range (P25–P75): ${p25Duration && p75Duration ? Math.round(p25Duration / 30.4) + "–" + Math.round(p75Duration / 30.4) + " months" : "unknown"}
+- Median enrollment in comparables: ${medianEnroll ? medianEnroll.toLocaleString() : "unknown"}
+- Enrollment delta vs. comparable median: ${riskSignals.enrollment_vs_median !== null ? riskSignals.enrollment_vs_median + "%" : "unknown"}
+${stopReasons.length > 0 ? `- Common early stop reasons in comparables: ${stopReasons.join("; ")}` : ""}
+
+Write a 3–5 paragraph operational risk briefing covering:
+1. Overall risk posture for this trial
+2. Timeline risks based on comparable duration benchmarks
+3. Enrollment risks vs. comparable performance
+4. Key watch-out signals and recommended mitigations`;
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5",
+          max_tokens: 600,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMsg }],
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        briefing = data.content?.[0]?.text || null;
+      } else {
+        console.error("[intelligence] Anthropic API error:", response.status, await response.text());
+      }
+    } catch (e) {
+      console.error("[intelligence] LLM call failed:", e.message);
+    }
+  }
+
+  return res.json({
+    trial: {
+      nct_id: trial.nct_id,
+      title: trial.brief_title,
+      status: trial.overall_status,
+      phase: trial.phase,
+      study_type: trial.study_type,
+      enrollment: trial.enrollment,
+      start_date: trial.start_date,
+      primary_completion_date: trial.primary_completion_date,
+      conditions: trial.conditions_text,
+      sponsor: trial.lead_sponsor,
+    },
+    risk_signals: riskSignals,
+    briefing,
+    comparable_examples: comparables.slice(0, 5).map((c) => ({
+      nct_id: c.nct_id,
+      title: c.brief_title,
+      status: c.overall_status,
+      duration_months: c.duration_days ? Math.round(c.duration_days / 30.4) : null,
+      enrollment: c.enrollment,
+      why_stopped: c.why_stopped,
+    })),
+  });
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });
