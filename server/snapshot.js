@@ -32,7 +32,7 @@ if (!AACT_USER || !AACT_PASSWORD) {
   process.exit(1);
 }
 
-const BATCH = 5000; // rows per INSERT batch
+const BATCH = 5000; // rows per SELECT ... LIMIT/OFFSET batch
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,18 +40,20 @@ function elapsed(start) {
   return ((Date.now() - start) / 1000).toFixed(1) + "s";
 }
 
-async function* streamQuery(client, sql, params = []) {
-  const cursor = client.query(new pg.Cursor(sql, params));
-  try {
-    while (true) {
-      const rows = await new Promise((res, rej) =>
-        cursor.read(BATCH, (err, r) => (err ? rej(err) : res(r)))
-      );
-      if (rows.length === 0) break;
-      yield rows;
-    }
-  } finally {
-    await new Promise((res) => cursor.close(res));
+/** Stream a full table in BATCH-sized LIMIT/OFFSET pages */
+async function* streamTable(pool, sql, countSql) {
+  if (countSql) {
+    const { rows } = await pool.query(countSql);
+    const total = parseInt(rows[0].count);
+    console.log(`  (${total.toLocaleString()} rows total)`);
+  }
+  let offset = 0;
+  while (true) {
+    const { rows } = await pool.query(`${sql} LIMIT ${BATCH} OFFSET ${offset}`);
+    if (rows.length === 0) break;
+    yield rows;
+    offset += rows.length;
+    if (rows.length < BATCH) break;
   }
 }
 
@@ -76,7 +78,8 @@ async function main() {
     connectionTimeoutMillis: 30000,
     statement_timeout: 600000, // 10 min for large tables
   });
-  const client = await pool.connect();
+  // quick connectivity check
+  await pool.query("SELECT 1");
   console.log(`[snapshot] connected to AACT in ${elapsed(t0)}`);
 
   // Write to a temp file, then rename — so the running server sees an atomic swap
@@ -157,12 +160,12 @@ async function main() {
 
   // ── Ingest tables ───────────────────────────────────────────────────────────
 
-  async function ingest(label, sql, insertFn) {
+  async function ingest(label, sql, countSql, insertFn) {
     const t = Date.now();
     console.log(`[snapshot] ingesting ${label}…`);
     let total = 0;
     const insertMany = db.transaction(insertFn);
-    for await (const batch of streamQuery(client, sql)) {
+    for await (const batch of streamTable(pool, sql, countSql)) {
       insertMany(batch);
       total += batch.length;
       process.stdout.write(`\r  ${total.toLocaleString()} rows`);
@@ -183,21 +186,24 @@ async function main() {
     `SELECT nct_id, brief_title, overall_status, phase, study_type,
             enrollment, enrollment_type, start_date::text, completion_date::text,
             primary_completion_date::text, has_dmc, why_stopped
-     FROM studies`,
+     FROM studies ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM studies`,
     (rows) => { for (const r of rows) insStudy.run(r.nct_id, r.brief_title, r.overall_status, r.phase, r.study_type, r.enrollment ? parseInt(r.enrollment) : null, r.enrollment_type, r.start_date, r.completion_date, r.primary_completion_date, r.has_dmc ? 1 : 0, r.why_stopped); }
   );
 
-  // conditions (keep up to 5 per study, distinct)
+  // conditions (keep distinct)
   const insCond = db.prepare(`INSERT INTO conditions (nct_id, name) VALUES (?,?)`);
   await ingest("conditions",
-    `SELECT DISTINCT nct_id, name FROM conditions WHERE name IS NOT NULL`,
+    `SELECT DISTINCT nct_id, name FROM conditions WHERE name IS NOT NULL ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM (SELECT DISTINCT nct_id, name FROM conditions WHERE name IS NOT NULL) t`,
     (rows) => { for (const r of rows) insCond.run(r.nct_id, r.name); }
   );
 
   // interventions
   const insIntv = db.prepare(`INSERT INTO interventions (nct_id, intervention_type, name) VALUES (?,?,?)`);
   await ingest("interventions",
-    `SELECT DISTINCT nct_id, intervention_type, name FROM interventions WHERE name IS NOT NULL`,
+    `SELECT DISTINCT nct_id, intervention_type, name FROM interventions WHERE name IS NOT NULL ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM (SELECT DISTINCT nct_id, name FROM interventions WHERE name IS NOT NULL) t`,
     (rows) => { for (const r of rows) insIntv.run(r.nct_id, r.intervention_type, r.name); }
   );
 
@@ -205,14 +211,16 @@ async function main() {
   const insSponsor = db.prepare(`INSERT INTO sponsors (nct_id, name, lead_or_collaborator) VALUES (?,?,?)`);
   await ingest("sponsors",
     `SELECT nct_id, name, lead_or_collaborator FROM sponsors
-     WHERE lead_or_collaborator = 'lead' AND name IS NOT NULL`,
+     WHERE lead_or_collaborator = 'lead' AND name IS NOT NULL ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM sponsors WHERE lead_or_collaborator = 'lead' AND name IS NOT NULL`,
     (rows) => { for (const r of rows) insSponsor.run(r.nct_id, r.name, r.lead_or_collaborator); }
   );
 
   // brief_summaries
   const insSummary = db.prepare(`INSERT OR REPLACE INTO brief_summaries (nct_id, description) VALUES (?,?)`);
   await ingest("brief_summaries",
-    `SELECT nct_id, description FROM brief_summaries WHERE description IS NOT NULL`,
+    `SELECT nct_id, description FROM brief_summaries WHERE description IS NOT NULL ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM brief_summaries WHERE description IS NOT NULL`,
     (rows) => { for (const r of rows) insSummary.run(r.nct_id, r.description); }
   );
 
@@ -246,7 +254,6 @@ async function main() {
   metaIns.run("aact_host", AACT_HOST);
 
   db.close();
-  client.release();
   await pool.end();
 
   // Atomic swap
