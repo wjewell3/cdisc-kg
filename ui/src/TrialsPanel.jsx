@@ -50,6 +50,7 @@ export default function TrialsPanel() {
   const [baseLoading, setBaseLoading] = useState(true);
   const [aggData, setAggData] = useState(null);
   const [chartResults, setChartResults] = useState(null); // rows re-fetched on chart filter clicks
+  const [chartAggData, setChartAggData] = useState(null); // aggregates re-fetched on chart filter clicks
   const [displayCount, setDisplayCount] = useState(25);
 
   // Auto-load browse dataset + full-DB aggregates in parallel on mount
@@ -71,6 +72,7 @@ export default function TrialsPanel() {
     const serverFilters = chartFilters.filter((f) => f.field !== "_enroll_range");
     if (serverFilters.length === 0) {
       setChartResults(null);
+      setChartAggData(null);
       return;
     }
     const params = {};
@@ -83,8 +85,12 @@ export default function TrialsPanel() {
     }
     const tid = setTimeout(async () => {
       try {
-        const data = await executeTrialQuery(params, 500);
+        const [data, agg] = await Promise.all([
+          executeTrialQuery(params, 500),
+          executeTrialAgg(params),
+        ]);
         setChartResults(data);
+        setChartAggData(agg);
         setDisplayCount(25);
       } catch {}
     }, 150);
@@ -241,6 +247,7 @@ export default function TrialsPanel() {
   const reset = useCallback(() => {
     setChartFilters([]);
     setChartResults(null);
+    setChartAggData(null);
     setResults(null);
     setSelectedTrial(null);
     setError(null);
@@ -481,7 +488,7 @@ export default function TrialsPanel() {
                 {/* Charts */}
                 <TrialsCharts
                   trials={(results || baseResults).results}
-                  aggData={aggData}
+                  aggData={chartAggData || aggData}
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
                 />
