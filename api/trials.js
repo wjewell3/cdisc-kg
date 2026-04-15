@@ -13,7 +13,22 @@
 
 import { Pool } from "pg";
 
-// Connection pool (reused between warm invocations)
+// ── OKE proxy (preferred) ──────────────────────────────────────────────────
+// If TRIALS_API_BASE is set (server-side, non-VITE), proxy the request there.
+// This keeps the browser on HTTPS and avoids mixed-content issues.
+const OKE_BASE = (process.env.TRIALS_API_BASE || "").replace(/\/$/, "");
+
+async function proxyToOke(req, res) {
+  const url = new URL(`${OKE_BASE}/api/trials`);
+  for (const [k, v] of Object.entries(req.query)) {
+    url.searchParams.set(k, v);
+  }
+  const upstream = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) });
+  const body = await upstream.json();
+  return res.status(upstream.status).json(body);
+}
+
+// ── PostgreSQL direct (fallback) ───────────────────────────────────────────
 const pool = new Pool({
   host: "aact-db.ctti-clinicaltrials.org",
   port: 5432,
@@ -27,12 +42,20 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // CORS — allow the Vercel frontend origin
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  // Proxy to OKE SQLite API when available
+  if (OKE_BASE) {
+    try {
+      return await proxyToOke(req, res);
+    } catch (err) {
+      console.warn("OKE proxy failed, falling back to AACT pg:", err.message);
+    }
+  }
 
   const {
     q = "",
