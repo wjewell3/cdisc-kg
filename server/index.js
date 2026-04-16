@@ -309,6 +309,7 @@ app.get("/api/trials", async (req, res) => {
     limit: rawLimit = "50", mode = "search",
     condition = "", intervention = "",
     min_enrollment = "", max_enrollment = "",
+    sponsor_q = "",
   } = req.query;
 
   const limit = Math.min(parseInt(rawLimit, 10) || 100, 500);
@@ -319,6 +320,25 @@ app.get("/api/trials", async (req, res) => {
         ? sqliteStats({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment })
         : await pgStats({ q, condition, intervention, phase, status, sponsor });
       return res.json(result);
+    }
+
+    if (mode === "sponsors") {
+      // Return all sponsors matching current filters + optional sponsor name search.
+      // Excludes the sponsor dimension from the WHERE so clicking a sponsor still shows counts.
+      if (!db) return res.status(503).json({ error: "SQLite required" });
+      const { where, params: wParams } = buildSqliteWhere({
+        q, condition, intervention, phase, status, sponsor: "", min_enrollment, max_enrollment,
+      });
+      const likeClause = sponsor_q ? "AND LOWER(sp.name) LIKE LOWER(?)" : "";
+      const likeParams = sponsor_q ? [`%${sponsor_q}%`] : [];
+      const rows = db.prepare(`
+        SELECT sp.name AS val, COUNT(*) AS count
+        FROM studies s
+        JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
+        ${where} ${likeClause}
+        GROUP BY sp.name ORDER BY count DESC LIMIT 100
+      `).all(...wParams, ...likeParams);
+      return res.json({ sponsors: rows });
     }
 
     const result = db

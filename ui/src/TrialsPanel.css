@@ -914,6 +914,23 @@
 }
 .trials-svg-wrap:hover { border-color: #388bfd; }
 
+.trials-svg-wrap-outer {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 8px;
+  transition: border-color 0.15s;
+}
+.trials-svg-wrap-outer:hover { border-color: #388bfd; }
+/* inner SvgBarChart wrapper should be borderless when nested */
+.trials-svg-wrap-outer .trials-svg-wrap {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+.trials-svg-wrap-outer .trials-svg-wrap:hover { border-color: transparent; }
+
 .sponsor-search-input {
   width: 100%;
   box-sizing: border-box;
@@ -928,6 +945,12 @@
 }
 .sponsor-search-input::placeholder { color: #6e7681; }
 .sponsor-search-input:focus { border-color: #388bfd; }
+.sponsor-search-loading {
+  font-size: 10px;
+  color: #6e7681;
+  margin-bottom: 4px;
+  padding-left: 2px;
+}
 
 .trials-chart-svg {
   display: block;

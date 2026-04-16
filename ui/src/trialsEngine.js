@@ -155,6 +155,23 @@ export async function executeTrialAgg(params) {
   return res.json();
 }
 
+/**
+ * Search all sponsors (not just top N) for the given filter context.
+ * Returns [[name, count], ...] sorted by count desc, up to 100 results.
+ */
+export async function executeSponsorSearch(params, sponsorQ) {
+  const url = new URL(trialsUrl());
+  url.searchParams.set("mode", "sponsors");
+  for (const [k, v] of Object.entries(params)) {
+    if (v) url.searchParams.set(k, v);
+  }
+  if (sponsorQ) url.searchParams.set("sponsor_q", sponsorQ);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.sponsors || []).map(({ val, count }) => [val, count]);
+}
+
 /** Browsable filter catalog — all available options per param, for the filter picker UI */
 export const FILTER_CATALOG = [
   {

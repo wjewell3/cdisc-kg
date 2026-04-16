@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
-import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts from "./TrialsCharts";
 import "./TrialsPanel.css";
 
@@ -91,12 +91,9 @@ export default function TrialsPanel() {
     "< 100": [0, 99], "100\u2013499": [100, 499], "500\u2013999": [500, 999],
     "1k\u20134.9k": [1000, 4999], "5k\u201319k": [5000, 19999], "\u2265 20k": [20000, Infinity],
   };
-  useEffect(() => {
-    if (chartFilters.length === 0) {
-      setChartResults(null);
-      setChartAggData(null);
-      return;
-    }
+
+  // Build the current effective filter params (text search + chart filters).
+  const buildCurrentParams = useCallback(() => {
     const params = {};
     for (const r of activeResolutions) {
       if (r.value) params[r.param] = params[r.param] ? `${params[r.param]},${r.value}` : r.value;
@@ -114,6 +111,21 @@ export default function TrialsPanel() {
         }
       }
     }
+    return params;
+  }, [activeResolutions, chartFilters]);
+
+  // Sponsor search — returns all sponsors matching current filters + name query.
+  const fetchSponsors = useCallback((sponsorQ) => {
+    return executeSponsorSearch(buildCurrentParams(), sponsorQ);
+  }, [buildCurrentParams]);
+
+  useEffect(() => {
+    if (chartFilters.length === 0) {
+      setChartResults(null);
+      setChartAggData(null);
+      return;
+    }
+    const params = buildCurrentParams();
     const tid = setTimeout(async () => {
       try {
         const [data, agg] = await Promise.all([
@@ -126,7 +138,7 @@ export default function TrialsPanel() {
       } catch {}
     }, 150);
     return () => clearTimeout(tid);
-  }, [chartFilters, activeResolutions]);
+  }, [chartFilters, activeResolutions, buildCurrentParams]);
 
   const rerunWithResolutions = useCallback(async (resols) => {
     setSelectedTrial(null);
@@ -509,6 +521,7 @@ export default function TrialsPanel() {
                   aggData={chartAggData || aggData}
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
+                  fetchSponsors={fetchSponsors}
                 />
 
                 {/* Results list — paginated */}

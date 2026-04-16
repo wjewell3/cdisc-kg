@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 
 const PALETTE = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
 
@@ -47,14 +47,8 @@ function filterTrials(trials, activeFilters, excludeField = null) {
   );
 }
 
-function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8, searchable = false, total = null }) {
-  const [search, setSearch] = useState("");
-
-  const filtered = searchable && search
-    ? data.filter(([label]) => label.toLowerCase().includes(search.toLowerCase()))
-    : data;
-
-  const displayData = filtered.slice(0, maxItems);
+function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8, total = null }) {
+  const displayData = data.slice(0, maxItems);
 
   // Append an "(other sponsors)" bar when total is provided and not all are shown
   const shownSum = displayData.reduce((s, [, c]) => s + c, 0);
@@ -74,15 +68,6 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8,
 
   return (
     <div className="trials-svg-wrap">
-      {searchable && (
-        <input
-          className="sponsor-search-input"
-          type="text"
-          placeholder="Search sponsors…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      )}
       <svg
         viewBox={`0 0 360 ${svgH}`}
         preserveAspectRatio="xMidYMid meet"
@@ -292,8 +277,40 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
   );
 }
 
-export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter }) {
+export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
+
+  // Sponsor search state — async, queries all sponsors on the server
+  const [sponsorSearch, setSponsorSearch] = useState("");
+  const [sponsorSearchData, setSponsorSearchData] = useState(null); // null = use default aggData
+  const [sponsorSearchLoading, setSponsorSearchLoading] = useState(false);
+  const sponsorSearchRef = useRef(null);
+
+  useEffect(() => {
+    if (!sponsorSearch.trim()) {
+      setSponsorSearchData(null);
+      return;
+    }
+    setSponsorSearchLoading(true);
+    const tid = setTimeout(() => {
+      const thisSearch = sponsorSearch;
+      fetchSponsors(thisSearch).then((results) => {
+        // Only apply if search hasn't changed
+        if (sponsorSearchRef.current === thisSearch) {
+          setSponsorSearchData(results);
+          setSponsorSearchLoading(false);
+        }
+      }).catch(() => setSponsorSearchLoading(false));
+    }, 250);
+    sponsorSearchRef.current = sponsorSearch;
+    return () => clearTimeout(tid);
+  }, [sponsorSearch, fetchSponsors]);
+
+  // Reset search results when filters change so top-N are shown again
+  useEffect(() => {
+    setSponsorSearch("");
+    setSponsorSearchData(null);
+  }, [activeFilters, aggData]);
 
   const phaseData = useMemo(() => {
     if (aggData?.phase) {
@@ -312,9 +329,10 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
   }, [trials, activeFilters, aggData]);
 
   const sponsorData = useMemo(() => {
-    if (aggData?.sponsor) return aggData.sponsor; // full top-20, chart handles slicing
+    if (sponsorSearchData !== null) return sponsorSearchData;
+    if (aggData?.sponsor) return aggData.sponsor;
     return countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown");
-  }, [trials, activeFilters, aggData]);
+  }, [trials, activeFilters, aggData, sponsorSearchData]);
 
   const totalCount = aggData?.total ?? trials.length;
   const hasEnrollment = aggData?.enrollment
@@ -382,16 +400,25 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
           />
         )}
         {hasData(sponsorData) && (
-          <SvgBarChart
-            data={sponsorData}
-            title="Top Sponsors"
-            field="sponsor"
-            activeValues={getActiveVals("sponsor")}
-            onFilter={onFilter}
-            maxItems={8}
-            searchable={true}
-            total={totalCount}
-          />
+          <div className="trials-svg-wrap-outer">
+            <input
+              className="sponsor-search-input"
+              type="text"
+              placeholder="Search all sponsors…"
+              value={sponsorSearch}
+              onChange={(e) => setSponsorSearch(e.target.value)}
+            />
+            {sponsorSearchLoading && <div className="sponsor-search-loading">Searching…</div>}
+            <SvgBarChart
+              data={sponsorData}
+              title="Top Sponsors"
+              field="sponsor"
+              activeValues={getActiveVals("sponsor")}
+              onFilter={onFilter}
+              maxItems={10}
+              total={sponsorSearch ? null : totalCount}
+            />
+          </div>
         )}
       </div>
     </div>
