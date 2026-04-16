@@ -44,6 +44,25 @@ export default function RulesManager({
 
   const cancelEdit = () => setEditId(null);
 
+  // Inline edit state for enrollment bounds
+  const [editBounds, setEditBounds] = useState(false);
+  const [editMin, setEditMin] = useState("");
+  const [editMax, setEditMax] = useState("");
+
+  const startEditBounds = () => {
+    setEditMin(enrollMin !== null ? String(enrollMin) : "");
+    setEditMax(enrollMax !== null ? String(enrollMax) : "");
+    setEditBounds(true);
+  };
+
+  const saveEditBounds = () => {
+    setEnrollmentBounds(
+      editMin !== "" ? parseInt(editMin, 10) : null,
+      editMax !== "" ? parseInt(editMax, 10) : null,
+    );
+    setEditBounds(false);
+  };
+
   const saveEdit = () => {
     const rawValues = editRawValues.split("\n").map((v) => v.trim()).filter(Boolean);
     if (!editCanonical.trim() || rawValues.length === 0) return;
@@ -243,15 +262,39 @@ export default function RulesManager({
             <h3>Active Rules</h3>
             {(enrollMin !== null || enrollMax !== null) && (
               <div className="rm-rule-row rm-bounds-active">
-                <div className="rm-rule-info">
-                  <span className="rm-rule-canonical">Enrollment bounds</span>
-                  <span className="rm-rule-raw">
-                    {enrollMin !== null ? `min ${enrollMin.toLocaleString()}` : ""}
-                    {enrollMin !== null && enrollMax !== null ? " · " : ""}
-                    {enrollMax !== null ? `max ${enrollMax.toLocaleString()}` : ""}
-                  </span>
-                </div>
-                <button className="rm-remove-btn" onClick={() => setEnrollmentBounds(null, null)} title="Clear bounds">×</button>
+                {editBounds ? (
+                  <div className="rm-edit-form">
+                    <div className="rm-bounds-row">
+                      <label className="rm-bounds-label">
+                        Min
+                        <input type="number" className="rm-bounds-input" placeholder="e.g. 10" value={editMin} onChange={(e) => setEditMin(e.target.value)} />
+                      </label>
+                      <label className="rm-bounds-label">
+                        Max
+                        <input type="number" className="rm-bounds-input" placeholder="e.g. 500000" value={editMax} onChange={(e) => setEditMax(e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="rm-edit-actions">
+                      <button className="rm-confirm-btn" onClick={saveEditBounds}>✓ Save</button>
+                      <button className="rm-discard-btn" onClick={() => setEditBounds(false)}>✗ Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rm-rule-info">
+                      <span className="rm-rule-canonical">Enrollment bounds</span>
+                      <span className="rm-rule-raw">
+                        {enrollMin !== null ? `min ${enrollMin.toLocaleString()}` : ""}
+                        {enrollMin !== null && enrollMax !== null ? " · " : ""}
+                        {enrollMax !== null ? `max ${enrollMax.toLocaleString()}` : ""}
+                      </span>
+                    </div>
+                    <div className="rm-rule-actions">
+                      <button className="rm-edit-btn" onClick={startEditBounds} title="Edit">✎</button>
+                      <button className="rm-remove-btn" onClick={() => setEnrollmentBounds(null, null)} title="Clear bounds">×</button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
             {totalGroupings === 0 && enrollMin === null && enrollMax === null ? (
