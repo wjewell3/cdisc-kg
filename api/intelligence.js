@@ -22,11 +22,17 @@ export default async function handler(req, res) {
   if (nct_id) url.searchParams.set("nct_id", nct_id);
 
   try {
-    const upstream = await fetch(url.toString(), { signal: AbortSignal.timeout(25000) });
+    const upstream = await fetch(url.toString(), { signal: AbortSignal.timeout(55000) });
     const body = await upstream.json();
     return res.status(upstream.status).json(body);
   } catch (err) {
     console.error("OKE trial-intelligence proxy failed:", err.message);
-    return res.status(502).json({ error: "Intelligence proxy failed", detail: err.message });
+    const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+    return res.status(502).json({
+      error: isTimeout
+        ? "Analysis timed out — the OKE server is busy. Try again in a moment."
+        : "Intelligence proxy failed",
+      detail: err.message,
+    });
   }
 }

@@ -53,9 +53,28 @@ export default function TrialsPanel() {
   const [chartAggData, setChartAggData] = useState(null); // aggregates re-fetched on chart filter clicks
   const [displayCount, setDisplayCount] = useState(25);
   const [intelligence, setIntelligence] = useState(null); // { data, loading, error }
+  const [intelStep, setIntelStep] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
 
+  const INTEL_STEPS = [
+    "Fetching trial record from AACT snapshot…",
+    "Searching for completed trials with similar conditions…",
+    "Computing termination rate, duration & enrollment benchmarks…",
+    "Asking GPT-4.1 to write the risk briefing…",
+    "Almost there — waiting on the AI…",
+  ];
+
+  useEffect(() => {
+    if (!intelligence?.loading) { setIntelStep(0); return; }
+    const timings = [800, 2500, 4500, 7000];
+    const timers = timings.map((delay, i) =>
+      setTimeout(() => setIntelStep(i + 1), delay)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [intelligence?.loading]);
+
   const analyzeTrialIntelligence = useCallback(async (nct_id) => {
+    setIntelStep(0);
     setIntelligence({ loading: true, data: null, error: null });
     try {
       const base = import.meta.env.VITE_TRIALS_API_BASE || "";
@@ -623,7 +642,7 @@ export default function TrialsPanel() {
                     {intelligence?.loading && (
                       <div className="intelligence-loading">
                         <span className="intelligence-spinner" />
-                        Analyzing {selectedTrial.nct_id} against historical comparables…
+                        <span className="intel-step-msg">{INTEL_STEPS[intelStep]}</span>
                       </div>
                     )}
                     {intelligence?.error && (
