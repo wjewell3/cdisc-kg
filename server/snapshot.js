@@ -255,8 +255,12 @@ async function main() {
   db.close();
   await pool.end();
 
-  // Atomic swap
-  const { renameSync } = await import("fs");
+  // Atomic swap — remove any stale WAL/SHM files first so SQLite doesn't try
+  // to apply them to the new database and cause "disk image is malformed".
+  const { renameSync, rmSync } = await import("fs");
+  for (const suffix of ["-wal", "-shm"]) {
+    try { rmSync(DB_PATH + suffix); } catch { /* ignore if absent */ }
+  }
   renameSync(TMP_PATH, DB_PATH);
 
   console.log(`[snapshot] complete — total time ${elapsed(t0)}`);
