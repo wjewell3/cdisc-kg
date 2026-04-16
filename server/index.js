@@ -1584,6 +1584,178 @@ app.get("/api/graph/stats", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/graph/query
+ * Natural language → Cypher → results → narrative.
+ * Lets operational experts ask their own graph questions.
+ *
+ * Body: { question: "Which sponsors..." }
+ * Returns: { cypher, columns, rows, narrative, cached }
+ */
+const GRAPH_SCHEMA_PROMPT = `You have access to a Neo4j knowledge graph of 580k+ clinical trials from ClinicalTrials.gov.
+
+GRAPH SCHEMA:
+Node labels and their properties:
+  - Trial { nct_id, title, status, phase, study_type, enrollment, enrollment_type, start_date, completion_date, has_dmc, why_stopped, duration_months, facility_count, results_reported, months_to_report, sae_subjects, us_facility, single_facility }
+  - Sponsor { name }
+  - Condition { name }
+  - Intervention { name }
+  - Site { key, name, city, state, country }
+  - Country { name }
+
+Relationships:
+  - (Sponsor)-[:RUNS]->(Trial)
+  - (Trial)-[:TREATS]->(Condition)
+  - (Trial)-[:USES]->(Intervention)
+  - (Trial)-[:AT]->(Site)
+  - (Site)-[:IN_COUNTRY]->(Country)
+  - (Trial)-[:CONDUCTED_IN]->(Country)
+
+CONSTRAINTS:
+  - Trial.nct_id IS UNIQUE
+  - Sponsor.name IS UNIQUE
+  - Condition.name IS UNIQUE
+  - Intervention.name IS UNIQUE
+  - Site.key IS UNIQUE (format: "name||city||country")
+  - Country.name IS UNIQUE
+
+IMPORTANT RULES:
+1. Return ONLY the Cypher query, nothing else. No markdown, no explanation, no backticks.
+2. Always use LIMIT (max 50 rows) to prevent runaway queries.
+3. Use toInteger() for any LIMIT values from parameters.
+4. Prefer COUNT, COLLECT, aggregations over returning raw node lists.
+5. Always alias returned columns with descriptive names using AS.
+6. For text matching, use toLower() and CONTAINS or STARTS WITH — never regex.
+7. Use OPTIONAL MATCH only when nulls are acceptable.
+8. Do NOT use DETACH DELETE, CREATE, SET, MERGE, or any write operations.
+9. Note: Site nodes may have limited data — not all trials have site links loaded yet.
+10. status values are uppercase strings like: "Recruiting", "Completed", "Active, not recruiting", "Terminated", "Withdrawn", "Suspended", "Not yet recruiting"
+11. phase values: "Phase 1", "Phase 2", "Phase 3", "Phase 4", "Phase 1/Phase 2", "Phase 2/Phase 3", "N/A", null
+12. For shortest path queries, use shortestPath() with relationship types [:TREATS|USES*..8]`;
+
+app.post("/api/graph/query", express.json(), async (req, res) => {
+  const { question } = req.body || {};
+  if (!question || typeof question !== "string" || question.trim().length < 5) {
+    return res.status(400).json({ error: "question required (min 5 chars)" });
+  }
+
+  const GITHUB_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
+  if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "LLM not configured" });
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  const sanitized = question.trim().slice(0, 500);
+  console.log(`[graph/query] question: "${sanitized}"`);
+
+  try {
+    // Step 1: Generate Cypher from natural language
+    const cypherResponse = await fetch("https://api.githubcopilot.com/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-4.1",
+        max_tokens: 400,
+        temperature: 0,
+        messages: [
+          { role: "system", content: GRAPH_SCHEMA_PROMPT },
+          { role: "user", content: sanitized },
+        ],
+      }),
+    });
+
+    if (!cypherResponse.ok) {
+      const errText = await cypherResponse.text();
+      console.error("[graph/query] LLM error:", cypherResponse.status, errText);
+      return res.status(502).json({ error: "LLM unavailable" });
+    }
+
+    const cypherData = await cypherResponse.json();
+    let generatedCypher = (cypherData.choices?.[0]?.message?.content || "").trim();
+
+    // Strip markdown fences if LLM wraps in them
+    generatedCypher = generatedCypher.replace(/^```(?:cypher)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+    if (!generatedCypher || generatedCypher.length < 10) {
+      return res.status(422).json({ error: "Could not generate a valid query for that question" });
+    }
+
+    // Safety: reject any write operations
+    const writeOps = /\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE|DROP|CALL\s*\{)\b/i;
+    if (writeOps.test(generatedCypher)) {
+      console.warn("[graph/query] BLOCKED write query:", generatedCypher);
+      return res.status(403).json({ error: "Write operations are not allowed" });
+    }
+
+    // Ensure LIMIT exists
+    if (!/LIMIT\b/i.test(generatedCypher)) {
+      generatedCypher += "\nLIMIT 25";
+    }
+
+    console.log(`[graph/query] cypher: ${generatedCypher.replace(/\n/g, " ").slice(0, 200)}`);
+
+    // Step 2: Execute the Cypher query
+    let records;
+    try {
+      records = await cypher(generatedCypher);
+    } catch (cypherErr) {
+      console.error("[graph/query] Cypher execution failed:", cypherErr.message);
+      return res.status(422).json({
+        error: "Generated query failed to execute",
+        cypher: generatedCypher,
+        detail: cypherErr.message,
+      });
+    }
+
+    // Step 3: Convert records to plain objects
+    const columns = records.length > 0 ? records[0].keys : [];
+    const rows = records.map(r => {
+      const obj = {};
+      for (const k of columns) {
+        const v = r.get(k);
+        obj[k] = v != null && typeof v === "object" && typeof v.toNumber === "function" ? v.toNumber() : v;
+      }
+      return obj;
+    });
+
+    // Step 4: Generate narrative from results
+    let narrative = null;
+    if (rows.length > 0) {
+      try {
+        const resultPreview = JSON.stringify(rows.slice(0, 15), null, 2);
+        const narrativeResponse = await fetch("https://api.githubcopilot.com/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4.1",
+            max_tokens: 400,
+            temperature: 0.3,
+            messages: [
+              { role: "system", content: "You are a clinical trials operations analyst. Summarize query results in 2-3 concise sentences. Focus on the key insight — what would an operations expert care about? No bullet points." },
+              { role: "user", content: `Question: "${sanitized}"\n\nQuery returned ${rows.length} rows. Top results:\n${resultPreview}` },
+            ],
+          }),
+        });
+        if (narrativeResponse.ok) {
+          const nd = await narrativeResponse.json();
+          narrative = nd.choices?.[0]?.message?.content || null;
+        }
+      } catch (e) {
+        console.warn("[graph/query] narrative generation failed:", e.message);
+      }
+    }
+
+    res.json({
+      cypher: generatedCypher,
+      columns,
+      rows,
+      total: rows.length,
+      narrative,
+    });
+  } catch (e) {
+    console.error("[graph/query] unexpected error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

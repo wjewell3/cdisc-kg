@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
-import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, executeGraphQuery, isGraphQuestion, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import { KGContextPanel } from "./GraphIntelligence";
@@ -60,6 +60,7 @@ export default function TrialsPanel() {
   const [intelStep, setIntelStep] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [graphResult, setGraphResult] = useState(null); // { cypher, columns, rows, narrative, loading, error }
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -247,6 +248,25 @@ export default function TrialsPanel() {
     setError(null);
     setShowFilterPicker(false);
     setDisplayCount(25);
+    setGraphResult(null);
+
+    // Check if this is a graph-native question (NL → Cypher)
+    if (isGraphQuestion(text)) {
+      setStep("loading");
+      setResolutions([{ label: `Graph query: "${text}"`, param: "graph", value: text, kgPath: "NL → Cypher → Neo4j" }]);
+      setActiveResolutions([]);
+      setGraphResult({ loading: true, error: null, cypher: null, columns: [], rows: [], narrative: null });
+      try {
+        const data = await executeGraphQuery(text);
+        setGraphResult({ loading: false, error: null, ...data });
+        setStep("results");
+      } catch (err) {
+        setGraphResult({ loading: false, error: err.message, cypher: null, columns: [], rows: [], narrative: null });
+        setError(err.message);
+        setStep("error");
+      }
+      return;
+    }
 
     const { params, resolutions: resolved } = resolveTrialQuery(text);
     setResolutions(resolved);
@@ -343,6 +363,7 @@ export default function TrialsPanel() {
     setQuery("");
     setResolutions([]);
     setActiveResolutions([]);
+    setGraphResult(null);
     setShowFilterPicker(false);
     setDisplayCount(25);
     // Re-fetch base agg when resetting
@@ -405,11 +426,11 @@ export default function TrialsPanel() {
                 onChange={(e) => setQuery(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-                placeholder='e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
+                placeholder='Ask a question or filter — e.g., "What conditions are adjacent to Breast Cancer?" or "Phase 3 Alzheimer trials"'
                 className="query-input"
               />
               <button type="submit" className="query-submit" disabled={!query.trim()}>
-                Search →
+                {query.trim() && isGraphQuestion(query) ? "Ask Graph →" : "Search →"}
               </button>
             </form>
 
@@ -419,13 +440,13 @@ export default function TrialsPanel() {
                 {TRIAL_QUERIES.map((q) => (
                   <button
                     key={q.id}
-                    className={`preset-dropdown-item ${activeQuery === q.text ? "preset-card-active" : ""}`}
+                    className={`preset-dropdown-item ${activeQuery === q.text ? "preset-card-active" : ""} ${q.isGraph ? "preset-graph" : ""}`}
                     onMouseDown={(e) => { e.preventDefault(); handlePreset(q); }}
                   >
-                    <span className="preset-text">"{q.text}"</span>
+                    <span className="preset-text">{q.isGraph ? "" : "\u201C"}{q.text}{q.isGraph ? "" : "\u201D"}</span>
                     <span className="preset-desc">{q.description}</span>
                     <div className="preset-tags">
-                      {q.tags.map((t) => <span key={t} className="preset-tag">{t}</span>)}
+                      {q.tags.map((t) => <span key={t} className={`preset-tag ${t === "Graph" ? "preset-tag-graph" : ""}`}>{t}</span>)}
                     </div>
                   </button>
                 ))}
@@ -463,17 +484,70 @@ export default function TrialsPanel() {
           <div className="trials-section slide-in">
             <div className="loading-state">
               <div className="loading-spinner" />
-              <p>Querying…</p>
+              <p>{graphResult?.loading ? "Translating your question to a graph query\u2026" : "Querying\u2026"}</p>
             </div>
           </div>
         ) : step === "error" ? (
           <div className="trials-section slide-in">
             <div className="error-state">
-              <div className="error-icon">⚠️</div>
+              <div className="error-icon">&#x26A0;&#xFE0F;</div>
               <p className="error-msg">{error?.includes("ECONNREFUSED") || error?.includes("connect")
                 ? "AACT database is temporarily unavailable. Please try again soon."
                 : `Query failed: ${error}`}</p>
               <button className="reset-btn" onClick={reset}>Try Again</button>
+            </div>
+          </div>
+        ) : graphResult && !graphResult.loading && !graphResult.error ? (
+          /* ── Graph Query Results ──────────────────────────────── */
+          <div className="trials-section slide-in">
+            <div className="section-header">
+              <div className="section-icon">&#x2B21;</div>
+              <h2>Graph Query Results</h2>
+              <span className="result-count">{graphResult.total} rows</span>
+            </div>
+            <div className="graph-result-panel">
+              {graphResult.narrative && (
+                <div className="graph-narrative">
+                  <span className="graph-narrative-icon">&#x1F4A1;</span>
+                  <p>{graphResult.narrative}</p>
+                </div>
+              )}
+              {graphResult.cypher && (
+                <details className="graph-cypher-details">
+                  <summary className="graph-cypher-summary">Generated Cypher query</summary>
+                  <pre className="graph-cypher-code">{graphResult.cypher}</pre>
+                </details>
+              )}
+              {graphResult.rows.length > 0 ? (
+                <div className="graph-table-wrap">
+                  <table className="graph-result-table">
+                    <thead>
+                      <tr>
+                        {graphResult.columns.map(col => (
+                          <th key={col}>{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {graphResult.rows.map((row, i) => (
+                        <tr key={i}>
+                          {graphResult.columns.map(col => (
+                            <td key={col}>
+                              {Array.isArray(row[col])
+                                ? row[col].join(", ")
+                                : typeof row[col] === "number"
+                                  ? row[col].toLocaleString()
+                                  : String(row[col] ?? "")}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="graph-empty">No results returned for this query.</div>
+              )}
             </div>
           </div>
         ) : (

@@ -1333,3 +1333,114 @@
   background: #21262d;
   align-self: stretch;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Graph Query Results
+   ═══════════════════════════════════════════════════════════════ */
+.graph-result-panel {
+  padding: 0 20px 20px;
+}
+.graph-narrative {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(57, 210, 192, 0.06);
+  border-left: 3px solid rgba(57, 210, 192, 0.5);
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 16px;
+}
+.graph-narrative-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.graph-narrative p {
+  margin: 0;
+  font-size: 13px;
+  color: #c9d1d9;
+  line-height: 1.6;
+}
+.graph-cypher-details {
+  margin-bottom: 16px;
+}
+.graph-cypher-summary {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.graph-cypher-summary:hover {
+  color: #c9d1d9;
+}
+.graph-cypher-code {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: #0d1117;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #a78bfa;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.graph-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+}
+.graph-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.graph-result-table th {
+  background: #161b22;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #30363d;
+  white-space: nowrap;
+}
+.graph-result-table td {
+  padding: 7px 12px;
+  color: #c9d1d9;
+  border-bottom: 1px solid #21262d;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-result-table tr:hover td {
+  background: #161b22;
+}
+.graph-result-table tr:last-child td {
+  border-bottom: none;
+}
+.graph-empty {
+  font-size: 13px;
+  color: #484f58;
+  padding: 20px 0;
+  text-align: center;
+}
+
+/* ── Graph preset tag styling ── */
+.preset-tag-graph {
+  background: rgba(167, 139, 250, 0.15);
+  color: #a78bfa;
+}
+.preset-graph .preset-text {
+  color: #a78bfa;
+}
+.preset-graph {
+  border-left: 2px solid rgba(167, 139, 250, 0.4);
+}

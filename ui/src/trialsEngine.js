@@ -198,6 +198,45 @@ export async function executeInterventionSearch(params, interventionQ) {
   return (data.interventions || []).map(({ val, count }) => [val, count]);
 }
 
+// ── Graph Query (NL → Cypher via LLM) ─────────────────────────────────────
+
+const GRAPH_API_BASE = import.meta.env.VITE_TRIALS_API_BASE || "";
+
+export async function executeGraphQuery(question) {
+  const url = GRAPH_API_BASE
+    ? `${GRAPH_API_BASE.replace(/\/$/, "")}/api/graph/query`
+    : `/api/graph?path=query`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Detect if a question is a graph-native question (should go through NL→Cypher)
+ * vs a structured filter query (should go through SQLite search).
+ *
+ * Heuristic: questions with question marks, "which/what/how/who/why/where" starters,
+ * or "compare/between/path/overlap/adjacent/gap/shared/repurpos" keywords → graph.
+ */
+export function isGraphQuestion(text) {
+  const t = text.trim();
+  // Contains a question mark → natural language question
+  if (t.includes("?")) return true;
+  // Starts with interrogative word
+  if (/^(which|what|how|who|why|where|find|show|list|compare|are there)\b/i.test(t)) return true;
+  // Contains graph-specific keywords
+  if (/\b(between|adjacent|overlap|gap|shared|repurpos|path|connect|relationship|competitor|landscape|network|shortest)\b/i.test(t)) return true;
+  return false;
+}
+
 /** Browsable filter catalog — all available options per param, for the filter picker UI */
 export const FILTER_CATALOG = [
   {
@@ -248,36 +287,53 @@ export const FILTER_CATALOG = [
   },
 ];
 
-/** Preset cross-trial demo queries — all verified to return real AACT data */
+/** Preset cross-trial demo queries — mix of SQL filter + graph-native questions */
 export const TRIAL_QUERIES = [
+  {
+    id: "g1",
+    text: "What conditions are therapeutically adjacent to Breast Cancer?",
+    description: "Graph traversal — conditions that share clinical interventions via the trial-drug network",
+    tags: ["Graph", "Adjacency", "Oncology"],
+    isGraph: true,
+  },
+  {
+    id: "g2",
+    text: "What are the top expansion opportunities for Pfizer based on their portfolio?",
+    description: "Missing-edge detection — conditions adjacent to Pfizer's portfolio where they have zero trials",
+    tags: ["Graph", "Strategic Gaps", "Pfizer"],
+    isGraph: true,
+  },
+  {
+    id: "g3",
+    text: "Which sponsors have the most trials in Phase 3 oncology?",
+    description: "Graph aggregation — sponsor trial counts for Phase 3 cancer studies",
+    tags: ["Graph", "Sponsors", "Phase 3"],
+    isGraph: true,
+  },
+  {
+    id: "g4",
+    text: "What interventions are shared between Alzheimer Disease and Parkinson Disease?",
+    description: "Drug repurposing signal — interventions used in trials for both conditions",
+    tags: ["Graph", "Repurposing", "CNS"],
+    isGraph: true,
+  },
+  {
+    id: "g5",
+    text: "Which conditions have the highest trial termination rates?",
+    description: "Operational risk — conditions where trials are most likely to be terminated early",
+    tags: ["Graph", "Risk", "Termination"],
+    isGraph: true,
+  },
   {
     id: "t1",
     text: "Phase 3 Alzheimer's trials",
     description: "Cross-study CNS pipeline — 500+ studies in the KG",
-    tags: ["Phase 3", "CNS", "Alzheimer"],
+    tags: ["Filter", "Phase 3", "Alzheimer"],
   },
   {
     id: "t2",
     text: "Recruiting breast cancer immunotherapy trials",
     description: "Active oncology trials with immunotherapy interventions",
-    tags: ["Oncology", "Recruiting", "Immunotherapy"],
-  },
-  {
-    id: "t3",
-    text: "Completed Phase 3 diabetes trials",
-    description: "The metabolic disease evidence base — endpoints + outcomes",
-    tags: ["Phase 3", "Completed", "Diabetes"],
-  },
-  {
-    id: "t4",
-    text: "Phase 2 lung cancer trials with chemotherapy",
-    description: "Early-phase oncology — primary endpoints across studies",
-    tags: ["Phase 2", "Oncology", "Chemotherapy"],
-  },
-  {
-    id: "t5",
-    text: "Phase 3 heart failure completed trials",
-    description: "Cardiovascular evidence base — arms, enrollment, outcomes",
-    tags: ["Phase 3", "Cardiovascular", "Completed"],
+    tags: ["Filter", "Recruiting", "Oncology"],
   },
 ];
