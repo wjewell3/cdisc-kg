@@ -1267,7 +1267,12 @@
   padding: 10px 6px;
   gap: 2px;
   position: relative;
-  transition: background 0.15s;
+}
+.sb-trials {
+  flex: 0 0 auto;
+  min-width: 90px;
+  background: #1c2128;
+  padding: 10px 16px;
 }
 .sb-value {
   font-size: 18px;
@@ -1283,16 +1288,19 @@
 }
 .sb-delta {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   position: absolute;
   top: 6px;
-  right: 8px;
+  right: 7px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
 }
 .sb-neutral .sb-value { color: #c9d1d9; }
-.sb-better .sb-value { color: #3fb950; }
-.sb-worse  .sb-value { color: #f85149; }
-.sb-better .sb-delta { color: #3fb950; }
-.sb-worse  .sb-delta { color: #f85149; }
+.sb-better .sb-value  { color: #3fb950; }
+.sb-worse  .sb-value  { color: #f85149; }
+.sb-better .sb-delta  { color: #3fb950; }
+.sb-worse  .sb-delta  { color: #f85149; }
 .sb-divider {
   width: 1px;
   background: #21262d;

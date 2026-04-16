@@ -318,40 +318,46 @@ function computeStats(agg) {
 
 function StatsBanner({ stats, baseline, hasFilters }) {
   if (!stats) return null;
-  function signal(val, base, higherBetter = true) {
-    if (val == null || base == null || !hasFilters) return "sb-neutral";
-    const diff = val - base;
-    if (Math.abs(diff) < 1) return "sb-neutral";
-    return (higherBetter ? diff > 0 : diff < 0) ? "sb-better" : "sb-worse";
+  const b = baseline || stats;
+
+  function delta(val, base) {
+    if (val == null || base == null || !hasFilters || !baseline) return null;
+    return +(val - base).toFixed(1);
   }
-  const bStats = baseline || stats;
+  function cls(d, higherBetter = true) {
+    if (d == null || Math.abs(d) < 1) return "sb-neutral";
+    return (higherBetter ? d > 0 : d < 0) ? "sb-better" : "sb-worse";
+  }
+
+  const dCompletion = delta(stats.completion_pct, b.completion_pct);
+  const dActive     = delta(stats.active_pct,     b.active_pct);
+  const dEnroll     = delta(stats.avg_enrollment,  b.avg_enrollment);
+
+  function Stat({ value, label, d, higherBetter = true }) {
+    const c = cls(d, higherBetter);
+    return (
+      <div className={`sb-stat ${c}`}>
+        <span className="sb-value">{value}</span>
+        <span className="sb-label">{label}</span>
+        {d != null && Math.abs(d) >= 1 && (
+          <span className="sb-delta">{d > 0 ? "\u25b2" : "\u25bc"}{Math.abs(d)}{label.includes("enrolled") ? "" : "pp"}</span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="stats-banner">
-      <div className={`sb-stat ${signal(stats.completion_pct, bStats.completion_pct)}`}>
-        <span className="sb-value">{stats.completion_pct ?? "\u2014"}%</span>
-        <span className="sb-label">completed</span>
-        {hasFilters && baseline && Math.abs(stats.completion_pct - baseline.completion_pct) >= 1 && (
-          <span className="sb-delta">{stats.completion_pct > baseline.completion_pct ? "\u25b2" : "\u25bc"}{Math.abs(+(stats.completion_pct - baseline.completion_pct).toFixed(1))}pp</span>
-        )}
-      </div>
-      <div className="sb-divider" />
-      <div className={`sb-stat ${signal(stats.active_pct, bStats.active_pct)}`}>
-        <span className="sb-value">{stats.active_pct ?? "\u2014"}%</span>
-        <span className="sb-label">active</span>
-        {hasFilters && baseline && Math.abs(stats.active_pct - baseline.active_pct) >= 1 && (
-          <span className="sb-delta">{stats.active_pct > baseline.active_pct ? "\u25b2" : "\u25bc"}{Math.abs(+(stats.active_pct - baseline.active_pct).toFixed(1))}pp</span>
-        )}
-      </div>
-      <div className="sb-divider" />
-      <div className="sb-stat sb-neutral">
-        <span className="sb-value">{stats.avg_enrollment != null ? stats.avg_enrollment.toLocaleString() : "\u2014"}</span>
-        <span className="sb-label">avg enrolled</span>
-      </div>
-      <div className="sb-divider" />
-      <div className="sb-stat sb-neutral">
+      <div className="sb-stat sb-neutral sb-trials">
         <span className="sb-value">{stats.total.toLocaleString()}</span>
         <span className="sb-label">trials</span>
       </div>
+      <div className="sb-divider" />
+      <Stat value={`${stats.completion_pct ?? "\u2014"}%`} label="completed" d={dCompletion} />
+      <div className="sb-divider" />
+      <Stat value={`${stats.active_pct ?? "\u2014"}%`} label="active" d={dActive} />
+      <div className="sb-divider" />
+      <Stat value={stats.avg_enrollment != null ? stats.avg_enrollment.toLocaleString() : "\u2014"} label="avg enrolled" d={dEnroll} />
     </div>
   );
 }
