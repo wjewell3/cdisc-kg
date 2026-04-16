@@ -227,6 +227,11 @@
   border-color: #39d2c0;
   background: #161b22;
 }
+.preset-card-active {
+  border-color: #39d2c0;
+  background: #161b22;
+  box-shadow: 0 0 0 1px #39d2c0;
+}
 
 .preset-text {
   font-size: 13px;

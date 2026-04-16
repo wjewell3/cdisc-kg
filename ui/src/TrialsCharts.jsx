@@ -277,7 +277,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
   );
 }
 
-export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors }) {
+export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -286,30 +286,43 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
   const [sponsorSearchLoading, setSponsorSearchLoading] = useState(false);
   const sponsorSearchRef = useRef(null);
 
-  useEffect(() => {
-    if (!sponsorSearch.trim()) {
-      setSponsorSearchData(null);
-      return;
-    }
-    setSponsorSearchLoading(true);
-    const tid = setTimeout(() => {
-      const thisSearch = sponsorSearch;
-      fetchSponsors(thisSearch).then((results) => {
-        // Only apply if search hasn't changed
-        if (sponsorSearchRef.current === thisSearch) {
-          setSponsorSearchData(results);
-          setSponsorSearchLoading(false);
-        }
-      }).catch(() => setSponsorSearchLoading(false));
-    }, 250);
-    sponsorSearchRef.current = sponsorSearch;
-    return () => clearTimeout(tid);
-  }, [sponsorSearch, fetchSponsors]);
+  // Condition search state
+  const [conditionSearch, setConditionSearch] = useState("");
+  const [conditionSearchData, setConditionSearchData] = useState(null);
+  const [conditionSearchLoading, setConditionSearchLoading] = useState(false);
+  const conditionSearchRef = useRef(null);
+
+  // Intervention search state
+  const [interventionSearch, setInterventionSearch] = useState("");
+  const [interventionSearchData, setInterventionSearchData] = useState(null);
+  const [interventionSearchLoading, setInterventionSearchLoading] = useState(false);
+  const interventionSearchRef = useRef(null);
+
+  // Generic async search hook factory
+  function useAsyncSearch(search, setData, setLoading, searchRef, fetchFn) {
+    useEffect(() => {
+      if (!search.trim()) { setData(null); return; }
+      setLoading(true);
+      const thisSearch = search;
+      const tid = setTimeout(() => {
+        fetchFn(thisSearch).then((results) => {
+          if (searchRef.current === thisSearch) { setData(results); setLoading(false); }
+        }).catch(() => setLoading(false));
+      }, 250);
+      searchRef.current = search;
+      return () => clearTimeout(tid);
+    }, [search]); // eslint-disable-line
+  }
+
+  useAsyncSearch(sponsorSearch, setSponsorSearchData, setSponsorSearchLoading, sponsorSearchRef, fetchSponsors || (() => Promise.resolve([])));
+  useAsyncSearch(conditionSearch, setConditionSearchData, setConditionSearchLoading, conditionSearchRef, fetchConditions || (() => Promise.resolve([])));
+  useAsyncSearch(interventionSearch, setInterventionSearchData, setInterventionSearchLoading, interventionSearchRef, fetchInterventions || (() => Promise.resolve([])));
 
   // Reset search results when filters change so top-N are shown again
   useEffect(() => {
-    setSponsorSearch("");
-    setSponsorSearchData(null);
+    setSponsorSearch(""); setSponsorSearchData(null);
+    setConditionSearch(""); setConditionSearchData(null);
+    setInterventionSearch(""); setInterventionSearchData(null);
   }, [activeFilters, aggData]);
 
   const phaseData = useMemo(() => {
@@ -334,6 +347,18 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
     return countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown");
   }, [trials, activeFilters, aggData, sponsorSearchData]);
 
+  const conditionData = useMemo(() => {
+    if (conditionSearchData !== null) return conditionSearchData;
+    if (aggData?.condition) return aggData.condition;
+    return [];
+  }, [aggData, conditionSearchData]);
+
+  const interventionData = useMemo(() => {
+    if (interventionSearchData !== null) return interventionSearchData;
+    if (aggData?.intervention) return aggData.intervention;
+    return [];
+  }, [aggData, interventionSearchData]);
+
   const totalCount = aggData?.total ?? trials.length;
   const hasEnrollment = aggData?.enrollment
     ? Object.values(aggData.enrollment).some((c) => c > 0)
@@ -344,7 +369,7 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
   if (!aggData && trials.length === 0) return null;
 
   const hasAnyData =
-    hasData(phaseData) || hasData(statusData) || hasData(sponsorData) || hasEnrollment;
+    hasData(phaseData) || hasData(statusData) || hasData(sponsorData) || hasData(conditionData) || hasData(interventionData) || hasEnrollment;
 
   if (!hasAnyData) return null;
 
@@ -417,6 +442,48 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               onFilter={onFilter}
               maxItems={10}
               total={sponsorSearch ? null : totalCount}
+            />
+          </div>
+        )}
+        {hasData(conditionData) && (
+          <div className="trials-svg-wrap-outer">
+            <input
+              className="sponsor-search-input"
+              type="text"
+              placeholder="Search all conditions…"
+              value={conditionSearch}
+              onChange={(e) => setConditionSearch(e.target.value)}
+            />
+            {conditionSearchLoading && <div className="sponsor-search-loading">Searching…</div>}
+            <SvgBarChart
+              data={conditionData}
+              title="Top Conditions"
+              field="condition"
+              activeValues={getActiveVals("condition")}
+              onFilter={onFilter}
+              maxItems={10}
+              total={conditionSearch ? null : totalCount}
+            />
+          </div>
+        )}
+        {hasData(interventionData) && (
+          <div className="trials-svg-wrap-outer">
+            <input
+              className="sponsor-search-input"
+              type="text"
+              placeholder="Search all interventions…"
+              value={interventionSearch}
+              onChange={(e) => setInterventionSearch(e.target.value)}
+            />
+            {interventionSearchLoading && <div className="sponsor-search-loading">Searching…</div>}
+            <SvgBarChart
+              data={interventionData}
+              title="Top Interventions"
+              field="intervention"
+              activeValues={getActiveVals("intervention")}
+              onFilter={onFilter}
+              maxItems={10}
+              total={interventionSearch ? null : totalCount}
             />
           </div>
         )}

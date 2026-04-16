@@ -172,6 +172,32 @@ export async function executeSponsorSearch(params, sponsorQ) {
   return (data.sponsors || []).map(({ val, count }) => [val, count]);
 }
 
+export async function executeConditionSearch(params, conditionQ) {
+  const url = new URL(trialsUrl());
+  url.searchParams.set("mode", "conditions");
+  for (const [k, v] of Object.entries(params)) {
+    if (v) url.searchParams.set(k, v);
+  }
+  if (conditionQ) url.searchParams.set("condition_q", conditionQ);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.conditions || []).map(({ val, count }) => [val, count]);
+}
+
+export async function executeInterventionSearch(params, interventionQ) {
+  const url = new URL(trialsUrl());
+  url.searchParams.set("mode", "interventions");
+  for (const [k, v] of Object.entries(params)) {
+    if (v) url.searchParams.set(k, v);
+  }
+  if (interventionQ) url.searchParams.set("intervention_q", interventionQ);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.interventions || []).map(({ val, count }) => [val, count]);
+}
+
 /** Browsable filter catalog — all available options per param, for the filter picker UI */
 export const FILTER_CATALOG = [
   {

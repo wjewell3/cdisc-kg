@@ -189,6 +189,8 @@ function sqliteStats({ q, condition, intervention, phase, status, sponsor, min_e
   const { where: phaseWhere,  params: phaseParams  } = buildSqliteWhere({ ...base, phase: "",  status,    sponsor,   min_enrollment, max_enrollment });
   const { where: statusWhere, params: statusParams } = buildSqliteWhere({ ...base, phase,      status: "", sponsor,   min_enrollment, max_enrollment });
   const { where: spWhere,     params: spParams     } = buildSqliteWhere({ ...base, phase,      status,    sponsor: "", min_enrollment, max_enrollment });
+  const { where: condWhere,   params: condParams   } = buildSqliteWhere({ q, condition: "",   intervention, phase, status, sponsor, min_enrollment, max_enrollment });
+  const { where: intWhere,    params: intParams    } = buildSqliteWhere({ q, condition,       intervention: "", phase, status, sponsor, min_enrollment, max_enrollment });
   const { where: enWhere,     params: enParams     } = buildSqliteWhere({ ...base, phase,      status,    sponsor,   min_enrollment: "", max_enrollment: "" });
   const { where: fullWhere,   params: fullParams   } = buildSqliteWhere({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment });
 
@@ -203,6 +205,20 @@ function sqliteStats({ q, condition, intervention, phase, status, sponsor, min_e
     ${spWhere}
     GROUP BY sp.name ORDER BY count DESC LIMIT 20
   `).all(...spParams);
+  const condRows   = db.prepare(`
+    SELECT c.name AS val, COUNT(DISTINCT s.nct_id) AS count
+    FROM studies s
+    JOIN conditions c ON c.nct_id = s.nct_id
+    ${condWhere}
+    GROUP BY c.name ORDER BY count DESC LIMIT 20
+  `).all(...condParams);
+  const intRows    = db.prepare(`
+    SELECT i.name AS val, COUNT(DISTINCT s.nct_id) AS count
+    FROM studies s
+    JOIN interventions i ON i.nct_id = s.nct_id
+    ${intWhere}
+    GROUP BY i.name ORDER BY count DESC LIMIT 20
+  `).all(...intParams);
   const enrollRows = db.prepare(`
     SELECT
       CASE
@@ -225,6 +241,8 @@ function sqliteStats({ q, condition, intervention, phase, status, sponsor, min_e
     phase: toObj(phaseRows),
     status: toObj(statusRows),
     sponsor: spRows.map((r) => [r.val, r.count]),
+    condition: condRows.map((r) => [r.val, r.count]),
+    intervention: intRows.map((r) => [r.val, r.count]),
     enrollment: toObj(enrollRows),
   };
 }
@@ -339,6 +357,42 @@ app.get("/api/trials", async (req, res) => {
         GROUP BY sp.name ORDER BY count DESC LIMIT 100
       `).all(...wParams, ...likeParams);
       return res.json({ sponsors: rows });
+    }
+
+    if (mode === "conditions") {
+      if (!db) return res.status(503).json({ error: "SQLite required" });
+      const q_cond = req.query.condition_q || "";
+      const { where, params: wParams } = buildSqliteWhere({
+        q, condition: "", intervention, phase, status, sponsor, min_enrollment, max_enrollment,
+      });
+      const likeClause = q_cond ? "AND LOWER(c.name) LIKE LOWER(?)" : "";
+      const likeParams = q_cond ? [`%${q_cond}%`] : [];
+      const rows = db.prepare(`
+        SELECT c.name AS val, COUNT(DISTINCT s.nct_id) AS count
+        FROM studies s
+        JOIN conditions c ON c.nct_id = s.nct_id
+        ${where} ${likeClause}
+        GROUP BY c.name ORDER BY count DESC LIMIT 100
+      `).all(...wParams, ...likeParams);
+      return res.json({ conditions: rows });
+    }
+
+    if (mode === "interventions") {
+      if (!db) return res.status(503).json({ error: "SQLite required" });
+      const q_int = req.query.intervention_q || "";
+      const { where, params: wParams } = buildSqliteWhere({
+        q, condition, intervention: "", phase, status, sponsor, min_enrollment, max_enrollment,
+      });
+      const likeClause = q_int ? "AND LOWER(i.name) LIKE LOWER(?)" : "";
+      const likeParams = q_int ? [`%${q_int}%`] : [];
+      const rows = db.prepare(`
+        SELECT i.name AS val, COUNT(DISTINCT s.nct_id) AS count
+        FROM studies s
+        JOIN interventions i ON i.nct_id = s.nct_id
+        ${where} ${likeClause}
+        GROUP BY i.name ORDER BY count DESC LIMIT 100
+      `).all(...wParams, ...likeParams);
+      return res.json({ interventions: rows });
     }
 
     const result = db

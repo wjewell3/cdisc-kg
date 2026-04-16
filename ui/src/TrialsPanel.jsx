@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
-import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts from "./TrialsCharts";
 import "./TrialsPanel.css";
 
@@ -99,7 +99,7 @@ export default function TrialsPanel() {
       if (r.value) params[r.param] = params[r.param] ? `${params[r.param]},${r.value}` : r.value;
     }
     for (const f of chartFilters) {
-      if (f.field === "phase" || f.field === "status" || f.field === "sponsor") {
+      if (f.field === "phase" || f.field === "status" || f.field === "sponsor" || f.field === "condition" || f.field === "intervention") {
         params[f.field] = params[f.field] ? `${params[f.field]},${f.value}` : f.value;
       } else if (f.field === "_enroll_range") {
         const [min, max] = ENROLL_BUCKETS_SERVER[f.value] || [];
@@ -114,10 +114,9 @@ export default function TrialsPanel() {
     return params;
   }, [activeResolutions, chartFilters]);
 
-  // Sponsor search — returns all sponsors matching current filters + name query.
-  const fetchSponsors = useCallback((sponsorQ) => {
-    return executeSponsorSearch(buildCurrentParams(), sponsorQ);
-  }, [buildCurrentParams]);
+  const fetchSponsors = useCallback((q) => executeSponsorSearch(buildCurrentParams(), q), [buildCurrentParams]);
+  const fetchConditions = useCallback((q) => executeConditionSearch(buildCurrentParams(), q), [buildCurrentParams]);
+  const fetchInterventions = useCallback((q) => executeInterventionSearch(buildCurrentParams(), q), [buildCurrentParams]);
 
   useEffect(() => {
     if (chartFilters.length === 0) {
@@ -300,178 +299,100 @@ export default function TrialsPanel() {
           <div className="trials-logo">🌐</div>
           <div>
             <h1 className="trials-title">Cross-Trial Intelligence</h1>
-            <p className="trials-subtitle">Live query across 500,000+ ClinicalTrials.gov studies via AACT</p>
+            <p className="trials-subtitle">580k+ ClinicalTrials.gov studies — search, filter, explore</p>
           </div>
         </div>
         <div className="trials-badge-row">
-          <span className="aact-badge">AACT Live DB</span>
-          <span className="sdtm-badge">KG Semantic Layer</span>
+          <span className="aact-badge">AACT Snapshot</span>
+          <span className="sdtm-badge">580k studies</span>
         </div>
       </div>
 
       <div className="trials-body">
-        {/* Search section — always compact so charts are the primary view */}
+
+        {/* ── Section 1: Search + preset queries ───────────────────────── */}
         <div className="trials-section compact-section">
           <div className="section-header">
             <div className="section-icon">💬</div>
-            <h2>Ask a Cross-Trial Question</h2>
+            <h2>Search Trials</h2>
             {step !== "question" && (
-              <button className="reset-btn" onClick={reset}>
-                New Query
-              </button>
+              <button className="reset-btn" onClick={reset}>Clear</button>
             )}
           </div>
-          {step === "question" ? (
-            <form onSubmit={handleSubmit} className="query-form" style={{ margin: 0 }}>
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder='e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
-                className="query-input"
-              />
-              <button type="submit" className="query-submit" disabled={!query.trim()}>
-                Search →
-              </button>
-            </form>
-          ) : (
-            <div className="compact-query">
-              <span className="compact-q">"{activeQuery}"</span>
+
+          <form onSubmit={handleSubmit} className="query-form" style={{ margin: 0 }}>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder='e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
+              className="query-input"
+            />
+            <button type="submit" className="query-submit" disabled={!query.trim()}>
+              Search →
+            </button>
+          </form>
+
+          {/* Preset queries — always visible */}
+          <div className="preset-section">
+            <div className="preset-grid">
+              {TRIAL_QUERIES.map((q) => (
+                <button
+                  key={q.id}
+                  className={`preset-card ${activeQuery === q.text ? "preset-card-active" : ""}`}
+                  onClick={() => handlePreset(q)}
+                >
+                  <span className="preset-text">"{q.text}"</span>
+                  <span className="preset-desc">{q.description}</span>
+                  <div className="preset-tags">
+                    {q.tags.map((t) => <span key={t} className="preset-tag">{t}</span>)}
+                  </div>
+                </button>
+              ))}
             </div>
-          )}
-          {/* Suggested queries — only while initial data is loading (1-2s) */}
-          {step === "question" && baseLoading && (
-            <div className="preset-section">
-              <h3>Suggested queries:</h3>
-              <div className="preset-grid">
-                {TRIAL_QUERIES.map((q) => (
-                  <button key={q.id} className="preset-card" onClick={() => handlePreset(q)}>
-                    <span className="preset-text">"{q.text}"</span>
-                    <span className="preset-desc">{q.description}</span>
-                    <div className="preset-tags">
-                      {q.tags.map((t) => (
-                        <span key={t} className="preset-tag">{t}</span>
-                      ))}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
 
-        {/* Chart filter pills in browse mode */}
-        {step === "question" && chartFilters.length > 0 && (
+        {/* Active filter pills */}
+        {(chartFilters.length > 0 || activeResolutions.length > 0) && (
           <div className="kg-params-bar">
-            <span className="kg-params-label">🔍 Browse filters →</span>
-            {chartFilters.map((cf, i) => (
-              <Fragment key={i}>
-                <span className="kg-param-pill kg-filter-pill">
-                  <span className="kg-filter-icon">🔍</span>
-                  <span>{cf.field.replace(/^_/, "").replace(/_LABEL$/, "")}</span>
-                  <span className="kg-eq">=</span>
-                  <span className="kg-val">{cf.value}</span>
-                  <button className="kg-filter-clear" onClick={() => setChartFilters((prev) => prev.filter((_, j) => j !== i))} aria-label="Clear filter">×</button>
-                </span>
-              </Fragment>
+            <span className="kg-params-label">Filters →</span>
+            {activeResolutions.map((r, i) => (
+              <span key={i} className="kg-param-pill kg-param-removable">
+                <code>{r.param}</code>
+                {r.value && <><span className="kg-eq">=</span><span className="kg-val">{r.value}</span></>}
+                <button className="kg-param-remove" onClick={() => removeResolution(i)} aria-label={`Remove ${r.param}`}>×</button>
+              </span>
             ))}
-            <button className="kg-filter-clear" style={{marginLeft:"auto"}} onClick={() => setChartFilters([])}>Clear all ×</button>
+            {chartFilters.map((cf, i) => (
+              <span key={i} className="kg-param-pill kg-filter-pill">
+                <span className="kg-filter-icon">🔍</span>
+                <span>{cf.field.replace(/^_/, "").replace(/_LABEL$/, "")}</span>
+                <span className="kg-eq">=</span>
+                <span className="kg-val">{cf.value}</span>
+                <button className="kg-filter-clear" onClick={() => setChartFilters((prev) => prev.filter((_, j) => j !== i))} aria-label="Clear filter">×</button>
+              </span>
+            ))}
+            <button className="kg-filter-clear" style={{marginLeft:"auto"}} onClick={() => { setChartFilters([]); reset(); }}>Clear all ×</button>
           </div>
         )}
 
-        {/* KG resolution — compact param bar */}
-        {(step === "loading" || step === "results" || step === "error") && (activeResolutions.length > 0 || step === "results") && (
-          <>
-            <div className="kg-params-bar slide-in">
-              <span className="kg-params-label">🔗 KG →</span>
-              {activeResolutions.map((r, i) => (
-                <span key={i} className="kg-param-pill kg-param-removable">
-                  <code>{r.param}</code>
-                  {r.value && <><span className="kg-eq">=</span><span className="kg-val">{r.value}</span></>}
-                  <button className="kg-param-remove" onClick={() => removeResolution(i)} aria-label={`Remove ${r.param}`}>×</button>
-                </span>
-              ))}
-              {chartFilters.map((cf, i) => (
-                <Fragment key={i}>
-                  <span className="kg-filter-sep">·</span>
-                  <span className="kg-param-pill kg-filter-pill">
-                    <span className="kg-filter-icon">🔍</span>
-                    <span>{cf.field.replace(/^_/, "").replace(/_LABEL$/, "")}</span>
-                    <span className="kg-eq">=</span>
-                    <span className="kg-val">{cf.value}</span>
-                    <button className="kg-filter-clear" onClick={() => setChartFilters((prev) => prev.filter((_, j) => j !== i))} aria-label="Clear filter">×</button>
-                  </span>
-                </Fragment>
-              ))}
-              <button
-                className={`kg-add-filter-btn ${showFilterPicker ? "active" : ""}`}
-                onClick={() => setShowFilterPicker((v) => !v)}
-                aria-expanded={showFilterPicker}
-              >
-                {showFilterPicker ? "▲ Filters" : "+ Filters"}
-              </button>
-            </div>
-
-            {showFilterPicker && (
-              <div className="filter-picker slide-in">
-                {FILTER_CATALOG.map((group) => {
-                  const activeVals = new Set(
-                    activeResolutions.filter((r) => r.param === group.param).map((r) => r.value)
-                  );
-                  const visibleOpts = group.options.filter((opt) => {
-                    const count = filterOptionCounts[`${group.param}::${opt.value}`] ?? 0;
-                    return activeVals.has(opt.value) || count > 0;
-                  });
-                  if (visibleOpts.length === 0) return null;
-                  return (
-                    <div key={group.param} className="filter-picker-group">
-                      <span className="filter-picker-label">{group.label}:</span>
-                      <div className="filter-picker-options">
-                        {visibleOpts.map((opt) => {
-                          const isActive = activeVals.has(opt.value);
-                          return (
-                            <button
-                              key={opt.value}
-                              className={`filter-picker-opt ${isActive ? "filter-opt-active" : ""}`}
-                              onClick={() => toggleFilterOption(group.param, opt.value, opt.label)}
-                            >
-                              {opt.label}
-                              {filterOptionCounts[`${group.param}::${opt.value}`] > 0 && (
-                                <span className="filter-opt-count">({filterOptionCounts[`${group.param}::${opt.value}`]})</span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Main content — always rendered; shows spinner until data arrives */}
+        {/* ── Section 2: Visual Insights (charts as filters) ───────────── */}
         {step === "loading" ? (
           <div className="trials-section slide-in">
             <div className="loading-state">
               <div className="loading-spinner" />
-              <p>Querying AACT live database…</p>
-              <p className="loading-sub">aact-db.ctti-clinicaltrials.org</p>
+              <p>Querying…</p>
             </div>
           </div>
         ) : step === "error" ? (
           <div className="trials-section slide-in">
             <div className="error-state">
               <div className="error-icon">⚠️</div>
-              <p className="error-msg">
-                {error?.includes("ECONNREFUSED") || error?.includes("connect")
-                  ? "AACT database is temporarily unavailable (nightly refresh or maintenance). Please try again in a few minutes."
-                  : `Query failed: ${error}`}
-              </p>
-              <button className="reset-btn" onClick={reset}>
-                Try Again
-              </button>
+              <p className="error-msg">{error?.includes("ECONNREFUSED") || error?.includes("connect")
+                ? "AACT database is temporarily unavailable. Please try again soon."
+                : `Query failed: ${error}`}</p>
+              <button className="reset-btn" onClick={reset}>Try Again</button>
             </div>
           </div>
         ) : (
@@ -480,39 +401,20 @@ export default function TrialsPanel() {
               <div className="loading-state">
                 <div className="loading-spinner" />
                 <p>Loading trial data…</p>
-                <p className="loading-sub">aact-db.ctti-clinicaltrials.org</p>
               </div>
             ) : !(results || baseResults) ? (
               <div className="no-results">Trial data unavailable — AACT database may be offline.</div>
             ) : (results || baseResults).total === 0 ? (
-              <div className="no-results">
-                {step === "results" ? "No trials found matching your query. Try broadening the search." : "No trials available."}
-              </div>
+              <div className="no-results">No trials found. Try broadening the search.</div>
             ) : (
               <>
                 <div className="section-header">
                   <div className="section-icon">📊</div>
-                  {step === "results" ? (
-                    <>
-                      <h2>Trial Results</h2>
-                      <span className="result-count">
-                        {(chartResults || results).total?.toLocaleString()} total
-                        {chartResults
-                          ? ` · ${filteredTrials.length} matching`
-                          : results.returned < results.total ? ` · ${results.returned} loaded` : ""}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <h2>Browse Trials</h2>
-                      <span className="result-count">
-                        {(chartResults || results || baseResults).total?.toLocaleString()} total
-                        {chartResults
-                          ? ` · ${filteredTrials.length} matching`
-                          : (results || baseResults)?.returned < (results || baseResults)?.total ? ` · ${(results || baseResults).returned} loaded` : ""}
-                      </span>
-                    </>
-                  )}
+                  <h2>Visual Insights</h2>
+                  <span className="result-count">
+                    {(chartResults || results || baseResults).total?.toLocaleString()} trials
+                    {chartFilters.length > 0 ? ` · ${filteredTrials.length} shown` : ""}
+                  </span>
                 </div>
               <div className="results-layout">
                 {/* Charts */}
@@ -522,9 +424,11 @@ export default function TrialsPanel() {
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
                   fetchSponsors={fetchSponsors}
+                  fetchConditions={fetchConditions}
+                  fetchInterventions={fetchInterventions}
                 />
 
-                {/* Results list — paginated */}
+                {/* ── Section 3: Results list ───────────────────────────── */}
                 <div className={`results-list ${selectedTrial ? "with-detail" : ""}`}>
                   {filteredTrials.slice(0, displayCount).map((trial) => (
                     <div
