@@ -8,7 +8,7 @@
  * Will unlock after full reload (sites/countries loaded):
  *   • Sponsor-Site Overlap, Site Risk, Site Expertise
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const API_BASE = import.meta.env.VITE_TRIALS_API_BASE || "";
 
@@ -238,6 +238,133 @@ function GraphStats({ stats, statsLoading }) {
         <span key={k} className="kg-stat-pill kg-pill-edge">{v.toLocaleString()} {k}</span>
       ))}
       <span className="kg-stats-total">{totalNodes.toLocaleString()} nodes · {totalEdges.toLocaleString()} edges</span>
+    </div>
+  );
+}
+
+// ── Adjacency Inline (auto-populates from active dashboard filter) ─────────
+
+function AdjacencyInline({ condition }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setData(null);
+    setLoading(true);
+    graphFetch("therapeutic-adjacency", { condition, limit: 12 })
+      .then(d => setData(Array.isArray(d) ? d : []))
+      .catch(() => setData([]))
+      .finally(() => setLoading(false));
+  }, [condition]);
+
+  const maxWeight = data?.[0]?.shared_interventions ?? 1;
+
+  return (
+    <div className="kg-context-entity">
+      <div className="kg-context-entity-header">
+        <span className="kg-icon" style={{ fontSize: "14px" }}>&#x2b21;</span>
+        <span className="kg-context-entity-label">Adjacent to</span>
+        <span className="kg-badge-teal">{condition}</span>
+      </div>
+      {loading && <div className="kg-context-loading">Traversing graph…</div>}
+      {data && data.length === 0 && !loading && (
+        <div className="kg-context-empty">No adjacency data found in graph for this condition.</div>
+      )}
+      {data && data.length > 0 && (
+        <div className="kg-adjacency-list">
+          {data.map((c, i) => (
+            <div key={i} className="kg-adj-row kg-adj-row-compact">
+              <div className="kg-adj-name" title={c.condition}>{c.condition}</div>
+              <div className="kg-adj-bar-wrap">
+                <div className="kg-adj-bar" style={{ width: `${Math.max(4, (c.shared_interventions / maxWeight) * 100)}%` }} />
+              </div>
+              <div className="kg-adj-count">
+                <span className="kg-adj-interventions">{c.shared_interventions.toLocaleString()}</span>
+                <span className="kg-adj-label"> shared</span>
+              </div>
+              {c.example_drugs?.length > 0 && (
+                <div className="kg-adj-trials" title={c.example_drugs.join(", ")}>
+                  <span className="kg-adj-label">e.g. </span>{c.example_drugs[0]}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sponsor Inline (auto-populates from active dashboard filter) ───────────
+
+function SponsorInline({ sponsor }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setData(null);
+    setLoading(true);
+    graphFetch("sponsor-network", { sponsor, limit: 10 })
+      .then(d => setData(d))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [sponsor]);
+
+  return (
+    <div className="kg-context-entity">
+      <div className="kg-context-entity-header">
+        <span className="kg-icon" style={{ fontSize: "14px" }}>&#x25c8;</span>
+        <span className="kg-context-entity-label">Network for</span>
+        <span className="kg-badge-purple">{sponsor}</span>
+        {data?.trial_count > 0 && (
+          <span className="kg-context-trial-count">{data.trial_count.toLocaleString()} trials</span>
+        )}
+      </div>
+      {loading && <div className="kg-context-loading">Traversing graph…</div>}
+      {data && (
+        <div className="kg-two-col">
+          <div className="kg-col">
+            <h4 className="kg-col-title">Top Conditions</h4>
+            {(data.conditions || []).slice(0, 8).map((c, i) => (
+              <div key={i} className="kg-list-row">
+                <span className="kg-list-rank">{i + 1}</span>
+                <span className="kg-list-name">{c.condition}</span>
+                <span className="kg-list-count">{c.trials?.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+          <div className="kg-col">
+            <h4 className="kg-col-title">Top Interventions</h4>
+            {(data.interventions || []).slice(0, 8).map((c, i) => (
+              <div key={i} className="kg-list-row">
+                <span className="kg-list-rank">{i + 1}</span>
+                <span className="kg-list-name">{c.intervention}</span>
+                <span className="kg-list-count">{c.trials?.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── KGContextPanel (contextual — driven by active dashboard filters) ──────
+
+export function KGContextPanel({ conditions = [], sponsors = [] }) {
+  if (conditions.length === 0 && sponsors.length === 0) return null;
+
+  return (
+    <div className="kg-context-panel">
+      <div className="kg-context-header">
+        <span className="kg-context-logo">&#x2b21;</span>
+        <span className="kg-context-title">Graph Intelligence</span>
+        <span className="kg-context-hint">auto-populated from your active filters</span>
+      </div>
+      <div className="kg-context-body">
+        {conditions.map(c => <AdjacencyInline key={c} condition={c} />)}
+        {sponsors.map(s => <SponsorInline key={s} sponsor={s} />)}
+      </div>
     </div>
   );
 }

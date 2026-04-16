@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
-import GraphIntelligence from "./GraphIntelligence";
+import { KGContextPanel } from "./GraphIntelligence";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 import "./GraphIntelligence.css";
@@ -60,19 +60,6 @@ export default function TrialsPanel() {
   const [intelStep, setIntelStep] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("search"); // "search" | "kg"
-  const [graphStats, setGraphStats] = useState(null);
-  const [graphStatsLoading, setGraphStatsLoading] = useState(true);
-
-  useEffect(() => {
-    const base = import.meta.env.VITE_TRIALS_API_BASE || "";
-    const url = base ? `${base}/api/graph/stats` : `/api/graph?path=stats`;
-    fetch(url)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setGraphStats(d); })
-      .catch(() => {})
-      .finally(() => setGraphStatsLoading(false));
-  }, []);
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -362,6 +349,20 @@ export default function TrialsPanel() {
     executeTrialAgg({}).then(setAggData).catch(() => {});
   }, []);
 
+  const kgEntities = useMemo(() => {
+    const conditions = new Set();
+    const sponsors = new Set();
+    for (const f of chartFilters) {
+      if (f.field === "condition") conditions.add(f.value);
+      if (f.field === "sponsor") sponsors.add(f.value);
+    }
+    for (const r of activeResolutions) {
+      if (r.param === "condition") conditions.add(r.value);
+      if (r.param === "sponsor") sponsors.add(r.value);
+    }
+    return { conditions: [...conditions], sponsors: [...sponsors] };
+  }, [chartFilters, activeResolutions]);
+
   return (
     <>
     <div className="trials-panel">
@@ -375,28 +376,16 @@ export default function TrialsPanel() {
           </div>
         </div>
         <div className="trials-badge-row">
-          <div className="trials-sub-tabs">
-            <button className={`trials-sub-tab${activeTab === "search" ? " active" : ""}`} onClick={() => setActiveTab("search")}>Search</button>
-            <button className={`trials-sub-tab${activeTab === "kg" ? " active" : ""}`} onClick={() => setActiveTab("kg")}>⬡ Knowledge Graph</button>
-          </div>
-          {activeTab === "search" && (
-            <>
-              <button className="rules-manager-btn" onClick={() => setRulesOpen(true)}>
-                ⚙ Rules{(rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)) > 0 ? ` (${rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)})` : ""}
-                {(enrollMin !== null || enrollMax !== null) && <span className="rules-bounds-badge">●</span>}
-              </button>
-              <span className="aact-badge">AACT Snapshot</span>
-              <span className="sdtm-badge">580k studies</span>
-            </>
-          )}
+          <button className="rules-manager-btn" onClick={() => setRulesOpen(true)}>
+            ⚙ Rules{(rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)) > 0 ? ` (${rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)})` : ""}
+            {(enrollMin !== null || enrollMax !== null) && <span className="rules-bounds-badge">●</span>}
+          </button>
+          <span className="aact-badge">AACT Snapshot</span>
+          <span className="sdtm-badge">580k studies</span>
         </div>
       </div>
 
-      {activeTab === "kg" && (
-        <GraphIntelligence stats={graphStats} statsLoading={graphStatsLoading} />
-      )}
-
-      {activeTab === "search" && <div className="trials-body">
+      <div className="trials-body">
 
         {/* ── Section 1: Search + preset queries ───────────────────────── */}
         <div className="trials-section compact-section">
@@ -525,7 +514,9 @@ export default function TrialsPanel() {
                   normalizeAggData={normalizeAggData}
                 />
 
-                {/* ── Results list + detail panel row ──────────────────── */}
+                <KGContextPanel conditions={kgEntities.conditions} sponsors={kgEntities.sponsors} />
+
+                {/* ── Results list + detail panel row ──────────────────── */
                 <div className="results-and-detail">
                 <div className="results-list">
                   {filteredTrials.slice(0, displayCount).map((trial) => (
@@ -814,7 +805,6 @@ export default function TrialsPanel() {
           </div>
         )}
       </div>
-      }{/* closes activeTab === "search" trials-body */}
     </div>
 
     {rulesOpen && (

@@ -332,3 +332,74 @@
   padding: 1px 6px;
   margin-left: 4px;
 }
+
+/* ── Context Panel (inline KG intel driven by dashboard filters) ── */
+.kg-context-panel {
+  border-top: 1px solid #21262d;
+  background: #0d1117;
+  margin: 0;
+}
+.kg-context-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: #0d1117;
+  border-bottom: 1px solid #21262d;
+}
+.kg-context-logo {
+  font-size: 13px;
+  color: #a78bfa;
+}
+.kg-context-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.kg-context-hint {
+  font-size: 11px;
+  color: #484f58;
+}
+.kg-context-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+}
+.kg-context-entity {
+  padding: 14px 20px 16px;
+  border-right: 1px solid #21262d;
+  border-bottom: 1px solid #21262d;
+}
+.kg-context-entity:last-child { border-right: none; }
+.kg-context-entity-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.kg-context-entity-label {
+  font-size: 11px;
+  color: #8b949e;
+}
+.kg-context-trial-count {
+  font-size: 11px;
+  color: #8b949e;
+  margin-left: 2px;
+}
+.kg-context-loading {
+  font-size: 12px;
+  color: #484f58;
+  font-style: italic;
+  padding: 4px 0;
+}
+.kg-context-empty {
+  font-size: 12px;
+  color: #484f58;
+  padding: 4px 0;
+}
+/* Compact adjacency rows inside context panel */
+.kg-adj-row-compact {
+  grid-template-columns: 170px 1fr 120px 75px;
+}
