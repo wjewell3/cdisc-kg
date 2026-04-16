@@ -199,25 +199,36 @@ export default function TrialsPanel() {
     setActiveQuery(text);
     setSelectedTrial(null);
     setError(null);
-    setStep("loading");
     setShowFilterPicker(false);
     setDisplayCount(25);
 
     const { params, resolutions: resolved } = resolveTrialQuery(text);
     setResolutions(resolved);
-    setActiveResolutions(resolved);
 
-    try {
-      const [data, agg] = await Promise.all([
-        executeTrialQuery(params, 500),
-        executeTrialAgg(params),
-      ]);
-      setResults(data);
-      setAggData(agg);
+    const isFreetextOnly = resolved.length === 1 && resolved[0].param === 'q';
+
+    if (isFreetextOnly) {
+      // Free-text: need a full server search
+      setStep("loading");
+      setActiveResolutions(resolved);
+      try {
+        const [data, agg] = await Promise.all([
+          executeTrialQuery(params, 500),
+          executeTrialAgg(params),
+        ]);
+        setResults(data);
+        setAggData(agg);
+        setStep("results");
+      } catch (err) {
+        setError(err.message);
+        setStep("error");
+      }
+    } else {
+      // Structured filters: add as chart filters (highlights bars, same as clicking)
+      setActiveResolutions([]);
+      setResults(null);
+      setChartFilters(resolved.map(r => ({ field: r.param, value: r.value })));
       setStep("results");
-    } catch (err) {
-      setError(err.message);
-      setStep("error");
     }
   }, []);
 
@@ -422,7 +433,7 @@ export default function TrialsPanel() {
                   </span>
                 </div>
               <div className="results-layout">
-                {/* Charts */}
+                {/* Charts — full width above results */}
                 <TrialsCharts
                   trials={(results || baseResults).results}
                   aggData={chartAggData || aggData}
@@ -433,8 +444,9 @@ export default function TrialsPanel() {
                   fetchInterventions={fetchInterventions}
                 />
 
-                {/* ── Section 3: Results list ───────────────────────────── */}
-                <div className={`results-list ${selectedTrial ? "with-detail" : ""}`}>
+                {/* ── Results list + detail panel row ──────────────────── */}
+                <div className="results-and-detail">
+                <div className="results-list">
                   {filteredTrials.slice(0, displayCount).map((trial) => (
                     <div
                       key={trial.nct_id}
@@ -490,7 +502,7 @@ export default function TrialsPanel() {
 
                 {/* Detail panel */}
                 {selectedTrial && (
-                  <div className="trial-detail slide-in">
+                  <div className="trial-detail slide-in" style={{maxHeight: '75vh', overflowY: 'auto'}}>
                     <div className="detail-header">
                       <h3>Trial Detail</h3>
                       <button className="close-btn" onClick={() => setSelectedTrial(null)}>
@@ -598,20 +610,6 @@ export default function TrialsPanel() {
                         </div>
                       </div>
                     )}
-
-                    {/* KG lineage callout */}
-                    <div className="kg-lineage-box">
-                      <div className="kg-lineage-title">🔗 KG Semantic Bridge</div>
-                      <p className="kg-lineage-desc">
-                        This trial's <strong>primary outcome</strong> concept maps to SDTM{" "}
-                        <code>AE.AETERM</code> / <code>SUPPAE</code> via the CDISC Knowledge
-                        Graph — enabling cross-source lineage from ClinicalTrials.gov protocol
-                        design all the way to patient-level SDTM data.
-                      </p>
-                      <div className="kg-lineage-path">
-                        ClinicalTrials.gov Protocol → KG Semantic Layer → SDTM Domain → Subject-Level Data
-                      </div>
-                    </div>
 
                     {/* Trial Intelligence */}
                     {!intelligence && (
@@ -728,6 +726,7 @@ export default function TrialsPanel() {
                     })()}
                   </div>
                 )}
+                </div>{/* closes results-and-detail */}
               </div>
               </>
             )}

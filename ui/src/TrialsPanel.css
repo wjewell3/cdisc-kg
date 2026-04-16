@@ -544,6 +544,12 @@
 
 .results-layout {
   display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.results-and-detail {
+  display: flex;
   gap: 16px;
   min-height: 0;
 }
@@ -1015,7 +1021,7 @@
   .trials-header { padding: 16px; }
   .trials-body   { padding: 16px; }
 
-  .results-layout {
+  .results-and-detail {
     flex-direction: column;
   }
 
