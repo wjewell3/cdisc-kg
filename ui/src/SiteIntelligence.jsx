@@ -44,9 +44,10 @@ export default function SiteIntelligence({ onSelectTrial }) {
       const url = base ? `${base}/api/site-search?q=${encodeURIComponent(query)}` : `/api/site-search?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setSearchResults(data.sites || []);
-    } catch {
-      setSearchResults([]);
+    } catch (e) {
+      setSearchResults({ error: e.message });
     } finally {
       setSearching(false);
     }
@@ -101,7 +102,9 @@ export default function SiteIntelligence({ onSelectTrial }) {
 
         {searchResults && (
           <div className="si-results-list">
-            {searchResults.length === 0 ? (
+            {searchResults.error ? (
+              <p className="si-empty si-snapshot-msg">⏳ {searchResults.error}</p>
+            ) : searchResults.length === 0 ? (
               <p className="si-empty">No sites found.</p>
             ) : (
               searchResults.map((s, i) => (

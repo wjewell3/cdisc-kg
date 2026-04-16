@@ -93,6 +93,10 @@
   text-align: center;
   padding: 16px;
 }
+.si-snapshot-msg {
+  color: #d29922;
+  font-style: italic;
+}
 
 .si-loading {
   font-size: 13px;

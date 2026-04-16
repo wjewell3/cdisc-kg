@@ -410,6 +410,7 @@ app.get("/api/trials", async (req, res) => {
 
 app.get("/api/site-search", (req, res) => {
   if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  try { db.prepare("SELECT 1 FROM facilities LIMIT 1").get(); } catch { return res.status(503).json({ error: "Facilities table not yet available — snapshot in progress" }); }
   const { q, country, limit = "20" } = req.query;
   if (!q || q.length < 2) return res.status(400).json({ error: "q required (min 2 chars)" });
   const lim = Math.min(parseInt(limit) || 20, 100);
@@ -431,6 +432,7 @@ app.get("/api/site-search", (req, res) => {
 
 app.get("/api/site-profile", (req, res) => {
   if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  try { db.prepare("SELECT 1 FROM facilities LIMIT 1").get(); } catch { return res.status(503).json({ error: "Facilities table not yet available — snapshot in progress" }); }
   const { name, city, state, country } = req.query;
   if (!name) return res.status(400).json({ error: "name required" });
 
@@ -564,6 +566,7 @@ app.get("/api/site-profile", (req, res) => {
 
 app.get("/api/trial-risk", (req, res) => {
   if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  try { db.prepare("SELECT 1 FROM calculated_values LIMIT 1").get(); } catch { return res.status(503).json({ error: "Calculated values table not yet available — snapshot in progress" }); }
   const { nct_id } = req.query;
   if (!nct_id || !/^NCT\d{8}$/i.test(nct_id)) return res.status(400).json({ error: "Valid nct_id required" });
   const id = nct_id.toUpperCase();
