@@ -1,0 +1,44 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: graph-loader
+  namespace: cdisc-kg
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200   # 2 hours max
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      restartPolicy: Never
+      containers:
+        - name: loader
+          image: ghcr.io/wjewell3/cdisc-kg-server:latest
+          command: ["node", "graph-loader.js"]
+          env:
+            - name: DB_PATH
+              value: /data/aact.db
+            - name: NEO4J_URI
+              value: "bolt://neo4j:7687"
+            - name: NEO4J_USER
+              value: "neo4j"
+            - name: NEO4J_PASS
+              value: "trials-kg-2026"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              readOnly: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: aact-data
