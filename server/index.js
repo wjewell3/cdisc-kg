@@ -18,6 +18,7 @@ import cors from "cors";
 import Database from "better-sqlite3";
 import { existsSync, statSync } from "fs";
 import pg from "pg";
+import neo4jDriver from "neo4j-driver";
 
 const {
   DB_PATH = "/data/aact.db",
@@ -1171,6 +1172,268 @@ Write 3 paragraphs: (1) portfolio overview and key characteristics, (2) operatio
   } catch (e) {
     console.error("[entity-intelligence] LLM error:", e.message);
     return res.status(500).json({ error: "LLM call failed", detail: e.message });
+  }
+});
+
+// ── Neo4j Knowledge Graph connection ──────────────────────────────────────
+const NEO4J_URI = process.env.NEO4J_URI || "bolt://neo4j:7687";
+const NEO4J_USER = process.env.NEO4J_USER || "neo4j";
+const NEO4J_PASS = process.env.NEO4J_PASS || "trials-kg-2026";
+
+let neo4j = null;
+try {
+  neo4j = neo4jDriver.driver(NEO4J_URI, neo4jDriver.auth.basic(NEO4J_USER, NEO4J_PASS));
+  // Test connectivity (non-blocking)
+  neo4j.getServerInfo().then(() => {
+    console.log("[server] Neo4j connected at", NEO4J_URI);
+  }).catch(e => {
+    console.warn("[server] Neo4j not available:", e.message);
+    neo4j = null;
+  });
+} catch (e) {
+  console.warn("[server] Neo4j driver init failed:", e.message);
+}
+
+async function cypher(query, params = {}) {
+  if (!neo4j) throw new Error("Knowledge graph not available");
+  const session = neo4j.session({ defaultAccessMode: neo4jDriver.session.READ });
+  try {
+    const result = await session.run(query, params);
+    return result.records;
+  } finally {
+    await session.close();
+  }
+}
+
+function nInt(v) {
+  if (v == null) return null;
+  return typeof v.toNumber === "function" ? v.toNumber() : Number(v);
+}
+
+// ── Graph endpoints ──────────────────────────────────────────────────────
+
+/**
+ * GET /api/graph/sponsor-overlap?sponsor=Pfizer&limit=20
+ * Find sponsors that share the most trial sites with the given sponsor.
+ * Returns: [{ sponsor, shared_sites, their_trials }]
+ */
+app.get("/api/graph/sponsor-overlap", async (req, res) => {
+  const { sponsor, limit = "20" } = req.query;
+  if (!sponsor) return res.status(400).json({ error: "sponsor required" });
+  try {
+    const records = await cypher(`
+      MATCH (s1:Sponsor {name: $sponsor})-[:RUNS]->(t1:Trial)-[:AT]->(site:Site)<-[:AT]-(t2:Trial)<-[:RUNS]-(s2:Sponsor)
+      WHERE s1 <> s2
+      WITH s2, COUNT(DISTINCT site) AS shared_sites, COUNT(DISTINCT t2) AS their_trials
+      RETURN s2.name AS sponsor, shared_sites, their_trials
+      ORDER BY shared_sites DESC
+      LIMIT toInteger($limit)
+    `, { sponsor, limit });
+    res.json(records.map(r => ({
+      sponsor: r.get("sponsor"),
+      shared_sites: nInt(r.get("shared_sites")),
+      their_trials: nInt(r.get("their_trials")),
+    })));
+  } catch (e) {
+    console.error("[graph/sponsor-overlap]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/therapeutic-adjacency?condition=Breast+Cancer&limit=15
+ * Find conditions that share the most interventions with the given condition.
+ * Returns: [{ condition, shared_interventions, example_drugs[] }]
+ */
+app.get("/api/graph/therapeutic-adjacency", async (req, res) => {
+  const { condition, limit = "15" } = req.query;
+  if (!condition) return res.status(400).json({ error: "condition required" });
+  try {
+    const records = await cypher(`
+      MATCH (c1:Condition {name: $condition})<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
+      WHERE c1 <> c2
+      WITH c2, COUNT(DISTINCT i) AS shared_interventions,
+           COLLECT(DISTINCT i.name)[0..3] AS example_drugs
+      RETURN c2.name AS condition, shared_interventions, example_drugs
+      ORDER BY shared_interventions DESC
+      LIMIT toInteger($limit)
+    `, { condition, limit });
+    res.json(records.map(r => ({
+      condition: r.get("condition"),
+      shared_interventions: nInt(r.get("shared_interventions")),
+      example_drugs: r.get("example_drugs"),
+    })));
+  } catch (e) {
+    console.error("[graph/therapeutic-adjacency]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/site-risk?nct_id=NCT12345678
+ * For a trial's sites, find termination rates at those sites from other trials.
+ * Returns: [{ site, country, terminated, total, termination_rate }]
+ */
+app.get("/api/graph/site-risk", async (req, res) => {
+  const { nct_id } = req.query;
+  if (!nct_id) return res.status(400).json({ error: "nct_id required" });
+  try {
+    const records = await cypher(`
+      MATCH (t:Trial {nct_id: $nct_id})-[:AT]->(site:Site)<-[:AT]-(other:Trial)
+      WHERE other.nct_id <> $nct_id
+      WITH site,
+           COUNT(other) AS total,
+           SUM(CASE WHEN other.status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+           SUM(CASE WHEN other.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed
+      WHERE total >= 5
+      RETURN site.name AS site, site.country AS country,
+             terminated, completed, total,
+             ROUND(100.0 * terminated / total, 1) AS termination_rate
+      ORDER BY termination_rate DESC
+      LIMIT 25
+    `, { nct_id });
+    res.json(records.map(r => ({
+      site: r.get("site"),
+      country: r.get("country"),
+      terminated: nInt(r.get("terminated")),
+      completed: nInt(r.get("completed")),
+      total: nInt(r.get("total")),
+      termination_rate: nInt(r.get("termination_rate")),
+    })));
+  } catch (e) {
+    console.error("[graph/site-risk]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/site-expertise?site=Mayo+Clinic&limit=20
+ * Full capability profile for a site: conditions, phases, sponsors, completion rates.
+ */
+app.get("/api/graph/site-expertise", async (req, res) => {
+  const { site, limit = "20" } = req.query;
+  if (!site) return res.status(400).json({ error: "site required" });
+  try {
+    // Conditions at this site with completion rate
+    const condRecords = await cypher(`
+      MATCH (s:Site)-[:IN_COUNTRY]->(country:Country)
+      WHERE s.name CONTAINS $site
+      WITH COLLECT(DISTINCT s) AS sites, COLLECT(DISTINCT country.name)[0] AS top_country
+      UNWIND sites AS s
+      MATCH (t:Trial)-[:AT]->(s)
+      MATCH (t)-[:TREATS]->(c:Condition)
+      WITH c.name AS condition,
+           COUNT(DISTINCT t) AS trials,
+           SUM(CASE WHEN t.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN t.status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+           top_country
+      RETURN condition, trials, completed, terminated,
+             CASE WHEN completed + terminated > 0
+               THEN ROUND(100.0 * completed / (completed + terminated), 1)
+               ELSE null END AS completion_rate,
+             top_country
+      ORDER BY trials DESC
+      LIMIT toInteger($limit)
+    `, { site, limit });
+
+    // Sponsor network at this site
+    const sponsorRecords = await cypher(`
+      MATCH (s:Site) WHERE s.name CONTAINS $site
+      MATCH (t:Trial)-[:AT]->(s)
+      MATCH (sp:Sponsor)-[:RUNS]->(t)
+      RETURN sp.name AS sponsor, COUNT(DISTINCT t) AS trials
+      ORDER BY trials DESC LIMIT 10
+    `, { site });
+
+    res.json({
+      conditions: condRecords.map(r => ({
+        condition: r.get("condition"),
+        trials: nInt(r.get("trials")),
+        completed: nInt(r.get("completed")),
+        terminated: nInt(r.get("terminated")),
+        completion_rate: nInt(r.get("completion_rate")),
+      })),
+      sponsors: sponsorRecords.map(r => ({
+        sponsor: r.get("sponsor"),
+        trials: nInt(r.get("trials")),
+      })),
+      country: condRecords.length > 0 ? condRecords[0].get("top_country") : null,
+    });
+  } catch (e) {
+    console.error("[graph/site-expertise]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/sponsor-network?sponsor=Pfizer&limit=10
+ * Find the sponsor's preferred site network and which competitors use the same sites.
+ * 2-hop traversal: Sponsor → Trial → Site → Trial → Competitor Sponsor
+ */
+app.get("/api/graph/sponsor-network", async (req, res) => {
+  const { sponsor, limit = "10" } = req.query;
+  if (!sponsor) return res.status(400).json({ error: "sponsor required" });
+  try {
+    // Top sites for this sponsor
+    const siteRecords = await cypher(`
+      MATCH (sp:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)-[:AT]->(s:Site)
+      WITH s, COUNT(DISTINCT t) AS trials,
+           SUM(CASE WHEN t.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed
+      RETURN s.name AS site, s.country AS country, trials, completed
+      ORDER BY trials DESC LIMIT toInteger($limit)
+    `, { sponsor, limit });
+
+    // Competitors at those sites
+    const compRecords = await cypher(`
+      MATCH (sp:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)-[:AT]->(s:Site)<-[:AT]-(t2:Trial)<-[:RUNS]-(comp:Sponsor)
+      WHERE sp <> comp
+      WITH comp, COUNT(DISTINCT s) AS shared_sites, COUNT(DISTINCT t2) AS comp_trials
+      RETURN comp.name AS competitor, shared_sites, comp_trials
+      ORDER BY shared_sites DESC LIMIT 10
+    `, { sponsor });
+
+    // Conditions this sponsor focuses on
+    const condRecords = await cypher(`
+      MATCH (sp:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)
+      RETURN c.name AS condition, COUNT(DISTINCT t) AS trials
+      ORDER BY trials DESC LIMIT 10
+    `, { sponsor });
+
+    res.json({
+      top_sites: siteRecords.map(r => ({
+        site: r.get("site"), country: r.get("country"),
+        trials: nInt(r.get("trials")), completed: nInt(r.get("completed")),
+      })),
+      competitors: compRecords.map(r => ({
+        competitor: r.get("competitor"),
+        shared_sites: nInt(r.get("shared_sites")),
+        competitor_trials: nInt(r.get("comp_trials")),
+      })),
+      conditions: condRecords.map(r => ({
+        condition: r.get("condition"),
+        trials: nInt(r.get("trials")),
+      })),
+    });
+  } catch (e) {
+    console.error("[graph/sponsor-network]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/stats
+ * Return graph node/edge counts.
+ */
+app.get("/api/graph/stats", async (req, res) => {
+  try {
+    const nodeRecords = await cypher(`MATCH (n) RETURN labels(n)[0] AS label, COUNT(n) AS count ORDER BY count DESC`);
+    const edgeRecords = await cypher(`MATCH ()-[r]->() RETURN type(r) AS type, COUNT(r) AS count ORDER BY count DESC`);
+    res.json({
+      nodes: Object.fromEntries(nodeRecords.map(r => [r.get("label"), nInt(r.get("count"))])),
+      edges: Object.fromEntries(edgeRecords.map(r => [r.get("type"), nInt(r.get("count"))])),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
