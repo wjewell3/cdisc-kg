@@ -84,13 +84,14 @@ async function main() {
   log("Starting graph load");
   const t0 = Date.now();
 
-  // ── Clear existing graph (batch delete to avoid OOM on large graphs) ──
+  // ── Clear existing graph (client-side loop to avoid full cursor OOM) ──
   log("Clearing existing graph...");
-  await run(`
-    CALL {
-      MATCH (n) DETACH DELETE n
-    } IN TRANSACTIONS OF 10000 ROWS
-  `);
+  let cleared = 1;
+  while (cleared > 0) {
+    const r = await run(`MATCH (n) WITH n LIMIT 25000 DETACH DELETE n RETURN count(*) AS c`);
+    cleared = r.records[0]?.get("c")?.toNumber?.() ?? 0;
+    if (cleared > 0) log(`  cleared batch of ${cleared}`);
+  }
 
   // ── Constraints & indexes ──
   log("Creating constraints...");

@@ -514,7 +514,7 @@ export default function TrialsPanel() {
                   normalizeAggData={normalizeAggData}
                 />
 
-                <KGContextPanel conditions={kgEntities.conditions} sponsors={kgEntities.sponsors} />
+                <KGContextPanel sponsors={kgEntities.sponsors} />
 
                 {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">
