@@ -406,6 +406,287 @@ app.get("/api/trials", async (req, res) => {
   }
 });
 
+// ── Site Intelligence (Knowledge Graph) ───────────────────────────────────────
+
+app.get("/api/site-search", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const { q, country, limit = "20" } = req.query;
+  if (!q || q.length < 2) return res.status(400).json({ error: "q required (min 2 chars)" });
+  const lim = Math.min(parseInt(limit) || 20, 100);
+  const countryClause = country ? "AND f.country = ?" : "";
+  const countryParam = country ? [country] : [];
+  const rows = db.prepare(`
+    SELECT f.name, f.city, f.state, f.country,
+           COUNT(DISTINCT f.nct_id) AS trial_count,
+           ROUND(AVG(f.latitude), 4) AS latitude,
+           ROUND(AVG(f.longitude), 4) AS longitude
+    FROM facilities f
+    WHERE f.name LIKE ? ${countryClause}
+    GROUP BY f.name, f.city, f.state, f.country
+    ORDER BY trial_count DESC
+    LIMIT ?
+  `).all(`%${q}%`, ...countryParam, lim);
+  return res.json({ sites: rows });
+});
+
+app.get("/api/site-profile", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const { name, city, state, country } = req.query;
+  if (!name) return res.status(400).json({ error: "name required" });
+
+  // Build where clause for exact facility match
+  const facWhere = ["f.name = ?"];
+  const facParams = [name];
+  if (city) { facWhere.push("f.city = ?"); facParams.push(city); }
+  if (state) { facWhere.push("f.state = ?"); facParams.push(state); }
+  if (country) { facWhere.push("f.country = ?"); facParams.push(country); }
+  const w = facWhere.join(" AND ");
+
+  // Get all trial IDs for this facility
+  const trialIds = db.prepare(`SELECT DISTINCT f.nct_id FROM facilities f WHERE ${w}`).all(...facParams).map(r => r.nct_id);
+  if (trialIds.length === 0) return res.status(404).json({ error: "Site not found" });
+
+  const ph = trialIds.map(() => "?").join(",");
+
+  // Phase distribution
+  const phases = db.prepare(`SELECT COALESCE(phase, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${ph}) GROUP BY 1 ORDER BY count DESC`).all(...trialIds);
+
+  // Status distribution
+  const statuses = db.prepare(`SELECT COALESCE(overall_status, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${ph}) GROUP BY 1 ORDER BY count DESC`).all(...trialIds);
+
+  // Top conditions
+  const conditions = db.prepare(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c WHERE c.nct_id IN (${ph}) GROUP BY c.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+
+  // Top interventions
+  const interventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${ph}) GROUP BY i.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+
+  // Top sponsors
+  const sponsors = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${ph}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+
+  // Operational metrics from calculated_values
+  const ops = db.prepare(`
+    SELECT
+      COUNT(*) AS total_trials,
+      SUM(CASE WHEN cv.were_results_reported = 1 THEN 1 ELSE 0 END) AS reported_results,
+      ROUND(AVG(cv.actual_duration), 1) AS avg_duration_months,
+      ROUND(AVG(cv.months_to_report_results), 1) AS avg_months_to_report,
+      SUM(cv.number_of_sae_subjects) AS total_sae_subjects,
+      SUM(cv.number_of_nsae_subjects) AS total_nsae_subjects
+    FROM calculated_values cv
+    WHERE cv.nct_id IN (${ph})
+  `).get(...trialIds);
+
+  // Completion rate
+  const completionStats = db.prepare(`
+    SELECT
+      COUNT(*) AS finished,
+      SUM(CASE WHEN overall_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
+      SUM(CASE WHEN overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated
+    FROM studies
+    WHERE nct_id IN (${ph}) AND overall_status IN ('COMPLETED', 'TERMINATED')
+  `).get(...trialIds);
+
+  // Dropout reasons
+  const dropouts = db.prepare(`
+    SELECT dw.reason, SUM(dw.count) AS total
+    FROM drop_withdrawals dw
+    WHERE dw.nct_id IN (${ph}) AND dw.reason IS NOT NULL
+    GROUP BY dw.reason ORDER BY total DESC LIMIT 10
+  `).all(...trialIds);
+
+  // Duration distribution
+  const durations = db.prepare(`
+    SELECT
+      CASE
+        WHEN cv.actual_duration < 12 THEN '< 1 yr'
+        WHEN cv.actual_duration < 24 THEN '1–2 yr'
+        WHEN cv.actual_duration < 36 THEN '2–3 yr'
+        WHEN cv.actual_duration < 60 THEN '3–5 yr'
+        ELSE '5+ yr'
+      END AS bucket,
+      COUNT(*) AS count
+    FROM calculated_values cv
+    WHERE cv.nct_id IN (${ph}) AND cv.actual_duration IS NOT NULL
+    GROUP BY 1 ORDER BY MIN(cv.actual_duration)
+  `).all(...trialIds);
+
+  // Countries for this site's trials
+  const trialCountries = db.prepare(`
+    SELECT ctry.name AS val, COUNT(DISTINCT ctry.nct_id) AS count
+    FROM countries ctry
+    WHERE ctry.nct_id IN (${ph}) AND ctry.removed = 0
+    GROUP BY ctry.name ORDER BY count DESC LIMIT 10
+  `).all(...trialIds);
+
+  // Recent trials (last 10)
+  const recentTrials = db.prepare(`
+    SELECT s.nct_id, s.brief_title, s.overall_status, s.phase,
+           s.enrollment, s.start_date, s.completion_date
+    FROM studies s
+    WHERE s.nct_id IN (${ph})
+    ORDER BY s.start_date DESC NULLS LAST
+    LIMIT 10
+  `).all(...trialIds);
+
+  // Location info from first facility record
+  const loc = db.prepare(`SELECT city, state, country, latitude, longitude FROM facilities f WHERE ${w} LIMIT 1`).get(...facParams);
+
+  const toObj = (rows) => Object.fromEntries(rows.map(r => [r.val, r.count]));
+  const completionRate = completionStats.finished > 0
+    ? parseFloat(((completionStats.completed / completionStats.finished) * 100).toFixed(1))
+    : null;
+
+  return res.json({
+    site: { name, city: loc?.city, state: loc?.state, country: loc?.country, latitude: loc?.latitude, longitude: loc?.longitude },
+    summary: {
+      total_trials: trialIds.length,
+      completion_rate_pct: completionRate,
+      completed: completionStats.completed,
+      terminated: completionStats.terminated,
+      results_reported: ops.reported_results,
+      avg_duration_months: ops.avg_duration_months,
+      avg_months_to_report: ops.avg_months_to_report,
+      total_sae_subjects: ops.total_sae_subjects,
+    },
+    phases: toObj(phases),
+    statuses: toObj(statuses),
+    conditions: conditions.map(r => [r.val, r.count]),
+    interventions: interventions.map(r => [r.val, r.count]),
+    sponsors: sponsors.map(r => [r.val, r.count]),
+    dropouts: dropouts.map(r => [r.reason, r.total]),
+    durations: toObj(durations),
+    countries: trialCountries.map(r => [r.val, r.count]),
+    recent_trials: recentTrials,
+  });
+});
+
+// ── Trial Risk Score ──────────────────────────────────────────────────────────
+
+app.get("/api/trial-risk", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const { nct_id } = req.query;
+  if (!nct_id || !/^NCT\d{8}$/i.test(nct_id)) return res.status(400).json({ error: "Valid nct_id required" });
+  const id = nct_id.toUpperCase();
+
+  const trial = db.prepare(`SELECT * FROM studies WHERE nct_id = ?`).get(id);
+  if (!trial) return res.status(404).json({ error: `Trial ${id} not found` });
+
+  const cv = db.prepare(`SELECT * FROM calculated_values WHERE nct_id = ?`).get(id);
+  const design = db.prepare(`SELECT * FROM designs WHERE nct_id = ?`).get(id);
+  const elig = db.prepare(`SELECT * FROM eligibilities WHERE nct_id = ?`).get(id);
+
+  // Find comparables: same phase, same top condition
+  const topCond = db.prepare(`SELECT name FROM conditions WHERE nct_id = ? LIMIT 1`).get(id);
+  const condKeyword = topCond?.name?.split(/[;,]/)?.[0]?.trim();
+
+  const phaseClause = trial.phase ? `AND s.phase = ?` : `AND s.phase IS NULL`;
+  const phaseParam = trial.phase ? [trial.phase] : [];
+
+  // Get comparable completed/terminated trials
+  let compIds = [];
+  if (condKeyword) {
+    try {
+      const fts = db.prepare(`SELECT nct_id FROM studies_fts WHERE studies_fts MATCH ? LIMIT 500`).all(`"${condKeyword.replace(/"/g, '""')}"`);
+      compIds = fts.map(r => r.nct_id).filter(x => x !== id);
+    } catch {}
+  }
+
+  let comparables;
+  if (compIds.length > 20) {
+    const ph = compIds.map(() => "?").join(",");
+    comparables = db.prepare(`
+      SELECT s.nct_id, s.overall_status, s.enrollment, cv.actual_duration, cv.number_of_facilities
+      FROM studies s LEFT JOIN calculated_values cv ON cv.nct_id = s.nct_id
+      WHERE s.overall_status IN ('COMPLETED','TERMINATED') ${phaseClause}
+        AND s.nct_id IN (${ph})
+    `).all(...phaseParam, ...compIds);
+  } else {
+    comparables = db.prepare(`
+      SELECT s.nct_id, s.overall_status, s.enrollment, cv.actual_duration, cv.number_of_facilities
+      FROM studies s LEFT JOIN calculated_values cv ON cv.nct_id = s.nct_id
+      WHERE s.overall_status IN ('COMPLETED','TERMINATED') ${phaseClause}
+        AND s.nct_id != ?
+      ORDER BY RANDOM() LIMIT 200
+    `).all(...phaseParam, id);
+  }
+
+  // Compute risk factors
+  const factors = [];
+  let riskScore = 50; // baseline
+
+  // 1. Termination rate
+  const termRate = comparables.length > 0
+    ? comparables.filter(c => c.overall_status === 'TERMINATED').length / comparables.length
+    : 0;
+  if (termRate > 0.25) { factors.push({ factor: "High termination rate in comparables", impact: "high", detail: `${(termRate*100).toFixed(0)}% of similar trials terminated` }); riskScore += 15; }
+  else if (termRate > 0.15) { factors.push({ factor: "Moderate termination rate", impact: "medium", detail: `${(termRate*100).toFixed(0)}%` }); riskScore += 8; }
+
+  // 2. Enrollment ambition vs comparables
+  const compEnrollments = comparables.filter(c => c.enrollment > 0).map(c => c.enrollment).sort((a,b) => a-b);
+  const medEnroll = compEnrollments.length > 0 ? compEnrollments[Math.floor(compEnrollments.length/2)] : null;
+  if (trial.enrollment && medEnroll && trial.enrollment > medEnroll * 2) {
+    factors.push({ factor: "Enrollment target well above comparable median", impact: "high", detail: `Target ${trial.enrollment.toLocaleString()} vs median ${medEnroll.toLocaleString()}` });
+    riskScore += 12;
+  } else if (trial.enrollment && medEnroll && trial.enrollment > medEnroll * 1.5) {
+    factors.push({ factor: "Enrollment target above comparable median", impact: "medium", detail: `Target ${trial.enrollment.toLocaleString()} vs median ${medEnroll.toLocaleString()}` });
+    riskScore += 6;
+  }
+
+  // 3. Number of facilities (complexity)
+  if (cv?.number_of_facilities > 100) {
+    factors.push({ factor: "Large multi-site trial", impact: "medium", detail: `${cv.number_of_facilities} sites` });
+    riskScore += 8;
+  } else if (cv?.number_of_facilities > 50) {
+    factors.push({ factor: "Multi-site trial", impact: "low", detail: `${cv.number_of_facilities} sites` });
+    riskScore += 4;
+  }
+
+  // 4. Design complexity
+  if (design) {
+    if (design.masking === 'NONE' || design.masking === 'None (Open Label)') {
+      factors.push({ factor: "Open-label design", impact: "low", detail: "No blinding — potential bias risk but simpler operations" });
+    }
+    if (design.allocation === 'NON_RANDOMIZED') {
+      factors.push({ factor: "Non-randomized allocation", impact: "medium", detail: "Higher regulatory scrutiny" });
+      riskScore += 5;
+    }
+  }
+
+  // 5. Duration benchmark
+  const compDurations = comparables.filter(c => c.actual_duration > 0).map(c => c.actual_duration).sort((a,b) => a-b);
+  const medDuration = compDurations.length > 0 ? compDurations[Math.floor(compDurations.length/2)] : null;
+
+  // 6. Eligibility restrictiveness (count criteria lines as proxy)
+  if (elig?.criteria) {
+    const lines = elig.criteria.split('\n').filter(l => l.trim().length > 5).length;
+    if (lines > 30) {
+      factors.push({ factor: "Complex eligibility criteria", impact: "high", detail: `${lines} criteria lines — may slow enrollment` });
+      riskScore += 10;
+    } else if (lines > 20) {
+      factors.push({ factor: "Moderate eligibility complexity", impact: "medium", detail: `${lines} criteria lines` });
+      riskScore += 5;
+    }
+  }
+
+  riskScore = Math.min(100, Math.max(0, riskScore));
+
+  return res.json({
+    nct_id: id,
+    title: trial.brief_title,
+    risk_score: riskScore,
+    risk_level: riskScore >= 75 ? "high" : riskScore >= 50 ? "medium" : "low",
+    factors,
+    benchmarks: {
+      comparable_count: comparables.length,
+      termination_rate_pct: parseFloat((termRate * 100).toFixed(1)),
+      median_enrollment: medEnroll,
+      median_duration_months: medDuration,
+      condition_keyword: condKeyword,
+    },
+    design: design ? { allocation: design.allocation, masking: design.masking, model: design.intervention_model, purpose: design.primary_purpose } : null,
+  });
+});
+
 // ── Trial Intelligence ────────────────────────────────────────────────────────
 
 app.get("/api/trial-intelligence", async (req, res) => {
@@ -445,7 +726,15 @@ app.get("/api/trial-intelligence", async (req, res) => {
 
   if (!trial) return res.status(404).json({ error: `Trial ${id} not found in snapshot` });
 
-  // 2. Find condition-similar completed/terminated trials via FTS5 then same-phase filter
+  // 2a. Fetch operational enrichment from new KG tables
+  const cv = db.prepare(`SELECT * FROM calculated_values WHERE nct_id = ?`).get(id);
+  const design = db.prepare(`SELECT * FROM designs WHERE nct_id = ?`).get(id);
+  const elig = db.prepare(`SELECT criteria FROM eligibilities WHERE nct_id = ?`).get(id);
+  const dropouts = db.prepare(`SELECT reason, SUM(count) AS total FROM drop_withdrawals WHERE nct_id = ? AND reason IS NOT NULL GROUP BY reason ORDER BY total DESC LIMIT 8`).all(id);
+  const trialCountries = db.prepare(`SELECT name FROM countries WHERE nct_id = ? AND removed = 0`).all(id).map(r => r.name);
+  const facilityCount = cv?.number_of_facilities || null;
+
+  // 3. Find condition-similar completed/terminated trials via FTS5 then same-phase filter
   const topKeyword = (trial.conditions_text || trial.brief_title || "")
     .split(/[;,]/)[0]
     .replace(/[^a-zA-Z0-9 ]/g, " ")
@@ -559,6 +848,13 @@ TRIAL:
 - Conditions: ${trial.conditions_text || "not specified"}
 - Interventions: ${trial.interventions_text || "not specified"}
 ${trial.why_stopped ? `- Why Stopped: ${trial.why_stopped}` : ""}
+${facilityCount ? `- Number of Sites: ${facilityCount}` : ""}
+${trialCountries.length ? `- Countries: ${trialCountries.join(", ")}` : ""}
+${design ? `- Design: ${design.allocation || "unknown allocation"}, ${design.masking || "unknown masking"}, ${design.intervention_model || ""}, ${design.primary_purpose || ""}` : ""}
+${cv?.actual_duration ? `- Actual Duration: ${cv.actual_duration} months` : ""}
+${cv?.months_to_report_results ? `- Months to Report Results: ${cv.months_to_report_results}` : ""}
+${dropouts.length ? `- Dropout Reasons: ${dropouts.map(d => `${d.reason} (${d.total})`).join(", ")}` : ""}
+${elig?.criteria ? `- Eligibility Criteria (excerpt): ${elig.criteria.slice(0, 600)}` : ""}
 
 COMPARABLE TRIAL BENCHMARK (${riskSignals.comparable_count} completed/terminated ${trial.phase || "unknown phase"} trials for ${topKeyword}):
 - Early termination rate: ${termRate !== null ? termRate + "%" : "unknown"} (industry benchmark ~15%)
@@ -613,8 +909,14 @@ Write a 3–5 paragraph operational risk briefing covering:
       primary_completion_date: trial.primary_completion_date,
       conditions: trial.conditions_text,
       sponsor: trial.lead_sponsor,
+      facility_count: facilityCount,
+      countries: trialCountries,
+      design: design ? { allocation: design.allocation, masking: design.masking, model: design.intervention_model, purpose: design.primary_purpose } : null,
+      actual_duration_months: cv?.actual_duration || null,
+      months_to_report_results: cv?.months_to_report_results || null,
     },
     risk_signals: riskSignals,
+    dropouts: dropouts.map(d => ({ reason: d.reason, count: d.total })),
     briefing,
     comparable_examples: comparables.slice(0, 5).map((c) => ({
       nct_id: c.nct_id,

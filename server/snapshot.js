@@ -150,6 +150,73 @@ async function main() {
       summary_text
     );
 
+    -- ── Operational / KG tables ──────────────────────────────────────────────
+
+    CREATE TABLE IF NOT EXISTS calculated_values (
+      nct_id TEXT PRIMARY KEY,
+      number_of_facilities INTEGER,
+      actual_duration INTEGER,
+      were_results_reported INTEGER,
+      months_to_report_results INTEGER,
+      has_us_facility INTEGER,
+      has_single_facility INTEGER,
+      number_of_sae_subjects INTEGER,
+      number_of_nsae_subjects INTEGER,
+      minimum_age_num REAL,
+      maximum_age_num REAL,
+      number_of_primary_outcomes_to_measure INTEGER,
+      number_of_secondary_outcomes_to_measure INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS facilities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      status TEXT,
+      name TEXT,
+      city TEXT,
+      state TEXT,
+      country TEXT,
+      latitude REAL,
+      longitude REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS designs (
+      nct_id TEXT PRIMARY KEY,
+      allocation TEXT,
+      intervention_model TEXT,
+      observational_model TEXT,
+      primary_purpose TEXT,
+      time_perspective TEXT,
+      masking TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS drop_withdrawals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      period TEXT,
+      reason TEXT,
+      count INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS countries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      name TEXT,
+      removed INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS eligibilities (
+      nct_id TEXT PRIMARY KEY,
+      gender TEXT,
+      minimum_age TEXT,
+      maximum_age TEXT,
+      healthy_volunteers TEXT,
+      criteria TEXT,
+      adult INTEGER,
+      child INTEGER,
+      older_adult INTEGER
+    );
+
     -- Metadata
     CREATE TABLE IF NOT EXISTS _meta (
       key TEXT PRIMARY KEY,
@@ -223,6 +290,84 @@ async function main() {
     (rows) => { for (const r of rows) insSummary.run(r.nct_id, r.description); }
   );
 
+  // ── Operational / KG tables ─────────────────────────────────────────────────
+
+  // calculated_values (pre-computed operational metrics)
+  const insCalc = db.prepare(`INSERT OR REPLACE INTO calculated_values
+    (nct_id, number_of_facilities, actual_duration, were_results_reported,
+     months_to_report_results, has_us_facility, has_single_facility,
+     number_of_sae_subjects, number_of_nsae_subjects,
+     minimum_age_num, maximum_age_num,
+     number_of_primary_outcomes_to_measure, number_of_secondary_outcomes_to_measure)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  await ingest("calculated_values",
+    `SELECT nct_id, number_of_facilities, actual_duration, were_results_reported,
+            months_to_report_results, has_us_facility, has_single_facility,
+            number_of_sae_subjects, number_of_nsae_subjects,
+            minimum_age_num, maximum_age_num,
+            number_of_primary_outcomes_to_measure, number_of_secondary_outcomes_to_measure
+     FROM calculated_values ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM calculated_values`,
+    (rows) => { for (const r of rows) insCalc.run(
+      r.nct_id, r.number_of_facilities, r.actual_duration,
+      r.were_results_reported ? 1 : 0, r.months_to_report_results,
+      r.has_us_facility ? 1 : 0, r.has_single_facility ? 1 : 0,
+      r.number_of_sae_subjects, r.number_of_nsae_subjects,
+      r.minimum_age_num, r.maximum_age_num,
+      r.number_of_primary_outcomes_to_measure, r.number_of_secondary_outcomes_to_measure
+    ); }
+  );
+
+  // facilities (3.4M — site-level data for site intelligence)
+  const insFac = db.prepare(`INSERT INTO facilities (nct_id, status, name, city, state, country, latitude, longitude) VALUES (?,?,?,?,?,?,?,?)`);
+  await ingest("facilities",
+    `SELECT nct_id, status, name, city, state, country, latitude::float, longitude::float
+     FROM facilities WHERE name IS NOT NULL ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM facilities WHERE name IS NOT NULL`,
+    (rows) => { for (const r of rows) insFac.run(r.nct_id, r.status, r.name, r.city, r.state, r.country, r.latitude, r.longitude); }
+  );
+
+  // designs
+  const insDes = db.prepare(`INSERT OR REPLACE INTO designs
+    (nct_id, allocation, intervention_model, observational_model, primary_purpose, time_perspective, masking)
+    VALUES (?,?,?,?,?,?,?)`);
+  await ingest("designs",
+    `SELECT nct_id, allocation, intervention_model, observational_model, primary_purpose, time_perspective, masking
+     FROM designs ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM designs`,
+    (rows) => { for (const r of rows) insDes.run(r.nct_id, r.allocation, r.intervention_model, r.observational_model, r.primary_purpose, r.time_perspective, r.masking); }
+  );
+
+  // drop_withdrawals (only rows with count > 0)
+  const insDrop = db.prepare(`INSERT INTO drop_withdrawals (nct_id, period, reason, count) VALUES (?,?,?,?)`);
+  await ingest("drop_withdrawals",
+    `SELECT nct_id, period, reason, count FROM drop_withdrawals WHERE count > 0 ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM drop_withdrawals WHERE count > 0`,
+    (rows) => { for (const r of rows) insDrop.run(r.nct_id, r.period, r.reason, parseInt(r.count)); }
+  );
+
+  // countries
+  const insCountry = db.prepare(`INSERT INTO countries (nct_id, name, removed) VALUES (?,?,?)`);
+  await ingest("countries",
+    `SELECT nct_id, name, removed FROM countries WHERE name IS NOT NULL ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM countries WHERE name IS NOT NULL`,
+    (rows) => { for (const r of rows) insCountry.run(r.nct_id, r.name, r.removed ? 1 : 0); }
+  );
+
+  // eligibilities
+  const insElig = db.prepare(`INSERT OR REPLACE INTO eligibilities
+    (nct_id, gender, minimum_age, maximum_age, healthy_volunteers, criteria, adult, child, older_adult)
+    VALUES (?,?,?,?,?,?,?,?,?)`);
+  await ingest("eligibilities",
+    `SELECT nct_id, gender, minimum_age, maximum_age, healthy_volunteers, criteria, adult, child, older_adult
+     FROM eligibilities ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM eligibilities`,
+    (rows) => { for (const r of rows) insElig.run(
+      r.nct_id, r.gender, r.minimum_age, r.maximum_age, r.healthy_volunteers,
+      r.criteria, r.adult ? 1 : 0, r.child ? 1 : 0, r.older_adult ? 1 : 0
+    ); }
+  );
+
   // ── Build secondary indexes ─────────────────────────────────────────────────
   console.log("[snapshot] building indexes…");
   db.exec(`
@@ -231,6 +376,12 @@ async function main() {
     CREATE INDEX IF NOT EXISTS idx_sponsor_nct ON sponsors(nct_id);
     CREATE INDEX IF NOT EXISTS idx_studies_status ON studies(overall_status);
     CREATE INDEX IF NOT EXISTS idx_studies_phase ON studies(phase);
+    CREATE INDEX IF NOT EXISTS idx_fac_nct ON facilities(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_fac_name ON facilities(name);
+    CREATE INDEX IF NOT EXISTS idx_fac_country ON facilities(country);
+    CREATE INDEX IF NOT EXISTS idx_drop_nct ON drop_withdrawals(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_countries_nct ON countries(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_cv_duration ON calculated_values(actual_duration);
   `);
 
   // ── Populate FTS ────────────────────────────────────────────────────────────
