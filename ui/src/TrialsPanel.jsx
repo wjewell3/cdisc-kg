@@ -516,7 +516,7 @@ export default function TrialsPanel() {
 
                 <KGContextPanel conditions={kgEntities.conditions} sponsors={kgEntities.sponsors} />
 
-                {/* ── Results list + detail panel row ──────────────────── */
+                {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">
                 <div className="results-list">
                   {filteredTrials.slice(0, displayCount).map((trial) => (
