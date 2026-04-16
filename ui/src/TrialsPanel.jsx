@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts from "./TrialsCharts";
 import RulesManager from "./RulesManager";
+import InsightPanel from "./InsightPanel";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 
@@ -58,6 +59,7 @@ export default function TrialsPanel() {
   const [intelStep, setIntelStep] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [insightTarget, setInsightTarget] = useState(null); // { type: "sponsor"|"condition"|"intervention", name }
 
   const {
     rules, addGrouping, removeGrouping, updateGrouping, setEnrollmentBounds,
@@ -158,6 +160,10 @@ export default function TrialsPanel() {
   const fetchSponsors = useCallback((q) => executeSponsorSearch(buildCurrentParams(), q), [buildCurrentParams]);
   const fetchConditions = useCallback((q) => executeConditionSearch(buildCurrentParams(), q), [buildCurrentParams]);
   const fetchInterventions = useCallback((q) => executeInterventionSearch(buildCurrentParams(), q), [buildCurrentParams]);
+
+  const handleInsight = useCallback((type, name) => {
+    setInsightTarget(prev => (prev?.type === type && prev?.name === name) ? null : { type, name });
+  }, []);
 
   useEffect(() => {
     if (chartFilters.length === 0) {
@@ -484,6 +490,7 @@ export default function TrialsPanel() {
                   aggData={chartAggData || aggData}
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
+                  onInsight={handleInsight}
                   fetchSponsors={fetchSponsors}
                   fetchConditions={fetchConditions}
                   fetchInterventions={fetchInterventions}
@@ -795,6 +802,11 @@ export default function TrialsPanel() {
         onClose={() => setRulesOpen(false)}
       />
     )}
+
+    <InsightPanel
+      insightTarget={insightTarget}
+      onClose={() => setInsightTarget(null)}
+    />
     </>
   );
 }

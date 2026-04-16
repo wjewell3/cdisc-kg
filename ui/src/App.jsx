@@ -7,7 +7,6 @@ import TreeView from "./TreeView";
 import TutorPanel from "./TutorPanel";
 import DemoPanel from "./DemoPanel";
 import TrialsPanel from "./TrialsPanel";
-import SiteIntelligence from "./SiteIntelligence";
 import "./App.css";
 
 // All graph data is bundled statically — no backend needed for the explorer
@@ -40,7 +39,6 @@ const ROUTE_TO_PANEL = {
   "/learn": "learn",
   "/demo": "demo",
   "/trials": "trials",
-  "/sites": "sites",
 };
 const PANEL_TO_ROUTE = Object.fromEntries(Object.entries(ROUTE_TO_PANEL).map(([k, v]) => [v, k]));
 
@@ -344,12 +342,6 @@ function App() {
           >
             Trials ✦
           </button>
-          <button
-            className={`tab-btn tab-btn-trials ${activePanel === "sites" ? "active" : ""}`}
-            onClick={() => switchPanel("sites")}
-          >
-            Sites 🏥
-          </button>
         </div>
         {stats && (
           <span className="stats-badge">
@@ -360,12 +352,12 @@ function App() {
 
       <div className="main">
         {/* Sidebar overlay for mobile */}
-        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "demo" && activePanel !== "trials" && activePanel !== "sites" && (
+        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "demo" && activePanel !== "trials" && (
           <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
         )}
 
         {/* Left sidebar — hidden on Browse tab */}
-        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "demo" || activePanel === "trials" || activePanel === "sites" ? " sidebar-hidden" : ""}`}>
+        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "demo" || activePanel === "trials" ? " sidebar-hidden" : ""}`}>
           <div className="panel">
             <h3>Search</h3>
             <div className="search-box">
@@ -669,9 +661,6 @@ function App() {
 
         {/* Trials / cross-trial AACT intelligence */}
         {activePanel === "trials" && <TrialsPanel />}
-
-        {/* Sites / operational site intelligence */}
-        {activePanel === "sites" && <SiteIntelligence onSelectTrial={(nctId) => switchPanel("trials")} />}
       </div>
     </div>
   );

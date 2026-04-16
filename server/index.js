@@ -955,6 +955,152 @@ For enrollment range bounds:
   }
 });
 
+// ── Entity Insight ────────────────────────────────────────────────────────────
+
+function queryEntityInsight(type, name) {
+  let sq, params;
+  if (type === "sponsor") {
+    sq = `SELECT nct_id FROM sponsors WHERE name = ? AND lead_or_collaborator = 'lead'`;
+    params = [name];
+  } else if (type === "condition") {
+    sq = `SELECT DISTINCT nct_id FROM conditions WHERE name = ?`;
+    params = [name];
+  } else if (type === "intervention") {
+    sq = `SELECT DISTINCT nct_id FROM interventions WHERE name = ?`;
+    params = [name];
+  } else {
+    return null;
+  }
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM (${sq})`).get(...params)?.n || 0;
+  if (total === 0) return { empty: true };
+
+  const cs = db.prepare(`
+    SELECT
+      SUM(CASE WHEN overall_status = 'COMPLETED'  THEN 1 ELSE 0 END) AS completed,
+      SUM(CASE WHEN overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+      ROUND(AVG(CASE WHEN enrollment_type = 'ACTUAL' THEN CAST(enrollment AS REAL) END), 0) AS avg_enrollment
+    FROM studies WHERE nct_id IN (${sq})
+  `).get(...params);
+
+  const phases    = db.prepare(`SELECT COALESCE(phase, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${sq}) GROUP BY 1 ORDER BY count DESC`).all(...params);
+  const statuses  = db.prepare(`SELECT COALESCE(overall_status, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${sq}) GROUP BY 1 ORDER BY count DESC`).all(...params);
+
+  let topConditions = [], topSponsors = [], topInterventions = [];
+  if (type === "sponsor") {
+    topConditions    = db.prepare(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c    WHERE c.nct_id IN (${sq}) GROUP BY c.name ORDER BY count DESC LIMIT 10`).all(...params);
+    topInterventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${sq}) GROUP BY i.name ORDER BY count DESC LIMIT 10`).all(...params);
+  } else if (type === "condition") {
+    topSponsors      = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${sq}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 10`).all(...params);
+    topInterventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${sq}) GROUP BY i.name ORDER BY count DESC LIMIT 10`).all(...params);
+  } else {
+    topConditions = db.prepare(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c    WHERE c.nct_id IN (${sq}) GROUP BY c.name ORDER BY count DESC LIMIT 10`).all(...params);
+    topSponsors   = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${sq}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 10`).all(...params);
+  }
+
+  let avgDuration = null, avgMonthsToReport = null, topSites = [];
+  try {
+    const cv = db.prepare(`SELECT ROUND(AVG(actual_duration), 1) AS d, ROUND(AVG(months_to_report_results), 1) AS m FROM calculated_values WHERE nct_id IN (${sq})`).get(...params);
+    avgDuration = cv?.d; avgMonthsToReport = cv?.m;
+    topSites = db.prepare(`SELECT f.name AS val, COUNT(DISTINCT f.nct_id) AS count FROM facilities f WHERE f.nct_id IN (${sq}) GROUP BY f.name ORDER BY count DESC LIMIT 8`).all(...params);
+  } catch { /* tables not yet available */ }
+
+  const fin = cs.completed + cs.terminated;
+  return {
+    entity: { type, name },
+    summary: {
+      total_trials: total,
+      completion_rate_pct: fin > 0 ? parseFloat(((cs.completed / fin) * 100).toFixed(1)) : null,
+      completed: cs.completed,
+      terminated: cs.terminated,
+      avg_enrollment: cs.avg_enrollment,
+      avg_duration_months: avgDuration,
+      avg_months_to_report: avgMonthsToReport,
+    },
+    phases:        Object.fromEntries(phases.map(r => [r.val, r.count])),
+    statuses:      Object.fromEntries(statuses.map(r => [r.val, r.count])),
+    conditions:    topConditions.map(r => [r.val, r.count]),
+    sponsors:      topSponsors.map(r => [r.val, r.count]),
+    interventions: topInterventions.map(r => [r.val, r.count]),
+    sites:         topSites.map(r => [r.val, r.count]),
+  };
+}
+
+app.get("/api/entity-insight", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const { type, name } = req.query;
+  if (!["sponsor", "condition", "intervention"].includes(type) || !name) {
+    return res.status(400).json({ error: "valid type (sponsor|condition|intervention) and name required" });
+  }
+  try {
+    const result = queryEntityInsight(type, name);
+    if (!result) return res.status(400).json({ error: "Invalid entity type" });
+    if (result.empty) return res.status(404).json({ error: `No trials found for ${type}: ${name}` });
+    return res.json(result);
+  } catch (e) {
+    console.error("[entity-insight]", e.message);
+    return res.status(500).json({ error: "Query failed", detail: e.message });
+  }
+});
+
+app.get("/api/entity-intelligence", async (req, res) => {
+  const { type, name } = req.query;
+  if (!["sponsor", "condition", "intervention"].includes(type) || !name) {
+    return res.status(400).json({ error: "valid type and name required" });
+  }
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const GITHUB_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
+  if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "LLM not configured" });
+
+  let insight;
+  try {
+    insight = queryEntityInsight(type, name);
+    if (!insight || insight.empty) return res.status(404).json({ error: `No data for ${type}: ${name}` });
+  } catch (e) {
+    return res.status(500).json({ error: "Data fetch failed" });
+  }
+
+  const { summary, phases, conditions, sponsors, interventions, sites } = insight;
+  const topPhases = Object.entries(phases).sort((a,b) => b[1]-a[1]).slice(0,5).map(([k,v]) => `${k}: ${v}`).join(", ");
+  const topConds  = conditions.slice(0,5).map(([n]) => n).join(", ");
+  const topSpons  = sponsors.slice(0,5).map(([n]) => n).join(", ");
+  const topInts   = interventions.slice(0,5).map(([n]) => n).join(", ");
+  const topSiteList = sites.slice(0,5).map(([n]) => n).join(", ");
+
+  const systemPrompt = `You are a senior clinical trial operations analyst. Provide strategic, data-driven insights in plain paragraphs. Be specific and actionable. No markdown headers or bullet lists.`;
+  const userMsg = `Analyze the following AACT clinical trial portfolio for the ${type} "${name}":
+
+Total trials: ${summary.total_trials.toLocaleString()}
+Completion rate: ${summary.completion_rate_pct !== null ? summary.completion_rate_pct + "%" : "unknown"} (${summary.completed} completed, ${summary.terminated} terminated)
+Avg actual enrollment: ${summary.avg_enrollment ? Math.round(summary.avg_enrollment).toLocaleString() : "unknown"}
+${summary.avg_duration_months ? `Avg trial duration: ${summary.avg_duration_months} months` : ""}
+${summary.avg_months_to_report ? `Avg months to report results: ${summary.avg_months_to_report}` : ""}
+Phase distribution: ${topPhases || "unknown"}
+${topConds  ? `Top conditions studied: ${topConds}`  : ""}
+${topSpons  ? `Top sponsors involved: ${topSpons}`   : ""}
+${topInts   ? `Top interventions: ${topInts}`         : ""}
+${topSiteList ? `Top sites: ${topSiteList}` : ""}
+
+Write 3 paragraphs: (1) portfolio overview and key characteristics, (2) operational performance patterns and what they indicate, (3) strategic insights or risks a clinical operations manager should know.`;
+
+  try {
+    const response = await fetch("https://api.githubcopilot.com/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-4.1", max_tokens: 600, temperature: 0.35,
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMsg }],
+      }),
+    });
+    if (!response.ok) throw new Error(`LLM API ${response.status}`);
+    const llmData = await response.json();
+    const briefing = llmData.choices?.[0]?.message?.content || null;
+    return res.json({ briefing });
+  } catch (e) {
+    console.error("[entity-intelligence] LLM error:", e.message);
+    return res.status(500).json({ error: "LLM call failed", detail: e.message });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

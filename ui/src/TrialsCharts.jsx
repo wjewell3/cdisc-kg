@@ -47,7 +47,7 @@ function filterTrials(trials, activeFilters, excludeField = null) {
   );
 }
 
-function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8, total = null }) {
+function SvgBarChart({ data, title, field, activeValues, onFilter, onInsight, maxItems = 8, total = null }) {
   const displayData = data.slice(0, maxItems);
 
   // Append an "(other sponsors)" bar when total is provided and not all are shown
@@ -87,7 +87,12 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8,
           return (
             <g
               key={label}
-              onClick={() => !isOthers && onFilter(field, label)}
+              onClick={() => {
+                if (!isOthers) {
+                  onFilter(field, label);
+                  onInsight?.(field, label);
+                }
+              }}
               style={{ cursor: isOthers ? "default" : "pointer" }}
               role={isOthers ? undefined : "button"}
               aria-pressed={isActive}
@@ -277,7 +282,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
   );
 }
 
-export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
+export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, onInsight, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -444,6 +449,7 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="sponsor"
               activeValues={getActiveVals("sponsor")}
               onFilter={onFilter}
+              onInsight={onInsight}
               total={sponsorSearch ? null : totalCount}
             />
           </div>
@@ -464,6 +470,7 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="condition"
               activeValues={getActiveVals("condition")}
               onFilter={onFilter}
+              onInsight={onInsight}
               total={conditionSearch ? null : totalCount}
             />
           </div>
@@ -484,6 +491,7 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="intervention"
               activeValues={getActiveVals("intervention")}
               onFilter={onFilter}
+              onInsight={onInsight}
               total={interventionSearch ? null : totalCount}
             />
           </div>
