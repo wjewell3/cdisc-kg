@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
-import InsightPanel from "./InsightPanel";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 
@@ -40,7 +39,6 @@ const PHASE_CLASS = {
 
 export default function TrialsPanel() {
   const [query, setQuery] = useState("");
-  const [insightTarget, setInsightTarget] = useState(null);
   const [step, setStep] = useState("question"); // question | loading | results | error
   const [resolutions, setResolutions] = useState([]);
   const [results, setResults] = useState(null);
@@ -295,38 +293,16 @@ export default function TrialsPanel() {
     return source.results;
   }, [chartResults, results, baseResults]);
 
-  // Map chart field names to entity-insight API type names
-  const FIELD_TO_INSIGHT_TYPE = {
-    sponsor: "sponsor",
-    condition: "condition",
-    intervention: "intervention",
-    phase: "phase",
-    status: "status",
-    _enroll_range: "enrollment_range",
-  };
-
   const handleChartFilter = useCallback((field, value) => {
     setSelectedTrial(null);
     if (field === null || value === null) {
       setChartFilters([]);
-      setInsightTarget(null);
     } else {
       setChartFilters((prev) => {
         const exists = prev.some((f) => f.field === field && f.value === value);
-        if (exists) {
-          // Toggling off — clear insight if it matches this field+value
-          setInsightTarget((cur) =>
-            cur && cur._field === field && cur.name === value ? null : cur
-          );
-          return prev.filter((f) => !(f.field === field && f.value === value));
-        } else {
-          // Toggling on — open insight panel for this entity
-          const insightType = FIELD_TO_INSIGHT_TYPE[field];
-          if (insightType) {
-            setInsightTarget({ type: insightType, name: value, _field: field });
-          }
-          return [...prev, { field, value }];
-        }
+        return exists
+          ? prev.filter((f) => !(f.field === field && f.value === value))
+          : [...prev, { field, value }];
       });
     }
   }, []);
@@ -812,8 +788,6 @@ export default function TrialsPanel() {
         )}
       </div>
     </div>
-
-    <InsightPanel insightTarget={insightTarget} onClose={() => setInsightTarget(null)} />
 
     {rulesOpen && (
       <RulesManager
