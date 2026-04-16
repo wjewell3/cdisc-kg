@@ -63,7 +63,6 @@ export default function TrialsPanel() {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [graphResult, setGraphResult] = useState(null); // { cypher, columns, rows, narrative, loading, error }
   const [graphQueryId, setGraphQueryId] = useState(null); // preset id (g1-g5) for viz shape
-  const [graphView, setGraphView] = useState("graph"); // "graph" | "table"
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -261,7 +260,6 @@ export default function TrialsPanel() {
       // Capture preset id so the viz knows which shape to build
       const preset = TRIAL_QUERIES.find(q => q.isGraph && q.text === text);
       setGraphQueryId(preset?.id ?? null);
-      setGraphView("graph");
       setGraphResult({ loading: true, error: null, cypher: null, columns: [], rows: [], narrative: null });
       // Don't show full-page spinner — keep charts visible beneath the graph panel.
       // Move to "results" so the base charts section renders (from baseResults).
@@ -499,8 +497,6 @@ export default function TrialsPanel() {
           </p>
           <GraphViz
             queryId={graphResult && !graphResult.loading && !graphResult.error && graphResult.rows?.length > 0 ? graphQueryId : null}
-            columns={graphResult?.columns ?? []}
-            rows={graphResult && !graphResult.loading && !graphResult.error ? (graphResult.rows ?? []) : []}
           />
         </div>
 
@@ -512,18 +508,6 @@ export default function TrialsPanel() {
               <h2>Graph Query Results</h2>
               {!graphResult.loading && !graphResult.error && (
                 <span className="result-count">{graphResult.total} rows</span>
-              )}
-              {!graphResult.loading && !graphResult.error && graphResult.rows?.length > 0 && (
-                <div className="graph-view-toggle">
-                  <button
-                    className={`gvt-btn${graphView === "graph" ? " active" : ""}`}
-                    onClick={() => setGraphView("graph")}
-                  >&#x25CB; Graph</button>
-                  <button
-                    className={`gvt-btn${graphView === "table" ? " active" : ""}`}
-                    onClick={() => setGraphView("table")}
-                  >&#x22A4; Table</button>
-                </div>
               )}
             </div>
 
@@ -556,7 +540,6 @@ export default function TrialsPanel() {
                   </details>
                 )}
                 {graphResult.rows.length > 0 ? (
-                  graphView === "table" ? (
                     <div className="graph-table-wrap">
                       <table className="graph-result-table">
                         <thead>
@@ -583,7 +566,6 @@ export default function TrialsPanel() {
                         </tbody>
                       </table>
                     </div>
-                  ) : null /* graph view is shown in the KG Universe section above */
                 ) : (
                   <div className="graph-empty">No results returned for this query.</div>
                 )}

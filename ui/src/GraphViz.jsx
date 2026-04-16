@@ -1,383 +1,232 @@
 /**
- * GraphViz — Force-directed knowledge graph visualization.
+ * GraphViz — SVG schema diagram + query traversal path explainer.
  *
- * Default state: KG schema universe (5 node types, relationship edges).
- * After a graph query: result nodes shown as interactive force graph.
- * Table/Graph toggle is controlled by parent via `viewMode` prop.
+ * Default: Clean SVG showing 5 node types and their relationships.
+ * On query: Highlights the traversal path with step-by-step flow and counts.
  */
-import { useRef, useCallback, useMemo, useState, useEffect } from "react";
-import ForceGraph2D from "react-force-graph-2d";
+import { useMemo } from "react";
 
-// ── KG Schema (always shown as idle/background state) ────────────────────────
-const SCHEMA_DATA = {
-  nodes: [
-    { id: "Sponsor",      label: "Sponsor\n49,929",      color: "#6366f1", size: 16, nodeType: "schema" },
-    { id: "Trial",        label: "Trial\n580,489",        color: "#0ea5e9", size: 28, nodeType: "schema" },
-    { id: "Condition",    label: "Condition\n129,085",    color: "#10b981", size: 20, nodeType: "schema" },
-    { id: "Intervention", label: "Intervention\n512,289", color: "#f59e0b", size: 22, nodeType: "schema" },
-    { id: "Country",      label: "Country\n225",          color: "#ec4899", size: 10, nodeType: "schema" },
-  ],
-  links: [
-    { source: "Sponsor",      target: "Trial",        label: "RUNS",         value: 8 },
-    { source: "Trial",        target: "Condition",    label: "TREATS",       value: 10 },
-    { source: "Trial",        target: "Intervention", label: "USES",         value: 9 },
-    { source: "Trial",        target: "Country",      label: "CONDUCTED_IN", value: 5 },
-  ],
+// ── Schema layout — fixed positions for clean diagram ────────────────────────
+const NODES = [
+  { id: "Sponsor",      label: "Sponsor",      count: "49.9k",  x: 80,  y: 90,  color: "#818cf8", r: 32 },
+  { id: "Trial",        label: "Trial",         count: "580k",   x: 280, y: 90,  color: "#38bdf8", r: 42 },
+  { id: "Condition",    label: "Condition",     count: "129k",   x: 490, y: 40,  color: "#34d399", r: 36 },
+  { id: "Intervention", label: "Intervention",  count: "512k",   x: 490, y: 145, color: "#fbbf24", r: 36 },
+  { id: "Country",      label: "Country",       count: "225",    x: 280, y: 210, color: "#f472b6", r: 22 },
+];
+
+const EDGES = [
+  { from: "Sponsor",  to: "Trial",        label: "RUNS",         count: "580k" },
+  { from: "Trial",    to: "Condition",     label: "TREATS",       count: "1M"   },
+  { from: "Trial",    to: "Intervention",  label: "USES",         count: "964k" },
+  { from: "Trial",    to: "Country",       label: "CONDUCTED_IN", count: "754k" },
+];
+
+const NODE_MAP = Object.fromEntries(NODES.map(n => [n.id, n]));
+
+// ── Per-preset query traversal path definitions ──────────────────────────────
+const QUERY_PATHS = {
+  g1: {
+    title: "Therapeutic Adjacency",
+    steps: [
+      { type: "node", id: "Condition",    label: "Breast Cancer",       note: "start" },
+      { type: "edge", label: "TREATS",    dir: "←" },
+      { type: "node", id: "Trial",        label: "8,610 trials",        note: "" },
+      { type: "edge", label: "USES",      dir: "→" },
+      { type: "node", id: "Intervention", label: "top 100 drugs",       note: "" },
+      { type: "edge", label: "USES",      dir: "←" },
+      { type: "node", id: "Trial",        label: "other trials",        note: "" },
+      { type: "edge", label: "TREATS",    dir: "→" },
+      { type: "node", id: "Condition",    label: "adjacent conditions", note: "result" },
+    ],
+    highlight: ["Condition", "Trial", "Intervention"],
+    highlightEdges: ["TREATS", "USES"],
+    description: "Start at Breast Cancer → traverse shared interventions → discover therapeutically adjacent conditions.",
+  },
+  g2: {
+    title: "Strategic Gap Detection",
+    steps: [
+      { type: "node", id: "Sponsor",   label: "Pfizer",             note: "start" },
+      { type: "edge", label: "RUNS",   dir: "→" },
+      { type: "node", id: "Trial",     label: "Pfizer's trials",    note: "" },
+      { type: "edge", label: "TREATS", dir: "→" },
+      { type: "node", id: "Condition", label: "Pfizer conditions",  note: "" },
+      { type: "edge", label: "TREATS", dir: "←" },
+      { type: "node", id: "Trial",     label: "adjacent trials",    note: "" },
+      { type: "edge", label: "TREATS", dir: "→" },
+      { type: "node", id: "Condition", label: "missing conditions", note: "result" },
+    ],
+    highlight: ["Sponsor", "Trial", "Condition"],
+    highlightEdges: ["RUNS", "TREATS"],
+    description: "Map Pfizer's portfolio → find conditions 1 hop away where Pfizer has zero trials.",
+  },
+  g3: {
+    title: "Sponsor Aggregation",
+    steps: [
+      { type: "node", id: "Sponsor",   label: "all sponsors",        note: "result" },
+      { type: "edge", label: "RUNS",   dir: "→" },
+      { type: "node", id: "Trial",     label: "Phase 3 trials",      note: "filter" },
+      { type: "edge", label: "TREATS", dir: "→" },
+      { type: "node", id: "Condition", label: "oncology conditions", note: "filter" },
+    ],
+    highlight: ["Sponsor", "Trial", "Condition"],
+    highlightEdges: ["RUNS", "TREATS"],
+    description: "Filter Phase 3 oncology trials → aggregate sponsors by trial count.",
+  },
+  g4: {
+    title: "Drug Repurposing Signals",
+    steps: [
+      { type: "node", id: "Condition",    label: "Alzheimer",      note: "start" },
+      { type: "edge", label: "TREATS",    dir: "←" },
+      { type: "node", id: "Trial",        label: "Alz trials",     note: "" },
+      { type: "edge", label: "USES",      dir: "→" },
+      { type: "node", id: "Intervention", label: "shared drugs",   note: "result" },
+      { type: "edge", label: "USES",      dir: "←" },
+      { type: "node", id: "Trial",        label: "Park trials",    note: "" },
+      { type: "edge", label: "TREATS",    dir: "→" },
+      { type: "node", id: "Condition",    label: "Parkinson",      note: "start" },
+    ],
+    highlight: ["Condition", "Trial", "Intervention"],
+    highlightEdges: ["TREATS", "USES"],
+    description: "Find drugs used in both Alzheimer and Parkinson trials — repurposing candidates bridging two CNS conditions.",
+  },
+  g5: {
+    title: "Termination Risk Analysis",
+    steps: [
+      { type: "node", id: "Condition",  label: "all conditions", note: "result" },
+      { type: "edge", label: "TREATS",  dir: "←" },
+      { type: "node", id: "Trial",      label: "all trials",     note: "aggregate" },
+    ],
+    highlight: ["Condition", "Trial"],
+    highlightEdges: ["TREATS"],
+    description: "For each condition (≥100 trials), compute terminated ÷ total — surfaces high-risk therapeutic areas.",
+  },
 };
 
-// Node type → color mapping for result nodes
-const TYPE_COLORS = {
-  condition:    "#10b981",
-  sponsor:      "#6366f1",
-  intervention: "#f59e0b",
-  country:      "#ec4899",
-  hub:          "#0ea5e9",
-  metric:       "#94a3b8",
-};
-
-// ── Per-preset result → graph shape builders ─────────────────────────────────
-function buildGraphData(queryId, columns, rows) {
-  if (!rows || rows.length === 0) return null;
-
-  switch (queryId) {
-    case "g1": {
-      // columns: condition, shared_interventions
-      // Hub-spoke: Breast Cancer → adjacent conditions, edge weight = shared interventions
-      const maxVal = Math.max(...rows.map(r => r.shared_interventions || 1));
-      return {
-        nodes: [
-          { id: "Breast Cancer", label: "Breast Cancer", color: TYPE_COLORS.hub, size: 20, nodeType: "hub" },
-          ...rows.map(r => ({
-            id: r.condition,
-            label: r.condition,
-            color: TYPE_COLORS.condition,
-            size: 6 + 14 * (r.shared_interventions / maxVal),
-            val: r.shared_interventions,
-            nodeType: "condition",
-            detail: `${r.shared_interventions} shared interventions`,
-          })),
-        ],
-        links: rows.map(r => ({
-          source: "Breast Cancer",
-          target: r.condition,
-          label: `${r.shared_interventions}`,
-          value: r.shared_interventions,
-        })),
-      };
-    }
-
-    case "g2": {
-      // columns: expansion_target, adjacency_strength, via_conditions
-      // Hub-spoke: Pfizer → gap conditions, edge weight = adjacency strength
-      const maxVal = Math.max(...rows.map(r => r.adjacency_strength || 1));
-      return {
-        nodes: [
-          { id: "Pfizer", label: "Pfizer", color: TYPE_COLORS.sponsor, size: 22, nodeType: "sponsor" },
-          ...rows.map(r => ({
-            id: r.expansion_target,
-            label: r.expansion_target,
-            color: TYPE_COLORS.condition,
-            size: 6 + 14 * (r.adjacency_strength / maxVal),
-            val: r.adjacency_strength,
-            nodeType: "condition",
-            detail: `strength ${r.adjacency_strength}`,
-            via: Array.isArray(r.via_conditions) ? r.via_conditions.join(", ") : String(r.via_conditions ?? ""),
-          })),
-        ],
-        links: rows.map(r => ({
-          source: "Pfizer",
-          target: r.expansion_target,
-          label: `${r.adjacency_strength}`,
-          value: r.adjacency_strength,
-        })),
-      };
-    }
-
-    case "g3": {
-      // columns: sponsor, trials
-      // Hub-spoke: Phase 3 Oncology → sponsors, edge weight = trial count
-      const maxVal = Math.max(...rows.map(r => r.trials || 1));
-      return {
-        nodes: [
-          { id: "__hub__", label: "Phase 3\nOncology", color: TYPE_COLORS.hub, size: 18, nodeType: "hub" },
-          ...rows.map(r => ({
-            id: r.sponsor,
-            label: r.sponsor,
-            color: TYPE_COLORS.sponsor,
-            size: 6 + 14 * (r.trials / maxVal),
-            val: r.trials,
-            nodeType: "sponsor",
-            detail: `${r.trials} trials`,
-          })),
-        ],
-        links: rows.map(r => ({
-          source: "__hub__",
-          target: r.sponsor,
-          label: `${r.trials}`,
-          value: r.trials,
-        })),
-      };
-    }
-
-    case "g4": {
-      // columns: intervention, alzheimer_trials, parkinson_trials
-      // Bipartite bridge: Alzheimer ←[intervention]→ Parkinson
-      const maxVal = Math.max(...rows.map(r => (r.alzheimer_trials || 0) + (r.parkinson_trials || 0)));
-      const nodes = [
-        { id: "__alz__", label: "Alzheimer\nDisease",  color: TYPE_COLORS.condition, size: 20, nodeType: "condition" },
-        { id: "__par__", label: "Parkinson\nDisease",  color: TYPE_COLORS.condition, size: 20, nodeType: "condition" },
-        ...rows.map(r => ({
-          id: r.intervention,
-          label: r.intervention,
-          color: TYPE_COLORS.intervention,
-          size: 4 + 12 * (((r.alzheimer_trials || 0) + (r.parkinson_trials || 0)) / maxVal),
-          val: (r.alzheimer_trials || 0) + (r.parkinson_trials || 0),
-          nodeType: "intervention",
-          detail: `Alz: ${r.alzheimer_trials}  Par: ${r.parkinson_trials}`,
-        })),
-      ];
-      const links = [
-        ...rows.filter(r => r.alzheimer_trials > 0).map(r => ({
-          source: "__alz__", target: r.intervention,
-          label: `${r.alzheimer_trials}`, value: r.alzheimer_trials,
-        })),
-        ...rows.filter(r => r.parkinson_trials > 0).map(r => ({
-          source: "__par__", target: r.intervention,
-          label: `${r.parkinson_trials}`, value: r.parkinson_trials,
-        })),
-      ];
-      return { nodes, links };
-    }
-
-    case "g5": {
-      // columns: condition, total, terminated, termination_pct
-      // Hub-spoke: TERMINATED risk hub → conditions, node size = termination_pct
-      const maxPct = Math.max(...rows.map(r => r.termination_pct || 1));
-      return {
-        nodes: [
-          { id: "__risk__", label: "Termination\nRisk", color: "#ef4444", size: 16, nodeType: "hub" },
-          ...rows.map(r => ({
-            id: r.condition,
-            label: r.condition,
-            // Red gradient: high pct = red, low = amber
-            color: `hsl(${Math.round(40 - 40 * (r.termination_pct / maxPct))}, 85%, 55%)`,
-            size: 5 + 18 * (r.termination_pct / maxPct),
-            val: r.termination_pct,
-            nodeType: "condition",
-            detail: `${r.termination_pct}% terminated (${r.terminated}/${r.total})`,
-          })),
-        ],
-        links: rows.map(r => ({
-          source: "__risk__",
-          target: r.condition,
-          label: `${r.termination_pct}%`,
-          value: r.termination_pct,
-        })),
-      };
-    }
-
-    default:
-      return buildHeuristicGraph(columns, rows);
-  }
-}
-
-// Heuristic builder for freeform Cypher results
-function buildHeuristicGraph(columns, rows) {
-  const numCols  = columns.filter(c => typeof rows[0]?.[c] === "number");
-  const strCols  = columns.filter(c => typeof rows[0]?.[c] === "string");
-  if (strCols.length === 0) return null;
-
-  const primaryCol = strCols[0];
-  const weightCol  = numCols[0];
-  const maxVal = weightCol ? Math.max(...rows.map(r => r[weightCol] || 0)) : 1;
-
-  const hubId = `__hub__`;
-  const nodes = [
-    { id: hubId, label: primaryCol, color: TYPE_COLORS.hub, size: 16, nodeType: "hub" },
-    ...rows.slice(0, 30).map(r => ({
-      id: String(r[primaryCol]),
-      label: String(r[primaryCol]),
-      color: TYPE_COLORS.condition,
-      size: weightCol ? 5 + 15 * ((r[weightCol] || 0) / maxVal) : 10,
-      val: weightCol ? r[weightCol] : null,
-      nodeType: primaryCol,
-      detail: weightCol ? `${weightCol}: ${r[weightCol]}` : null,
-    })),
-  ];
-  const links = rows.slice(0, 30).map(r => ({
-    source: hubId,
-    target: String(r[primaryCol]),
-    value: weightCol ? (r[weightCol] || 1) : 1,
-  }));
-  return { nodes, links };
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
-export default function GraphViz({ queryId, columns, rows }) {
-  const containerRef = useRef(null);
-  const fgRef = useRef(null);
-  const [width, setWidth] = useState(700);
-  const [tooltip, setTooltip] = useState(null);
-
-  // Responsive width tracking
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(entries => {
-      setWidth(entries[0].contentRect.width || 700);
-    });
-    ro.observe(el);
-    setWidth(el.clientWidth || 700);
-    return () => ro.disconnect();
-  }, []);
-
-  const isSchemaView = !queryId || !rows || rows.length === 0;
-
-  const graphData = useMemo(() => {
-    if (isSchemaView) return SCHEMA_DATA;
-    return buildGraphData(queryId, columns, rows) ?? SCHEMA_DATA;
-  }, [isSchemaView, queryId, columns, rows]);
-
-  // Fit camera after graph data changes
-  useEffect(() => {
-    const timer = setTimeout(() => fgRef.current?.zoomToFit(400, 48), 600);
-    return () => clearTimeout(timer);
-  }, [graphData]);
-
-  // Per-node canvas renderer
-  const nodeCanvasObject = useCallback((node, ctx, globalScale) => {
-    const size = node.size || 8;
-    const lines = (node.label || node.id).split("\n");
-    const isHeavy = node.nodeType === "hub" || node.nodeType === "schema";
-
-    // Glow for heavy nodes
-    if (isHeavy) {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, size + 4, 0, 2 * Math.PI);
-      ctx.fillStyle = node.color + "28";
-      ctx.fill();
-    }
-
-    // Circle
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
-    ctx.fillStyle = node.color;
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.lineWidth = 1.5 / globalScale;
-    ctx.stroke();
-
-    // Label text
-    const fontSize = Math.max(7, Math.min(13, size * 0.85)) / globalScale;
-    ctx.font = `${isHeavy ? "600 " : ""}${fontSize}px Inter,sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-
-    const lineH = fontSize + 1.5;
-    if (lines.length > 1) {
-      lines.forEach((line, i) => {
-        ctx.fillText(line, node.x, node.y + (i - (lines.length - 1) / 2) * lineH);
-      });
-    } else {
-      // Truncate to fit node circle
-      let label = lines[0];
-      const maxW = size * 1.9;
-      while (ctx.measureText(label).width > maxW && label.length > 4) {
-        label = label.slice(0, -2) + "…";
-      }
-      ctx.fillText(label, node.x, node.y);
-    }
-  }, []);
-
-  const linkCanvasObject = useCallback((link, ctx, globalScale) => {
-    const { source: s, target: t } = link;
-    if (!s?.x || !t?.x) return;
-
-    // Compute max link value for scaling
-    const maxVal = Math.max(...graphData.links.map(l => l.value || 1));
-    const lineW = link.value ? 0.5 + 2.5 * (link.value / maxVal) : 1;
-
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(t.x, t.y);
-    ctx.strokeStyle = "rgba(148,163,184,0.45)";
-    ctx.lineWidth = lineW / globalScale;
-    ctx.stroke();
-
-    // Edge label at midpoint — only when zoomed in
-    if (link.label && globalScale > 1.8) {
-      const mx = (s.x + t.x) / 2;
-      const my = (s.y + t.y) / 2;
-      const fs = 8 / globalScale;
-      ctx.font = `${fs}px sans-serif`;
-      ctx.fillStyle = "rgba(203,213,225,0.85)";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(link.label, mx, my);
-    }
-  }, [graphData]);
-
-  const handleNodeHover = useCallback((node) => {
-    setTooltip(node || null);
-    if (containerRef.current) {
-      containerRef.current.style.cursor = node ? "pointer" : "default";
-    }
-  }, []);
+// ── Main component ───────────────────────────────────────────────────────────
+export default function GraphViz({ queryId }) {
+  const path = QUERY_PATHS[queryId] || null;
+  const highlightSet = useMemo(() => new Set(path?.highlight || []), [path]);
+  const highlightEdgeSet = useMemo(() => new Set(path?.highlightEdges || []), [path]);
 
   return (
-    <div ref={containerRef} className="graph-viz-wrap">
-      {isSchemaView && (
-        <div className="graph-viz-schema-label">
-          KG Schema — 5 node types · {(580489 + 49929 + 129085 + 512289 + 225).toLocaleString()} total nodes
+    <div className="graph-viz-wrap">
+      {/* SVG Schema Diagram */}
+      <svg viewBox="0 0 580 250" className="graph-viz-svg" role="img"
+        aria-label="Knowledge Graph schema: Sponsor, Trial, Condition, Intervention, Country">
+        <defs>
+          <marker id="gv-arrow" viewBox="0 0 10 7" refX="10" refY="3.5"
+            markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#475569" />
+          </marker>
+          <marker id="gv-arrow-lit" viewBox="0 0 10 7" refX="10" refY="3.5"
+            markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7dd3fc" />
+          </marker>
+        </defs>
+
+        {/* Edges */}
+        {EDGES.map(e => {
+          const from = NODE_MAP[e.from];
+          const to = NODE_MAP[e.to];
+          const lit = path ? highlightEdgeSet.has(e.label) : false;
+          const dim = path ? !lit : false;
+          const dx = to.x - from.x, dy = to.y - from.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const ux = dx / dist, uy = dy / dist;
+          const x1 = from.x + ux * (from.r + 2);
+          const y1 = from.y + uy * (from.r + 2);
+          const x2 = to.x - ux * (to.r + 4);
+          const y2 = to.y - uy * (to.r + 4);
+          const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+
+          return (
+            <g key={e.label} opacity={dim ? 0.15 : 1}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={lit ? "#7dd3fc" : "#475569"}
+                strokeWidth={lit ? 2.5 : 1.5}
+                markerEnd={lit ? "url(#gv-arrow-lit)" : "url(#gv-arrow)"}
+                className={lit ? "gv-edge-pulse" : ""} />
+              <text x={mx} y={my - 7} textAnchor="middle"
+                className="gv-edge-label" fill={lit ? "#7dd3fc" : "#64748b"}>
+                {e.label}
+              </text>
+              <text x={mx} y={my + 7} textAnchor="middle"
+                className="gv-edge-count" fill={lit ? "#7dd3fc" : "#475569"}>
+                {e.count}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Nodes */}
+        {NODES.map(n => {
+          const lit = path ? highlightSet.has(n.id) : false;
+          const dim = path ? !lit : false;
+          return (
+            <g key={n.id} opacity={dim ? 0.18 : 1}>
+              {lit && (
+                <circle cx={n.x} cy={n.y} r={n.r + 7}
+                  fill="none" stroke={n.color} strokeWidth="2"
+                  opacity="0.35" className="gv-node-glow" />
+              )}
+              <circle cx={n.x} cy={n.y} r={n.r}
+                fill={dim ? n.color + "40" : n.color + (lit ? "ee" : "cc")}
+                stroke={lit ? "#fff" : n.color} strokeWidth={lit ? 1.5 : 1} />
+              <text x={n.x} y={n.y - 5} textAnchor="middle"
+                className="gv-node-label" fill="#fff" fontWeight="600">
+                {n.label}
+              </text>
+              <text x={n.x} y={n.y + 11} textAnchor="middle"
+                className="gv-node-count" fill="rgba(255,255,255,0.7)">
+                {n.count}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Query traversal path — step-by-step explainer */}
+      {path ? (
+        <div className="qpe-wrap">
+          <div className="qpe-header">
+            <span className="qpe-title">{path.title}</span>
+            <span className="qpe-desc">{path.description}</span>
+          </div>
+          <div className="qpe-steps">
+            {path.steps.map((s, i) =>
+              s.type === "node" ? (
+                <span key={i} className={`qpe-chip qpe-chip-${s.note || "mid"}`}
+                  style={{
+                    background: NODE_MAP[s.id]?.color + "20",
+                    borderColor: NODE_MAP[s.id]?.color + "50",
+                    color: NODE_MAP[s.id]?.color,
+                  }}>
+                  <span className="qpe-chip-type">{s.id}</span>
+                  <span className="qpe-chip-label">{s.label}</span>
+                </span>
+              ) : (
+                <span key={i} className="qpe-arrow">
+                  <span className="qpe-arrow-dir">{s.dir}</span>
+                  <span className="qpe-arrow-label">{s.label}</span>
+                </span>
+              )
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="qpe-idle-hint">
+          Run a graph query above to see how it traverses the knowledge graph
         </div>
       )}
-      <ForceGraph2D
-        ref={fgRef}
-        graphData={graphData}
-        width={width}
-        height={420}
-        backgroundColor="#0f172a"
-        nodeCanvasObject={nodeCanvasObject}
-        nodeCanvasObjectMode={() => "replace"}
-        linkCanvasObject={linkCanvasObject}
-        linkCanvasObjectMode={() => "replace"}
-        onNodeHover={handleNodeHover}
-        nodeLabel={() => ""}
-        cooldownTicks={isSchemaView ? 80 : 150}
-        d3AlphaDecay={isSchemaView ? 0.04 : 0.015}
-        d3VelocityDecay={0.35}
-        enableZoomInteraction
-        enablePanInteraction
-      />
-      {tooltip && (
-        <div className="graph-viz-tooltip">
-          <strong>{(tooltip.label || tooltip.id).replace("\n", " ")}</strong>
-          {tooltip.detail && <div>{tooltip.detail}</div>}
-          {tooltip.via && <div className="graph-viz-tooltip-via">via: {tooltip.via}</div>}
-          {!tooltip.detail && tooltip.val != null && (
-            <div>{tooltip.nodeType}: {Number(tooltip.val).toLocaleString()}</div>
-          )}
-        </div>
-      )}
+
+      {/* Legend */}
       <div className="graph-viz-legend">
-        {isSchemaView ? (
-          <>
-            <span className="gvl-dot" style={{ background: "#0ea5e9" }} /> Trial
-            <span className="gvl-dot" style={{ background: "#6366f1" }} /> Sponsor
-            <span className="gvl-dot" style={{ background: "#10b981" }} /> Condition
-            <span className="gvl-dot" style={{ background: "#f59e0b" }} /> Intervention
-            <span className="gvl-dot" style={{ background: "#ec4899" }} /> Country
-          </>
-        ) : (
-          <>
-            <span className="gvl-dot" style={{ background: "#0ea5e9" }} /> Hub
-            {columns?.includes("condition") || columns?.includes("expansion_target") ? <><span className="gvl-dot" style={{ background: "#10b981" }} /> Condition</> : null}
-            {columns?.includes("sponsor") ? <><span className="gvl-dot" style={{ background: "#6366f1" }} /> Sponsor</> : null}
-            {columns?.includes("intervention") ? <><span className="gvl-dot" style={{ background: "#f59e0b" }} /> Intervention</> : null}
-            <span className="gvl-hint">Node size = weight · Scroll to zoom · Drag to pan</span>
-          </>
-        )}
+        <span className="gvl-dot" style={{ background: "#38bdf8" }} /> Trial
+        <span className="gvl-dot" style={{ background: "#818cf8" }} /> Sponsor
+        <span className="gvl-dot" style={{ background: "#34d399" }} /> Condition
+        <span className="gvl-dot" style={{ background: "#fbbf24" }} /> Intervention
+        <span className="gvl-dot" style={{ background: "#f472b6" }} /> Country
       </div>
     </div>
   );
