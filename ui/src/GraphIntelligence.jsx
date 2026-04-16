@@ -242,17 +242,82 @@ function GraphStats({ stats, statsLoading }) {
   );
 }
 
-// ── Sponsor Site Overlap Inline ───────────────────────────────────────────
-//
-// The one query that SQL genuinely can't answer efficiently:
-//   "Which sponsors are running trials at the same physical sites as [sponsor]?"
-// SQL: O(n²) self-join on 3.4M facility rows.
-// Cypher: one 3-hop pattern: Sponsor→Trial→Site←Trial←Sponsor
-//
-// Shows a pending state while Sites are still loading into Neo4j.
+// ═══════════════════════════════════════════════════════════════════════════
+// INLINE CONTEXT COMPONENTS — driven by active dashboard filters
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── 1. Strategic Gap Analysis (missing-edge detection) ────────────────────
+// Pattern: Sponsor -RUNS-> Trial -TREATS-> MyCondition <-TREATS- OtherTrial -TREATS-> GapCondition
+// GapCondition is NOT in the sponsor's portfolio. Truly graph-native: anti-join on missing edges.
+
+function StrategicGapsInline({ sponsor }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setData(null);
+    setLoading(true);
+    graphFetch("strategic-gaps", { sponsor, limit: 12 })
+      .then(d => setData(Array.isArray(d) ? d : []))
+      .catch(() => setData([]))
+      .finally(() => setLoading(false));
+  }, [sponsor]);
+
+  const maxStrength = data?.[0]?.adjacency_strength ?? 1;
+
+  return (
+    <div className="kg-context-entity">
+      <div className="kg-context-entity-header">
+        <span className="kg-icon" style={{ fontSize: "14px" }}>&#x26A0;</span>
+        <span className="kg-context-entity-label">Portfolio gaps for</span>
+        <span className="kg-badge-purple">{sponsor}</span>
+      </div>
+      <div className="kg-context-explain">
+        Conditions therapeutically adjacent to {sponsor}&apos;s portfolio (shared drugs with existing conditions)
+        where {sponsor} has <strong>zero trials</strong>. Expansion opportunities via missing-edge analysis.
+      </div>
+
+      {loading && <div className="kg-context-loading">Scanning missing edges in Sponsor &rarr; Trial &rarr; Condition graph&hellip;</div>}
+
+      {data && data.length === 0 && !loading && (
+        <div className="kg-context-empty">No strategic gaps detected.</div>
+      )}
+
+      {data && data.length > 0 && (
+        <div className="kg-overlap-list">
+          <div className="kg-overlap-header-row">
+            <span>Gap condition</span>
+            <span>Adjacency strength</span>
+            <span>Connected via</span>
+          </div>
+          {data.map((c, i) => (
+            <div key={i} className="kg-overlap-row">
+              <div className="kg-overlap-name" title={c.condition}>
+                <span className="kg-list-rank">{i + 1}</span>
+                {c.condition}
+              </div>
+              <div className="kg-overlap-bar-wrap">
+                <div
+                  className="kg-overlap-bar kg-bar-amber"
+                  style={{ width: `${Math.max(4, (c.adjacency_strength / maxStrength) * 100)}%` }}
+                />
+                <span className="kg-overlap-bar-label kg-label-amber">{c.adjacency_strength.toLocaleString()}</span>
+              </div>
+              <span className="kg-overlap-trials" title={c.via_conditions?.join(", ")}>
+                {c.via_conditions?.slice(0, 2).join(", ")}{c.via_conditions?.length > 2 ? "\u2026" : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 2. Competitive Site Overlap (Sponsor &rarr; Trial &rarr; Site &larr; Trial &larr; Sponsor) ──
 
 function SponsorOverlapInline({ sponsor }) {
-  const [data, setData] = useState(null); // null=loading, []|[...]=done
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -269,23 +334,22 @@ function SponsorOverlapInline({ sponsor }) {
   return (
     <div className="kg-context-entity">
       <div className="kg-context-entity-header">
-        <span className="kg-icon" style={{ fontSize: "14px" }}>&#x25c8;</span>
+        <span className="kg-icon" style={{ fontSize: "14px" }}>&#x25C8;</span>
         <span className="kg-context-entity-label">Site competitors of</span>
         <span className="kg-badge-purple">{sponsor}</span>
       </div>
-
       <div className="kg-context-explain">
-        Sponsors co-located at the same trial sites — a graph traversal impossible to express efficiently in SQL.
+        Sponsors co-located at the same trial sites &mdash; graph traversal impossible in SQL.
       </div>
 
-      {loading && <div className="kg-context-loading">Traversing Sponsor → Trial → Site → Trial → Sponsor…</div>}
+      {loading && <div className="kg-context-loading">Traversing Sponsor &rarr; Trial &rarr; Site &rarr; Trial &rarr; Sponsor&hellip;</div>}
 
       {data && data.length === 0 && !loading && (
         <div className="kg-context-pending">
-          <span className="kg-context-pending-icon">⏳</span>
+          <span className="kg-context-pending-icon">&#x23F3;</span>
           <div>
             <strong>Sites not yet in graph</strong>
-            <p>The graph loader is hydrating 3.4M site nodes into Neo4j. This query will auto-populate once complete.</p>
+            <p>Graph loader is hydrating 3.4M site nodes. Auto-populates once complete.</p>
           </div>
         </div>
       )}
@@ -304,10 +368,7 @@ function SponsorOverlapInline({ sponsor }) {
                 {c.sponsor}
               </div>
               <div className="kg-overlap-bar-wrap">
-                <div
-                  className="kg-overlap-bar"
-                  style={{ width: `${Math.max(4, (c.shared_sites / maxSites) * 100)}%` }}
-                />
+                <div className="kg-overlap-bar" style={{ width: `${Math.max(4, (c.shared_sites / maxSites) * 100)}%` }} />
                 <span className="kg-overlap-bar-label">{c.shared_sites.toLocaleString()}</span>
               </div>
               <span className="kg-overlap-trials">{c.their_trials.toLocaleString()}</span>
@@ -319,20 +380,163 @@ function SponsorOverlapInline({ sponsor }) {
   );
 }
 
-// ── KGContextPanel — only fires for sponsor filters (graph-native query) ──
+// ── 3. Extended Competitive Landscape (condition filter, 3-hop traversal) ──
+// Pattern: Condition <-TREATS- Trial -USES-> Intervention <-USES- Trial -TREATS-> AdjCondition
+//          then: AdjCondition <-TREATS- Trial <-RUNS- Sponsor
 
-export function KGContextPanel({ sponsors = [] }) {
-  if (sponsors.length === 0) return null;
+function ConditionLandscapeInline({ condition }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setData(null);
+    setLoading(true);
+    graphFetch("condition-landscape", { condition, limit: 12 })
+      .then(d => setData(d))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [condition]);
+
+  return (
+    <div className="kg-context-entity">
+      <div className="kg-context-entity-header">
+        <span className="kg-icon" style={{ fontSize: "14px" }}>&#x1F310;</span>
+        <span className="kg-context-entity-label">Competitive landscape for</span>
+        <span className="kg-badge-teal">{condition}</span>
+      </div>
+      <div className="kg-context-explain">
+        Sponsors most active across conditions that share clinical interventions with <strong>{condition}</strong> &mdash;
+        3-hop graph traversal: Condition &rarr; Intervention &rarr; Adjacent Condition &rarr; Sponsor.
+      </div>
+
+      {loading && <div className="kg-context-loading">Traversing condition adjacency network&hellip;</div>}
+
+      {data && data.landscape_sponsors?.length > 0 && (
+        <div className="kg-overlap-list">
+          <div className="kg-overlap-header-row">
+            <span>Sponsor</span>
+            <span>Adjacent conditions covered</span>
+            <span>Trials</span>
+          </div>
+          {data.landscape_sponsors.map((s, i) => (
+            <div key={i} className="kg-overlap-row">
+              <div className="kg-overlap-name" title={s.sponsor}>
+                <span className="kg-list-rank">{i + 1}</span>
+                {s.sponsor}
+              </div>
+              <div className="kg-overlap-bar-wrap">
+                <div
+                  className="kg-overlap-bar kg-bar-teal"
+                  style={{ width: `${Math.max(4, (s.adjacent_conditions / (data.landscape_sponsors[0]?.adjacent_conditions ?? 1)) * 100)}%` }}
+                />
+                <span className="kg-overlap-bar-label kg-label-teal">{s.adjacent_conditions}</span>
+              </div>
+              <span className="kg-overlap-trials">{s.trials.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data && (!data.landscape_sponsors || data.landscape_sponsors.length === 0) && !loading && (
+        <div className="kg-context-empty">No extended landscape data for this condition.</div>
+      )}
+    </div>
+  );
+}
+
+// ── 4. Drug Repurposing Paths (shortestPath — impossible in SQL) ──────────
+// Fires when 2+ condition filters are active. Shows the shortest chain through
+// the trial-intervention network connecting two conditions.
+
+function RepurposingPathInline({ from, to }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setData(null);
+    setLoading(true);
+    graphFetch("repurposing-path", { from, to })
+      .then(d => setData(d))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [from, to]);
+
+  const LABEL_COLORS = {
+    Condition: "#39d2c0", Trial: "#8b949e", Intervention: "#a78bfa",
+    Sponsor: "#f0883e", Site: "#58a6ff", Country: "#7ee787",
+  };
+
+  return (
+    <div className="kg-context-entity">
+      <div className="kg-context-entity-header">
+        <span className="kg-icon" style={{ fontSize: "14px" }}>&#x2194;</span>
+        <span className="kg-context-entity-label">Path:</span>
+        <span className="kg-badge-teal">{from}</span>
+        <span className="kg-context-entity-label">&rarr;</span>
+        <span className="kg-badge-teal">{to}</span>
+      </div>
+      <div className="kg-context-explain">
+        Shortest path between two conditions through the trial-intervention network.
+        Uses Neo4j <code>shortestPath</code> &mdash; impossible to express in SQL.
+      </div>
+
+      {loading && <div className="kg-context-loading">Computing shortest path&hellip;</div>}
+
+      {data && data.hops === -1 && !loading && (
+        <div className="kg-context-empty">No path found between these conditions.</div>
+      )}
+
+      {data && data.hops > 0 && (
+        <div className="kg-path-viz">
+          <div className="kg-path-hops">{data.hops} hops</div>
+          <div className="kg-path-chain">
+            {data.path.map((node, i) => (
+              <span key={i} className="kg-path-node-group">
+                <span
+                  className="kg-path-node"
+                  style={{ borderColor: LABEL_COLORS[node.label] || "#484f58" }}
+                  title={`${node.label}: ${node.name}`}
+                >
+                  <span className="kg-path-type" style={{ color: LABEL_COLORS[node.label] || "#484f58" }}>{node.label}</span>
+                  <span className="kg-path-name">{node.name}</span>
+                </span>
+                {i < data.path.length - 1 && (
+                  <span className="kg-path-edge">{data.edges[i]}</span>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KGContextPanel — inline in dashboard, driven by active filters
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function KGContextPanel({ conditions = [], sponsors = [] }) {
+  if (conditions.length === 0 && sponsors.length === 0) return null;
+
+  const showPath = conditions.length >= 2;
 
   return (
     <div className="kg-context-panel">
       <div className="kg-context-header">
-        <span className="kg-context-logo">&#x2b21;</span>
-        <span className="kg-context-title">Competitive Site Overlap</span>
-        <span className="kg-context-hint">graph traversal · Sponsor → Trial → Site ← Trial ← Sponsor</span>
+        <span className="kg-context-logo">&#x2B21;</span>
+        <span className="kg-context-title">Graph Intelligence</span>
+        <span className="kg-context-hint">queries that SQL can&apos;t answer &mdash; driven by your active filters</span>
       </div>
       <div className="kg-context-body">
-        {sponsors.map(s => <SponsorOverlapInline key={s} sponsor={s} />)}
+        {sponsors.map(s => (
+          <div key={s} className="kg-context-sponsor-group">
+            <StrategicGapsInline sponsor={s} />
+            <SponsorOverlapInline sponsor={s} />
+          </div>
+        ))}
+        {conditions.map(c => <ConditionLandscapeInline key={c} condition={c} />)}
+        {showPath && <RepurposingPathInline from={conditions[0]} to={conditions[1]} />}
       </div>
     </div>
   );

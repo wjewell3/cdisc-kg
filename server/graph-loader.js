@@ -58,6 +58,29 @@ async function pgStream(sql, batchSize = 50000) {
   }
   return rows;
 }
+
+// Stream from PG and write directly to Neo4j in chunks (bounded memory)
+async function pgStreamToNeo4j(sql, cypherTemplate, neoBatch = 5000, pgBatch = 50000) {
+  const pool = getPg();
+  if (!pool) throw new Error("No PG credentials — set AACT_USER and AACT_PASSWORD");
+  let offset = 0;
+  let total = 0;
+  while (true) {
+    const { rows } = await pool.query(`${sql} LIMIT ${pgBatch} OFFSET ${offset}`);
+    if (rows.length === 0) break;
+    for (let i = 0; i < rows.length; i += neoBatch) {
+      const batch = rows.slice(i, i + neoBatch);
+      const session = driver.session();
+      try { await session.run(cypherTemplate, { batch }); }
+      finally { await session.close(); }
+    }
+    total += rows.length;
+    log(`  ... streamed ${total} rows to Neo4j`);
+    if (rows.length < pgBatch) break;
+    offset += pgBatch;
+  }
+  return total;
+}
 const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASS));
 
 function log(msg) { console.log(`[graph-loader] ${new Date().toISOString()} ${msg}`); }
@@ -242,15 +265,7 @@ async function main() {
     const sitesSql = `SELECT DISTINCT name, city, state, country,
            name || '||' || COALESCE(city,'') || '||' || COALESCE(country,'') AS key
     FROM facilities WHERE name IS NOT NULL`;
-    const sites = hasFacilities
-      ? db.prepare(sitesSql).all()
-      : await pgStream(sitesSql);
-    const facilityCount = hasFacilities
-      ? db.prepare('SELECT COUNT(*) AS n FROM facilities').get().n
-      : sites.length;
-    log(`  ${sites.length} unique sites from ${facilityCount} facility rows`);
-
-    await runBatch(`
+    const siteCypher = `
       UNWIND $batch AS s
       CREATE (n:Site {
         key: s.key,
@@ -259,7 +274,16 @@ async function main() {
         state: s.state,
         country: s.country
       })
-    `, sites, 3000);
+    `;
+
+    if (hasFacilities) {
+      const sites = db.prepare(sitesSql).all();
+      log(`  ${sites.length} unique sites from SQLite`);
+      await runBatch(siteCypher, sites, 3000);
+    } else {
+      const count = await pgStreamToNeo4j(sitesSql, siteCypher, 3000);
+      log(`  ${count} unique sites from PG (streamed)`);
+    }
 
     // Link sites to countries
     await run(`
@@ -271,16 +295,22 @@ async function main() {
     // AT edges (trial → site)
     const atSql = `SELECT nct_id, name || '||' || COALESCE(city,'') || '||' || COALESCE(country,'') AS site_key
       FROM facilities WHERE name IS NOT NULL`;
-    const atEdges = hasFacilities
-      ? db.prepare(atSql).all()
-      : await pgStream(atSql);
-    log(`  Loading ${atEdges.length} AT edges...`);
-    await runBatch(`
+    const atCypher = `
       UNWIND $batch AS e
       MATCH (t:Trial {nct_id: e.nct_id})
       MATCH (s:Site {key: e.site_key})
       CREATE (t)-[:AT]->(s)
-    `, atEdges, 3000);
+    `;
+
+    if (hasFacilities) {
+      const atEdges = db.prepare(atSql).all();
+      log(`  Loading ${atEdges.length} AT edges...`);
+      await runBatch(atCypher, atEdges, 3000);
+    } else {
+      log(`  Loading AT edges from PG (streamed)...`);
+      const atCount = await pgStreamToNeo4j(atSql, atCypher, 3000);
+      log(`  ${atCount} AT edges from PG`);
+    }
     log(`  Site nodes and AT edges created`);
   } else { log("Skipping Sites (facilities table missing, no PG fallback)"); }
 

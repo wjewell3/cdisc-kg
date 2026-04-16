@@ -487,3 +487,82 @@
 .kg-adj-row-compact {
   grid-template-columns: 170px 1fr 120px 75px;
 }
+
+/* ── Amber bars (Strategic Gaps) ── */
+.kg-bar-amber {
+  background: linear-gradient(90deg, #f0883e, #d97706) !important;
+}
+.kg-label-amber {
+  color: #f0883e !important;
+}
+
+/* ── Teal bars (Condition Landscape) ── */
+.kg-bar-teal {
+  background: linear-gradient(90deg, #39d2c0, #14b8a6) !important;
+}
+.kg-label-teal {
+  color: #39d2c0 !important;
+}
+
+/* ── Sponsor group (wraps Strategic Gaps + Site Overlap together) ── */
+.kg-context-sponsor-group {
+  display: contents;
+}
+
+/* ── Repurposing Path visualization ── */
+.kg-path-viz {
+  margin-top: 8px;
+}
+.kg-path-hops {
+  font-size: 11px;
+  font-weight: 700;
+  color: #39d2c0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+.kg-path-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+}
+.kg-path-node-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.kg-path-node {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1.5px solid #484f58;
+  border-radius: 8px;
+  background: #161b22;
+  min-width: 60px;
+  max-width: 160px;
+}
+.kg-path-type {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.kg-path-name {
+  font-size: 11px;
+  color: #c9d1d9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  text-align: center;
+}
+.kg-path-edge {
+  font-size: 9px;
+  color: #484f58;
+  font-weight: 600;
+  padding: 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

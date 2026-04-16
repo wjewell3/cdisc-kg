@@ -1216,6 +1216,7 @@ function nInt(v) {
  * GET /api/graph/sponsor-overlap?sponsor=Pfizer&limit=20
  * Find sponsors that share the most trial sites with the given sponsor.
  * Returns: [{ sponsor, shared_sites, their_trials }]
+ * Graph-native: O(n²) self-join on 3.4M facility rows in SQL.
  */
 app.get("/api/graph/sponsor-overlap", async (req, res) => {
   const { sponsor, limit = "20" } = req.query;
@@ -1236,6 +1237,134 @@ app.get("/api/graph/sponsor-overlap", async (req, res) => {
     })));
   } catch (e) {
     console.error("[graph/sponsor-overlap]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/strategic-gaps?sponsor=Pfizer&limit=15
+ * Missing-edge detection: conditions therapeutically adjacent to the sponsor's portfolio
+ * that the sponsor does NOT work in. These are expansion opportunities.
+ *
+ * Graph-native: finds what's NOT connected through a 3-hop pattern with anti-join.
+ * SQL equivalent would require a 4-way self-join with NOT EXISTS anti-join.
+ *
+ * Pattern: Sponsor -RUNS-> Trial -TREATS-> MyCondition <-TREATS- OtherTrial -TREATS-> GapCondition
+ *          where GapCondition is NOT in the sponsor's existing portfolio.
+ */
+app.get("/api/graph/strategic-gaps", async (req, res) => {
+  const { sponsor, limit = "15" } = req.query;
+  if (!sponsor) return res.status(400).json({ error: "sponsor required" });
+  try {
+    const records = await cypher(`
+      MATCH (s:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)-[:TREATS]->(my:Condition)
+      WITH s, COLLECT(DISTINCT my.name) AS myNames
+      UNWIND myNames AS mn
+      MATCH (mc:Condition {name: mn})<-[:TREATS]-(t2:Trial)-[:TREATS]->(gap:Condition)
+      WHERE NOT gap.name IN myNames
+      WITH gap, COUNT(DISTINCT t2) AS adjacency_strength,
+           COLLECT(DISTINCT mn)[..3] AS via_conditions
+      RETURN gap.name AS condition, adjacency_strength, via_conditions
+      ORDER BY adjacency_strength DESC
+      LIMIT toInteger($limit)
+    `, { sponsor, limit });
+    res.json(records.map(r => ({
+      condition: r.get("condition"),
+      adjacency_strength: nInt(r.get("adjacency_strength")),
+      via_conditions: r.get("via_conditions"),
+    })));
+  } catch (e) {
+    console.error("[graph/strategic-gaps]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/repurposing-path?from=Alzheimer+Disease&to=Breast+Cancer
+ * Shortest path between two conditions through the trial-intervention network.
+ *
+ * Graph-native: shortestPath traversal — literally impossible in SQL.
+ * Traverses only TREATS and USES edges to find the drug-trial chain connecting two conditions.
+ *
+ * Returns: { hops, path: [{ label, name }], edges: [edgeType] }
+ */
+app.get("/api/graph/repurposing-path", async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: "from and to conditions required" });
+  try {
+    const records = await cypher(`
+      MATCH (c1:Condition {name: $from}), (c2:Condition {name: $to})
+      MATCH path = shortestPath((c1)-[:TREATS|USES*..10]-(c2))
+      RETURN [n IN nodes(path) | {label: labels(n)[0], name: COALESCE(n.name, n.nct_id, n.key)}] AS path_nodes,
+             [r IN relationships(path) | type(r)] AS path_edges,
+             length(path) AS hops
+    `, { from, to });
+    if (records.length === 0) {
+      return res.json({ hops: -1, path: [], edges: [], message: "No path found between these conditions" });
+    }
+    const r = records[0];
+    res.json({
+      hops: nInt(r.get("hops")),
+      path: r.get("path_nodes"),
+      edges: r.get("path_edges"),
+    });
+  } catch (e) {
+    console.error("[graph/repurposing-path]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/condition-landscape?condition=Breast+Cancer&limit=15
+ * Extended competitive landscape: sponsors most active in conditions
+ * therapeutically adjacent to the given condition.
+ *
+ * Graph-native: 3-hop traversal through the condition adjacency network.
+ * Maps your competitive neighborhood through the drug similarity network.
+ *
+ * Pattern: Condition <-TREATS- Trial -USES-> Intervention <-USES- Trial -TREATS-> AdjCondition <-TREATS- Trial <-RUNS- Sponsor
+ */
+app.get("/api/graph/condition-landscape", async (req, res) => {
+  const { condition, limit = "15" } = req.query;
+  if (!condition) return res.status(400).json({ error: "condition required" });
+  try {
+    // First: find adjacent conditions
+    const adjRecords = await cypher(`
+      MATCH (c:Condition {name: $condition})<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)<-[:USES]-(t2:Trial)-[:TREATS]->(adj:Condition)
+      WHERE c <> adj
+      WITH adj, COUNT(DISTINCT i) AS shared_drugs
+      RETURN adj.name AS condition, shared_drugs
+      ORDER BY shared_drugs DESC
+      LIMIT 30
+    `, { condition });
+
+    const adjNames = adjRecords.map(r => r.get("condition"));
+
+    // Then: sponsors most active in those adjacent conditions
+    const sponsorRecords = await cypher(`
+      UNWIND $adjNames AS adjName
+      MATCH (sp:Sponsor)-[:RUNS]->(t:Trial)-[:TREATS]->(adj:Condition {name: adjName})
+      WITH sp.name AS sponsor, COUNT(DISTINCT adj) AS adjacent_conditions, COUNT(DISTINCT t) AS trials
+      WHERE adjacent_conditions >= 2
+      RETURN sponsor, adjacent_conditions, trials
+      ORDER BY adjacent_conditions DESC, trials DESC
+      LIMIT toInteger($limit)
+    `, { adjNames, limit });
+
+    res.json({
+      condition,
+      adjacent_conditions: adjRecords.map(r => ({
+        condition: r.get("condition"),
+        shared_drugs: nInt(r.get("shared_drugs")),
+      })),
+      landscape_sponsors: sponsorRecords.map(r => ({
+        sponsor: r.get("sponsor"),
+        adjacent_conditions: nInt(r.get("adjacent_conditions")),
+        trials: nInt(r.get("trials")),
+      })),
+    });
+  } catch (e) {
+    console.error("[graph/condition-landscape]", e.message);
     res.status(500).json({ error: e.message });
   }
 });
