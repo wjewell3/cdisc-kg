@@ -47,19 +47,42 @@ function filterTrials(trials, activeFilters, excludeField = null) {
   );
 }
 
-function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8 }) {
-  const displayData = data.slice(0, maxItems);
-  const maxVal = Math.max(...displayData.map((d) => d[1]), 1);
+function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8, searchable = false, total = null }) {
+  const [search, setSearch] = useState("");
+
+  const filtered = searchable && search
+    ? data.filter(([label]) => label.toLowerCase().includes(search.toLowerCase()))
+    : data;
+
+  const displayData = filtered.slice(0, maxItems);
+
+  // Append an "(other sponsors)" bar when total is provided and not all are shown
+  const shownSum = displayData.reduce((s, [, c]) => s + c, 0);
+  const othersCount = total !== null ? total - shownSum : null;
+  const rows = othersCount !== null && othersCount > 0
+    ? [...displayData, ["(other sponsors)", othersCount]]
+    : displayData;
+
+  const maxVal = Math.max(...rows.map((d) => d[1]), 1);
   const barH = 22;
   const gap = 6;
   const padTop = 30;
   const padLeft = 8;
   const padRight = 8;
   const padBottom = 8;
-  const svgH = padTop + displayData.length * (barH + gap) - gap + padBottom;
+  const svgH = padTop + rows.length * (barH + gap) - gap + padBottom;
 
   return (
     <div className="trials-svg-wrap">
+      {searchable && (
+        <input
+          className="sponsor-search-input"
+          type="text"
+          placeholder="Search sponsors…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      )}
       <svg
         viewBox={`0 0 360 ${svgH}`}
         preserveAspectRatio="xMidYMid meet"
@@ -67,22 +90,23 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8 
         aria-label={title}
       >
         <text x={padLeft} y={20} className="tchart-title">{title}</text>
-        {displayData.map(([label, count], i) => {
+        {rows.map(([label, count], i) => {
+          const isOthers = label === "(other sponsors)";
           const y = padTop + i * (barH + gap);
           const maxBarW = 360 - padLeft - padRight - 80;
           const barW = Math.max((count / maxVal) * maxBarW, 3);
           const isActive = activeValues?.has(label);
           const hasAny = activeValues?.size > 0;
-          const color = PALETTE[i % PALETTE.length];
+          const color = isOthers ? "#444c56" : PALETTE[i % PALETTE.length];
           const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
           return (
             <g
               key={label}
-              onClick={() => onFilter(field, label)}
-              style={{ cursor: "pointer" }}
-              role="button"
+              onClick={() => !isOthers && onFilter(field, label)}
+              style={{ cursor: isOthers ? "default" : "pointer" }}
+              role={isOthers ? undefined : "button"}
               aria-pressed={isActive}
-              aria-label={`Filter by ${label}: ${count}`}
+              aria-label={isOthers ? label : `Filter by ${label}: ${count}`}
             >
               <rect
                 x={padLeft}
@@ -91,7 +115,7 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8 
                 height={barH}
                 rx={4}
                 fill={color}
-                opacity={hasAny && !isActive ? 0.55 : 1}
+                opacity={isOthers ? 0.5 : (hasAny && !isActive ? 0.55 : 1)}
               />
               {isActive && (
                 <rect
@@ -100,12 +124,12 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8 
                   rx={5} fill="none" stroke={color} strokeWidth={2}
                 />
               )}
-              <text x={padLeft + barW + 6} y={y + barH / 2 + 4} className="tchart-count">{count}</text>
+              <text x={padLeft + barW + 6} y={y + barH / 2 + 4} className="tchart-count" opacity={isOthers ? 0.6 : 1}>{count}</text>
               <text
                 x={padLeft + barW + 6 + (String(count).length * 7) + 4}
                 y={y + barH / 2 + 4}
                 className="tchart-label"
-                opacity={hasAny && !isActive ? 0.65 : 0.8}
+                opacity={isOthers ? 0.5 : (hasAny && !isActive ? 0.65 : 0.8)}
               >
                 {displayLabel}
               </text>
@@ -288,8 +312,8 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
   }, [trials, activeFilters, aggData]);
 
   const sponsorData = useMemo(() => {
-    if (aggData?.sponsor) return aggData.sponsor.slice(0, 8);
-    return countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown").slice(0, 8);
+    if (aggData?.sponsor) return aggData.sponsor; // full top-20, chart handles slicing
+    return countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown");
   }, [trials, activeFilters, aggData]);
 
   const totalCount = aggData?.total ?? trials.length;
@@ -365,6 +389,8 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
             activeValues={getActiveVals("sponsor")}
             onFilter={onFilter}
             maxItems={8}
+            searchable={true}
+            total={totalCount}
           />
         )}
       </div>

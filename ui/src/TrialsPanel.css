@@ -914,6 +914,21 @@
 }
 .trials-svg-wrap:hover { border-color: #388bfd; }
 
+.sponsor-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 11px;
+  padding: 5px 8px;
+  margin-bottom: 6px;
+  outline: none;
+}
+.sponsor-search-input::placeholder { color: #6e7681; }
+.sponsor-search-input:focus { border-color: #388bfd; }
+
 .trials-chart-svg {
   display: block;
   width: 100%;
