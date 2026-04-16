@@ -56,18 +56,31 @@ async function main() {
   await run("CREATE CONSTRAINT site_key IF NOT EXISTS FOR (s:Site) REQUIRE s.key IS UNIQUE");
   await run("CREATE CONSTRAINT country_name IF NOT EXISTS FOR (c:Country) REQUIRE c.name IS UNIQUE");
 
+  // ── Check which tables exist ──
+  const tableSet = new Set(db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map(r => r.name));
+  log(`SQLite tables: ${[...tableSet].join(", ")}`);
+  const hasCV = tableSet.has("calculated_values");
+  const hasFacilities = tableSet.has("facilities");
+  const hasCountries = tableSet.has("countries");
+
   // ── Trial nodes ──
   log("Loading Trial nodes...");
-  const trials = db.prepare(`
-    SELECT s.nct_id, s.brief_title, s.overall_status, s.phase, s.study_type,
-           s.enrollment, s.enrollment_type, s.start_date, s.completion_date,
-           s.has_dmc, s.why_stopped,
-           cv.actual_duration, cv.number_of_facilities, cv.were_results_reported,
-           cv.months_to_report_results, cv.number_of_sae_subjects,
-           cv.has_us_facility, cv.has_single_facility
-    FROM studies s
-    LEFT JOIN calculated_values cv ON cv.nct_id = s.nct_id
-  `).all();
+  const trialSql = hasCV
+    ? `SELECT s.nct_id, s.brief_title, s.overall_status, s.phase, s.study_type,
+             s.enrollment, s.enrollment_type, s.start_date, s.completion_date,
+             s.has_dmc, s.why_stopped,
+             cv.actual_duration, cv.number_of_facilities, cv.were_results_reported,
+             cv.months_to_report_results, cv.number_of_sae_subjects,
+             cv.has_us_facility, cv.has_single_facility
+       FROM studies s LEFT JOIN calculated_values cv ON cv.nct_id = s.nct_id`
+    : `SELECT nct_id, brief_title, overall_status, phase, study_type,
+             enrollment, enrollment_type, start_date, completion_date,
+             has_dmc, why_stopped,
+             NULL AS actual_duration, NULL AS number_of_facilities, NULL AS were_results_reported,
+             NULL AS months_to_report_results, NULL AS number_of_sae_subjects,
+             NULL AS has_us_facility, NULL AS has_single_facility
+       FROM studies`;
+  const trials = db.prepare(trialSql).all();
   log(`  ${trials.length} trials from SQLite`);
 
   await runBatch(`
@@ -151,6 +164,7 @@ async function main() {
   log(`  ${interventions.length} interventions, ${intEdges.length} USES edges`);
 
   // ── Country nodes + CONDUCTED_IN edges ──
+  if (hasCountries) {
   log("Loading Countries...");
   const countries = db.prepare(`SELECT DISTINCT name FROM countries WHERE name IS NOT NULL AND removed = false`).all();
   await runBatch(`
@@ -166,8 +180,10 @@ async function main() {
     CREATE (t)-[:CONDUCTED_IN]->(c)
   `, countryEdges);
   log(`  ${countries.length} countries, ${countryEdges.length} CONDUCTED_IN edges`);
+  } else { log("Skipping Countries (table missing)"); }
 
   // ── Site nodes + AT edges ──
+  if (hasFacilities) {
   // Deduplicate by (name, city, country) to create real site entities
   log("Loading Sites (deduplicated by name+city+country)...");
   const sites = db.prepare(`
@@ -209,6 +225,7 @@ async function main() {
     CREATE (t)-[:AT]->(s)
   `, atEdges, 3000);
   log(`  Site nodes and AT edges created`);
+  } else { log("Skipping Sites (facilities table missing)"); }
 
   // ── Summary ──
   const counts = await run(`
