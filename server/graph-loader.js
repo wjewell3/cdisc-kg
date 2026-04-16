@@ -84,9 +84,13 @@ async function main() {
   log("Starting graph load");
   const t0 = Date.now();
 
-  // ── Clear existing graph ──
+  // ── Clear existing graph (batch delete to avoid OOM on large graphs) ──
   log("Clearing existing graph...");
-  await run("MATCH (n) DETACH DELETE n");
+  await run(`
+    CALL {
+      MATCH (n) DETACH DELETE n
+    } IN TRANSACTIONS OF 10000 ROWS
+  `);
 
   // ── Constraints & indexes ──
   log("Creating constraints...");
