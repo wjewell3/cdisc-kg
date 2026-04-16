@@ -772,7 +772,7 @@ export default function TrialsPanel() {
                             </div>
                           ) : (
                             <div className="intelligence-no-llm">
-                              <em>AI narrative unavailable — add ANTHROPIC_API_KEY to enable plain-English briefing.</em>
+                              <em>AI narrative unavailable — add GITHUB_COPILOT_TOKEN to the aact-credentials k8s secret to enable plain-English briefing.</em>
                             </div>
                           )}
 

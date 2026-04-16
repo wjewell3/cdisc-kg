@@ -91,7 +91,7 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8 
                 height={barH}
                 rx={4}
                 fill={color}
-                opacity={hasAny && !isActive ? 0.3 : 1}
+                opacity={hasAny && !isActive ? 0.55 : 1}
               />
               {isActive && (
                 <rect
@@ -105,7 +105,7 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8 
                 x={padLeft + barW + 6 + (String(count).length * 7) + 4}
                 y={y + barH / 2 + 4}
                 className="tchart-label"
-                opacity={hasAny && !isActive ? 0.4 : 0.8}
+                opacity={hasAny && !isActive ? 0.65 : 0.8}
               >
                 {displayLabel}
               </text>
@@ -185,8 +185,8 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
               onClick={() => onFilter(field, s.raw)}
               style={{ cursor: "pointer" }}
             >
-              <rect x={lx} y={ly} width={10} height={10} rx={2} fill={s.color} opacity={hasAny && !isActive ? 0.35 : 1} />
-              <text x={lx + 13} y={ly + 9} className="tlegend-text" opacity={hasAny && !isActive ? 0.45 : 1}>
+              <rect x={lx} y={ly} width={10} height={10} rx={2} fill={s.color} opacity={hasAny && !isActive ? 0.55 : 1} />
+              <text x={lx + 13} y={ly + 9} className="tlegend-text" opacity={hasAny && !isActive ? 0.65 : 1}>
                 {lbl} ({s.count})
               </text>
             </g>
@@ -241,10 +241,10 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
               style={{ cursor: "pointer" }}
             >
               <title>{`${b.label}: ${b.count.toLocaleString()} trials (${pct}%)`}</title>
-              <rect x={padLeft} y={y} width={barW} height={barH} rx={4} fill={color} opacity={hasAny && !isActive ? 0.3 : 1} />
+              <rect x={padLeft} y={y} width={barW} height={barH} rx={4} fill={color} opacity={hasAny && !isActive ? 0.55 : 1} />
               {isActive && <rect x={padLeft - 2} y={y - 2} width={barW + 4} height={barH + 4} rx={5} fill="none" stroke={color} strokeWidth={2} />}
               <text x={padLeft + barW + 6} y={y + barH / 2 + 4} className="tchart-count">{b.count}</text>
-              <text x={padLeft + barW + 6 + (String(b.count).length * 7) + 4} y={y + barH / 2 + 4} className="tchart-label" opacity={hasAny && !isActive ? 0.4 : 0.8}>{b.label}</text>
+              <text x={padLeft + barW + 6 + (String(b.count).length * 7) + 4} y={y + barH / 2 + 4} className="tchart-label" opacity={hasAny && !isActive ? 0.65 : 0.8}>{b.label}</text>
             </g>
           );
         })}

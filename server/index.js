@@ -357,6 +357,10 @@ app.get("/api/trial-intelligence", async (req, res) => {
     .replace(/[^a-zA-Z0-9 ]/g, " ")
     .trim();
 
+  // Build phase clause handling NULL phase
+  const phaseClause = trial.phase ? `AND phase = ?` : `AND phase IS NULL`;
+  const phaseParam  = trial.phase ? [trial.phase] : [];
+
   let comparables = [];
   if (topKeyword) {
     try {
@@ -372,11 +376,11 @@ app.get("/api/trial-intelligence", async (req, res) => {
             CAST(julianday(completion_date) - julianday(start_date) AS INTEGER) AS duration_days
           FROM studies
           WHERE overall_status IN ('COMPLETED','TERMINATED')
-            AND phase = ?
+            ${phaseClause}
             AND nct_id IN (${ph})
             AND start_date IS NOT NULL AND completion_date IS NOT NULL
           LIMIT 80
-        `).all(trial.phase, ...ids);
+        `).all(...phaseParam, ...ids);
       }
     } catch (_) { /* FTS error — fall through */ }
   }
@@ -389,11 +393,11 @@ app.get("/api/trial-intelligence", async (req, res) => {
         CAST(julianday(completion_date) - julianday(start_date) AS INTEGER) AS duration_days
       FROM studies
       WHERE overall_status IN ('COMPLETED','TERMINATED')
-        AND phase = ?
+        ${phaseClause}
         AND nct_id != ?
         AND start_date IS NOT NULL AND completion_date IS NOT NULL
       ORDER BY RANDOM() LIMIT 80
-    `).all(trial.phase, id);
+    `).all(...phaseParam, id);
   }
 
   // 3. Compute risk signals
@@ -435,10 +439,10 @@ app.get("/api/trial-intelligence", async (req, res) => {
     common_stop_reasons: stopReasons,
   };
 
-  // 4. Optional LLM briefing via Anthropic
+  // 4. Optional LLM briefing via GitHub Copilot (gpt-4.1)
   let briefing = null;
-  const { ANTHROPIC_API_KEY } = process.env;
-  if (ANTHROPIC_API_KEY) {
+  const { GITHUB_COPILOT_TOKEN } = process.env;
+  if (GITHUB_COPILOT_TOKEN) {
     try {
       const systemPrompt = `You are a senior clinical trial operations expert advising a CRO sponsor executive.
 Respond in concise, plain English — no bullet overload, 3-5 short paragraphs.
@@ -460,7 +464,7 @@ TRIAL:
 - Interventions: ${trial.interventions_text || "not specified"}
 ${trial.why_stopped ? `- Why Stopped: ${trial.why_stopped}` : ""}
 
-COMPARABLE TRIAL BENCHMARK (${riskSignals.comparable_count} completed/terminated ${trial.phase} trials for ${topKeyword}):
+COMPARABLE TRIAL BENCHMARK (${riskSignals.comparable_count} completed/terminated ${trial.phase || "unknown phase"} trials for ${topKeyword}):
 - Early termination rate: ${termRate !== null ? termRate + "%" : "unknown"} (industry benchmark ~15%)
 - Median trial duration: ${medianDuration ? Math.round(medianDuration / 30.4) + " months" : "unknown"}
 - Duration range (P25–P75): ${p25Duration && p75Duration ? Math.round(p25Duration / 30.4) + "–" + Math.round(p75Duration / 30.4) + " months" : "unknown"}
@@ -474,25 +478,27 @@ Write a 3–5 paragraph operational risk briefing covering:
 3. Enrollment risks vs. comparable performance
 4. Key watch-out signals and recommended mitigations`;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("https://api.githubcopilot.com/chat/completions", {
         method: "POST",
         headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
+          "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5",
-          max_tokens: 600,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userMsg }],
+          model: "gpt-4.1",
+          max_tokens: 700,
+          temperature: 0.3,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMsg },
+          ],
         }),
       });
       if (response.ok) {
         const data = await response.json();
-        briefing = data.content?.[0]?.text || null;
+        briefing = data.choices?.[0]?.message?.content || null;
       } else {
-        console.error("[intelligence] Anthropic API error:", response.status, await response.text());
+        console.error("[intelligence] GitHub Copilot API error:", response.status, await response.text());
       }
     } catch (e) {
       console.error("[intelligence] LLM call failed:", e.message);

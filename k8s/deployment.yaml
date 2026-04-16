@@ -34,6 +34,8 @@ spec:
       # ARM64 node pool
       nodeSelector:
         kubernetes.io/arch: arm64
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: api
           image: ghcr.io/wjewell3/cdisc-kg-server:latest   # built by .github/workflows/build-server.yml
@@ -59,6 +61,11 @@ spec:
                 secretKeyRef:
                   name: aact-credentials
                   key: AACT_PASSWORD
+            - name: GITHUB_COPILOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aact-credentials
+                  key: GITHUB_COPILOT_TOKEN
           volumeMounts:
             - name: data
               mountPath: /data
