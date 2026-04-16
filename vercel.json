@@ -2,7 +2,8 @@
   "buildCommand": "cd ui && npm install && npm run build",
   "outputDirectory": "ui/dist",
   "functions": {
-    "api/intelligence.js": { "maxDuration": 60 }
+    "api/intelligence.js": { "maxDuration": 60 },
+    "api/dq.js": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },

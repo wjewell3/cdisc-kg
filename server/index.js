@@ -312,6 +312,7 @@ function normalizeRow(row) {
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
+app.use(express.json());
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -408,7 +409,7 @@ app.get("/api/trials", async (req, res) => {
 // ── Trial Intelligence ────────────────────────────────────────────────────────
 
 app.get("/api/trial-intelligence", async (req, res) => {
-  const { nct_id } = req.query;
+  const { nct_id, min_enrollment, max_enrollment } = req.query;
   if (!nct_id || !/^NCT\d{8}$/.test(nct_id.toUpperCase())) {
     return res.status(400).json({ error: "Valid nct_id required (e.g. NCT01234567)" });
   }
@@ -417,6 +418,18 @@ app.get("/api/trial-intelligence", async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: "SQLite snapshot required for trial intelligence" });
   }
+
+  // Enrollment bounds for comparables (from DQ rules)
+  const enrollMin = min_enrollment ? parseInt(min_enrollment, 10) : null;
+  const enrollMax = max_enrollment ? parseInt(max_enrollment, 10) : null;
+  const enrollClause = [
+    enrollMin !== null ? "AND enrollment >= ?" : "",
+    enrollMax !== null ? "AND enrollment <= ?" : "",
+  ].filter(Boolean).join(" ");
+  const enrollParams = [
+    ...(enrollMin !== null ? [enrollMin] : []),
+    ...(enrollMax !== null ? [enrollMax] : []),
+  ];
 
   // 1. Fetch target trial
   const trial = db.prepare(`
@@ -458,10 +471,11 @@ app.get("/api/trial-intelligence", async (req, res) => {
           FROM studies
           WHERE overall_status IN ('COMPLETED','TERMINATED')
             ${phaseClause}
+            ${enrollClause}
             AND nct_id IN (${ph})
             AND start_date IS NOT NULL AND completion_date IS NOT NULL
           LIMIT 80
-        `).all(...phaseParam, ...ids);
+        `).all(...phaseParam, ...enrollParams, ...ids);
       }
     } catch (_) { /* FTS error — fall through */ }
   }
@@ -475,10 +489,11 @@ app.get("/api/trial-intelligence", async (req, res) => {
       FROM studies
       WHERE overall_status IN ('COMPLETED','TERMINATED')
         ${phaseClause}
+        ${enrollClause}
         AND nct_id != ?
         AND start_date IS NOT NULL AND completion_date IS NOT NULL
       ORDER BY RANDOM() LIMIT 80
-    `).all(...phaseParam, id);
+    `).all(...phaseParam, ...enrollParams, id);
   }
 
   // 3. Compute risk signals
@@ -610,6 +625,52 @@ Write a 3–5 paragraph operational risk briefing covering:
       why_stopped: c.why_stopped,
     })),
   });
+});
+
+// ── Data Quality — rule parsing via LLM ─────────────────────────────────────
+
+app.post("/api/dq/parse-rule", async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || typeof text !== "string") return res.status(400).json({ error: "text required" });
+
+  const { GITHUB_COPILOT_TOKEN } = process.env;
+  if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured" });
+
+  try {
+    const systemPrompt = `You are a data quality rule parser for clinical trials data. Given a natural language description, extract a structured rule and respond with ONLY valid JSON — no markdown fences, no extra text.
+
+For grouping rules (merging synonymous values into one canonical label):
+{"ruleType":"grouping","field":"intervention|condition|sponsor|status|phase","canonical":"<canonical label>","rawValues":["<raw1>","<raw2>",...]}
+
+For enrollment range bounds:
+{"ruleType":"bounds","min":<integer or null>,"max":<integer or null>}`;
+
+    const response = await fetch("https://api.githubcopilot.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1",
+        max_tokens: 300,
+        temperature: 0,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: text },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error(`LLM API error ${response.status}`);
+    const llmData = await response.json();
+    const raw = (llmData.choices?.[0]?.message?.content || "").trim()
+      .replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    const parsed = JSON.parse(raw);
+    return res.json(parsed);
+  } catch (e) {
+    console.error("[dq] parse-rule failed:", e.message);
+    return res.status(500).json({ error: "Failed to parse rule", detail: e.message });
+  }
 });
 
 app.listen(parseInt(PORT), () => {

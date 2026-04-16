@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts from "./TrialsCharts";
+import RulesManager from "./RulesManager";
+import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 
 const STATUS_CLASS = {
@@ -55,6 +57,12 @@ export default function TrialsPanel() {
   const [intelligence, setIntelligence] = useState(null); // { data, loading, error }
   const [intelStep, setIntelStep] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
+
+  const {
+    rules, addGrouping, removeGrouping, setEnrollmentBounds,
+    exportRules, importRules, normalizeAggData, enrollMin, enrollMax,
+  } = useDataQuality();
 
   const INTEL_STEPS = [
     "Fetching trial record from AACT snapshot…",
@@ -78,10 +86,12 @@ export default function TrialsPanel() {
     setIntelligence({ loading: true, data: null, error: null });
     try {
       const base = import.meta.env.VITE_TRIALS_API_BASE || "";
-      const url = base
-        ? `${base}/api/trial-intelligence?nct_id=${nct_id}`
-        : `/api/intelligence?nct_id=${nct_id}`;
-      const r = await fetch(url);
+      const endpoint = base ? `${base}/api/trial-intelligence` : `/api/intelligence`;
+      const url = new URL(endpoint, window.location.origin);
+      url.searchParams.set("nct_id", nct_id);
+      if (enrollMin !== null) url.searchParams.set("min_enrollment", String(enrollMin));
+      if (enrollMax !== null) url.searchParams.set("max_enrollment", String(enrollMax));
+      const r = await fetch(url.toString());
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
         throw new Error(e.error || `HTTP ${r.status}`);
@@ -91,7 +101,7 @@ export default function TrialsPanel() {
     } catch (e) {
       setIntelligence({ loading: false, data: null, error: e.message });
     }
-  }, []);
+  }, [enrollMin, enrollMax]);
 
   // Auto-load browse dataset + full-DB aggregates in parallel on mount
   useEffect(() => {
@@ -131,8 +141,19 @@ export default function TrialsPanel() {
         }
       }
     }
+    // Apply DQ enrollment bounds (override chart-derived bounds with the stricter value)
+    if (enrollMin !== null) {
+      params.min_enrollment = params.min_enrollment
+        ? String(Math.max(parseInt(params.min_enrollment), enrollMin))
+        : String(enrollMin);
+    }
+    if (enrollMax !== null) {
+      params.max_enrollment = params.max_enrollment
+        ? String(Math.min(parseInt(params.max_enrollment), enrollMax))
+        : String(enrollMax);
+    }
     return params;
-  }, [activeResolutions, chartFilters]);
+  }, [activeResolutions, chartFilters, enrollMin, enrollMax]);
 
   const fetchSponsors = useCallback((q) => executeSponsorSearch(buildCurrentParams(), q), [buildCurrentParams]);
   const fetchConditions = useCallback((q) => executeConditionSearch(buildCurrentParams(), q), [buildCurrentParams]);
@@ -323,6 +344,7 @@ export default function TrialsPanel() {
   }, []);
 
   return (
+    <>
     <div className="trials-panel">
       {/* Header bar */}
       <div className="trials-header">
@@ -334,6 +356,10 @@ export default function TrialsPanel() {
           </div>
         </div>
         <div className="trials-badge-row">
+          <button className="rules-manager-btn" onClick={() => setRulesOpen(true)}>
+            ⚙ Rules{rules.groupings.length > 0 ? ` (${rules.groupings.length})` : ""}
+            {(enrollMin !== null || enrollMax !== null) && <span className="rules-bounds-badge">●</span>}
+          </button>
           <span className="aact-badge">AACT Snapshot</span>
           <span className="sdtm-badge">580k studies</span>
         </div>
@@ -461,6 +487,7 @@ export default function TrialsPanel() {
                   fetchSponsors={fetchSponsors}
                   fetchConditions={fetchConditions}
                   fetchInterventions={fetchInterventions}
+                  normalizeAggData={normalizeAggData}
                 />
 
                 {/* ── Results list + detail panel row ──────────────────── */}
@@ -753,5 +780,20 @@ export default function TrialsPanel() {
         )}
       </div>
     </div>
+
+    {rulesOpen && (
+      <RulesManager
+        rules={rules}
+        addGrouping={addGrouping}
+        removeGrouping={removeGrouping}
+        setEnrollmentBounds={setEnrollmentBounds}
+        enrollMin={enrollMin}
+        enrollMax={enrollMax}
+        exportRules={exportRules}
+        importRules={importRules}
+        onClose={() => setRulesOpen(false)}
+      />
+    )}
+    </>
   );
 }

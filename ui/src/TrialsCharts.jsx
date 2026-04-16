@@ -277,7 +277,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
   );
 }
 
-export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions }) {
+export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -342,22 +342,20 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
   }, [trials, activeFilters, aggData]);
 
   const sponsorData = useMemo(() => {
-    if (sponsorSearchData !== null) return sponsorSearchData;
-    if (aggData?.sponsor) return aggData.sponsor;
-    return countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown");
-  }, [trials, activeFilters, aggData, sponsorSearchData]);
+    const raw = sponsorSearchData !== null ? sponsorSearchData
+      : (aggData?.sponsor || countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown"));
+    return normalizeAggData ? normalizeAggData("sponsor", raw) : raw;
+  }, [trials, activeFilters, aggData, sponsorSearchData, normalizeAggData]);
 
   const conditionData = useMemo(() => {
-    if (conditionSearchData !== null) return conditionSearchData;
-    if (aggData?.condition) return aggData.condition;
-    return [];
-  }, [aggData, conditionSearchData]);
+    const raw = conditionSearchData !== null ? conditionSearchData : (aggData?.condition || []);
+    return normalizeAggData ? normalizeAggData("condition", raw) : raw;
+  }, [aggData, conditionSearchData, normalizeAggData]);
 
   const interventionData = useMemo(() => {
-    if (interventionSearchData !== null) return interventionSearchData;
-    if (aggData?.intervention) return aggData.intervention;
-    return [];
-  }, [aggData, interventionSearchData]);
+    const raw = interventionSearchData !== null ? interventionSearchData : (aggData?.intervention || []);
+    return normalizeAggData ? normalizeAggData("intervention", raw) : raw;
+  }, [aggData, interventionSearchData, normalizeAggData]);
 
   const totalCount = aggData?.total ?? trials.length;
   const hasEnrollment = aggData?.enrollment
@@ -440,7 +438,6 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="sponsor"
               activeValues={getActiveVals("sponsor")}
               onFilter={onFilter}
-              maxItems={10}
               total={sponsorSearch ? null : totalCount}
             />
           </div>
@@ -461,7 +458,6 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="condition"
               activeValues={getActiveVals("condition")}
               onFilter={onFilter}
-              maxItems={10}
               total={conditionSearch ? null : totalCount}
             />
           </div>
@@ -482,7 +478,6 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="intervention"
               activeValues={getActiveVals("intervention")}
               onFilter={onFilter}
-              maxItems={10}
               total={interventionSearch ? null : totalCount}
             />
           </div>

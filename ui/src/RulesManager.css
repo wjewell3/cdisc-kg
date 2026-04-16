@@ -1,0 +1,340 @@
+/* ── Rules Manager Drawer ─────────────────────────────────────────────────── */
+
+.rm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rm-drawer {
+  width: min(520px, 96vw);
+  height: 100%;
+  background: #0d1117;
+  border-left: 1px solid #30363d;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rm-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 24px;
+  border-bottom: 1px solid #21262d;
+  flex-shrink: 0;
+}
+
+.rm-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f0f6fc;
+  margin: 0;
+}
+
+.rm-header-sub {
+  font-size: 11px;
+  color: #8b949e;
+  margin-left: 2px;
+}
+
+.rm-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.rm-close:hover { color: #f0f6fc; }
+
+.rm-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 32px;
+}
+
+.rm-section {
+  margin-top: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #21262d;
+}
+.rm-section-last { border-bottom: none; }
+
+.rm-section h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f0f6fc;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rm-hint {
+  font-size: 11px;
+  color: #8b949e;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+/* AI row */
+.rm-ai-row {
+  display: flex;
+  gap: 8px;
+}
+
+.rm-ai-input { flex: 1; }
+
+.rm-ai-btn {
+  padding: 8px 16px;
+  background: #1f6feb;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.rm-ai-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rm-ai-btn:not(:disabled):hover { background: #388bfd; }
+
+.rm-ai-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f85149;
+}
+
+.rm-ai-result {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.rm-ai-preview {
+  font-size: 12px;
+  color: #e6edf3;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.rm-preview-label {
+  font-weight: 600;
+  color: #8b949e;
+}
+
+.rm-ai-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.rm-confirm-btn {
+  padding: 6px 14px;
+  background: #238636;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.rm-confirm-btn:hover { background: #2ea043; }
+
+.rm-discard-btn {
+  padding: 6px 14px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-size: 12px;
+  cursor: pointer;
+}
+.rm-discard-btn:hover { color: #f0f6fc; border-color: #8b949e; }
+
+/* Manual add form */
+.rm-manual-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rm-select, .rm-input {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #f0f6fc;
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.rm-select:focus, .rm-input:focus { border-color: #388bfd; }
+
+.rm-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #f0f6fc;
+  font-size: 12px;
+  padding: 8px 10px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  outline: none;
+}
+.rm-textarea:focus { border-color: #388bfd; }
+
+.rm-add-btn {
+  margin-top: 8px;
+  padding: 8px 16px;
+  background: #238636;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.rm-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rm-add-btn:not(:disabled):hover { background: #2ea043; }
+
+/* Enrollment bounds */
+.rm-bounds-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.rm-bounds-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: #8b949e;
+}
+
+.rm-bounds-input {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #f0f6fc;
+  font-size: 13px;
+  padding: 8px 10px;
+  width: 150px;
+  outline: none;
+}
+.rm-bounds-input:focus { border-color: #388bfd; }
+
+.rm-clear-bounds-btn {
+  margin-top: 10px;
+  padding: 5px 12px;
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 5px;
+  color: #8b949e;
+  font-size: 11px;
+  cursor: pointer;
+}
+.rm-clear-bounds-btn:hover { color: #f85149; border-color: #f85149; }
+
+/* Active rules list */
+.rm-empty {
+  font-size: 12px;
+  color: #8b949e;
+  font-style: italic;
+}
+
+.rm-field-group {
+  margin-bottom: 14px;
+}
+
+.rm-field-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #39d2c0;
+  margin-bottom: 6px;
+}
+
+.rm-rule-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.rm-rule-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rm-rule-canonical {
+  font-size: 13px;
+  color: #f0f6fc;
+  font-weight: 500;
+}
+
+.rm-rule-raw {
+  font-size: 11px;
+  color: #8b949e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rm-rule-note {
+  font-size: 10px;
+  color: #444c56;
+  font-style: italic;
+}
+
+.rm-remove-btn {
+  background: none;
+  border: none;
+  color: #444c56;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.rm-remove-btn:hover { color: #f85149; }
+
+/* Export / Import */
+.rm-export-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rm-export-btn, .rm-import-label {
+  padding: 8px 14px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-block;
+}
+.rm-export-btn:hover, .rm-import-label:hover {
+  color: #f0f6fc;
+  border-color: #8b949e;
+}
