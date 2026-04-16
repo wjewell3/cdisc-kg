@@ -1,15 +1,96 @@
-# Clinical Trials Explorer
+# Clinical Trials Knowledge Graph
 
-A fast, interactive explorer for all 580k+ studies in [AACT](https://aact.ctti-clinicaltrials.org/) (ClinicalTrials.gov), hosted at **[cdisc-kg.vercel.app](https://cdisc-kg.vercel.app)**.
+A knowledge-graph-powered operational intelligence platform for clinical trials, built on 580k+ studies from [AACT](https://aact.ctti-clinicaltrials.org/) (ClinicalTrials.gov). Live at **[cdisc-kg.vercel.app](https://cdisc-kg.vercel.app)**.
 
-The main goal is to make it easy to slice and understand the trial landscape for a given disease area or intervention — without needing to know SQL or use the clunky CT.gov UI. The primary entry point is the `/trials` route.
+## Vision
 
-## What it does
+Clinical trial data sits in siloed tables — studies, facilities, designs, eligibility, dropouts, countries. This platform encodes **clinical and operational processes** as a knowledge graph and surfaces actionable intelligence from it. The goal is not just search — it's answering questions like:
 
-- **Browse & search** 580k+ trials by free text, condition, intervention, phase, status, sponsor, or enrollment size
-- **Cross-filter charts** — click Phase 1, Recruiting, or a sponsor bar to filter all results; bars never disappear (faceted stats)
-- **Sponsor search** — search all sponsors matching your current filters, not just the top 10
-- **Trial Intelligence** — click any trial to get an AI-generated briefing: comparable trials, risk signals, and a plain-English summary via GPT-4.1
+- "What's the real termination rate for Phase 3 oncology trials, and why do they fail?"
+- "Which sponsors have the best completion rates for trials in my therapeutic area?"
+- "How does enrollment ambition compare to historical actuals for this design type?"
+- "Where are the geographic concentrations and gaps in site activation?"
+
+The KG layer connects every data element — sponsor, condition, intervention, phase, status, enrollment, sites, design, eligibility, dropouts, duration, outcomes — so that slicing on any dimension reveals operational patterns across all others.
+
+## Target Role Alignment
+
+This project demonstrates competencies for a **Data Domain Manager, Trial Data** role (PPD / Thermo Fisher Scientific) — the hands-on owner of a clinical trial data domain who drives trusted, interoperable, AI-ready data for product and analytics use cases.
+
+### Competencies Demonstrated
+
+| Competency | How It's Shown |
+|---|---|
+| **Domain Strategy & Roadmapping** | 11-table AACT domain with nightly refresh pipeline, prioritized by operational value |
+| **Data Modeling & Semantics** | Normalized SQLite schema with FTS5 index, faceted aggregation engine, enrollment bucketing, phase/status normalization via DQ rules |
+| **Data Quality & Governance** | Natural-language DQ Rules Manager — grouping rules, enrollment bounds, defect taxonomy. Rules persist and apply to all downstream analytics |
+| **Clinical Domain Expertise** | Trial risk scoring benchmarked against condition+phase comparables; dropout analysis; design complexity signals; operational KPIs (completion rate, duration, enrollment ambition) |
+| **Data Storytelling & Influence** | Interactive cross-filter charts with reactive stats banner; GPT-4.1 strategic briefings that translate data patterns into plain-English operational narratives |
+| **Stakeholder Engagement** | Self-service UI — no SQL required. Click any chart bar to slice the entire dataset; click any trial to get a risk briefing |
+
+## Data Domain: What's in the KG
+
+### Tables Ingested (SQLite snapshot, refreshed nightly)
+
+| Table | What It Encodes | Rows |
+|---|---|---|
+| `studies` | Core trial record — ID, title, phase, status, enrollment, dates, DMC flag, stop reason | 580k |
+| `conditions` | Disease/condition links per trial | ~1.1M |
+| `interventions` | Drug/device/procedure links per trial | ~1.2M |
+| `sponsors` | Lead sponsor per trial | ~580k |
+| `brief_summaries` | Trial description text (used for FTS) | ~580k |
+| `calculated_values` | Derived operational metrics — facility count, actual duration, reporting time, SAE/NSAE subjects, age range, outcome counts, US facility flag | ~580k |
+| `facilities` | Site records — name, city, state, country, lat/lng, status | ~3.4M |
+| `designs` | Study design — allocation, masking, intervention model, primary purpose | ~580k |
+| `drop_withdrawals` | Dropout reasons and counts by period | ~1.5M |
+| `countries` | Countries where trial runs | ~900k |
+| `eligibilities` | Age range, gender, healthy volunteers, criteria text, age group flags | ~580k |
+
+### Operational Dimensions Currently Surfaced in UI
+
+| Dimension | Where It Appears |
+|---|---|
+| Phase, Status, Sponsor, Condition, Intervention | Cross-filter charts + stats banner |
+| Enrollment size | Histogram chart with bucketed ranges |
+| Completion rate | Stats banner (reactive to filters, with delta vs baseline) |
+| Active trial % | Stats banner |
+| Avg enrollment | Stats banner |
+| Trial duration | Trial Intelligence briefing |
+| Termination rate | Trial risk scoring (benchmarked) |
+| Dropout reasons | Trial Intelligence briefing |
+| Design complexity | Trial risk score factor |
+| Eligibility complexity | Trial risk score factor |
+| Site/facility count | Trial risk score factor |
+| Countries | Trial Intelligence briefing |
+
+### Dimensions Ingested but NOT Yet Surfaced — Roadmap
+
+| Dimension | Source | Planned Surface |
+|---|---|---|
+| **Avg duration by phase/therapeutic area** | `calculated_values.actual_duration` | Operational KPI chart — heatmap or grouped bars |
+| **Termination rate by therapeutic area** | `studies.overall_status` + `conditions` | Operational KPI chart — which disease areas have highest failure rates |
+| **Enrollment ambition vs actuals** | `studies.enrollment` + `enrollment_type` (anticipated vs actual) | Scatter or comparison chart |
+| **Age range / demographics** | `calculated_values.minimum_age_num`, `maximum_age_num` | Chart facet — filter by pediatric/adult/geriatric |
+| **SAE subject counts** | `calculated_values.number_of_sae_subjects`, `number_of_nsae_subjects` | Safety signal dimension — high SAE sponsors/conditions |
+| **Outcome count** | `calculated_values.number_of_primary/secondary_outcomes_to_measure` | Complexity signal — trials measuring many endpoints |
+| **US vs international** | `calculated_values.has_us_facility` | Geographic filter toggle |
+| **Single vs multi-site** | `calculated_values.has_single_facility` | Operational complexity filter |
+| **Results reporting lag** | `calculated_values.months_to_report_results` | Compliance KPI — which sponsors/phases report fastest |
+| **Geographic site density** | `facilities` lat/lng | Map visualization — site concentration by region |
+| **Dropout rate by reason** | `drop_withdrawals` aggregated | Operational KPI — which reasons dominate by phase/condition |
+
+### AACT Tables Not Yet Ingested — Future Expansion
+
+| Table | What It Would Add |
+|---|---|
+| `milestones` | Enrollment velocity — actual participant flow over time |
+| `participant_flows` | Detailed cohort progression through trial stages |
+| `outcomes` | Endpoint results — efficacy/safety data post-completion |
+| `reported_events` | Adverse event details |
+| `result_groups` | Arm-level result groupings |
+| `baseline_measurements` | Baseline demographics of enrolled participants |
+| `design_outcomes` | Primary/secondary outcome definitions |
+| `design_groups` | Arm/group definitions and counts |
 
 ## Architecture
 
@@ -17,119 +98,86 @@ The main goal is to make it easy to slice and understand the trial landscape for
 cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
-│       ├── TrialsPanel.jsx    # /trials route — main search + chart UI
-│       ├── TrialsCharts.jsx   # Cross-filter bar/donut/histogram charts
-│       └── trialsEngine.js   # API client (fetch wrappers)
-├── api/                       # Vercel serverless functions (HTTPS proxy layer)
-│   ├── trials.js              # /api/trials → proxies to OKE server
-│   └── intelligence.js        # /api/intelligence → proxies to OKE server
+│       ├── TrialsPanel.jsx    # Main search + cross-filter chart UI
+│       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner
+│       ├── RulesManager.jsx   # DQ rules: grouping normalization, enrollment bounds
+│       ├── InsightPanel.jsx   # Entity-level operational insight (available, not wired)
+│       ├── SiteIntelligence.jsx # Site search + deep profile (available, not wired)
+│       └── trialsEngine.js    # API client (fetch wrappers for all modes)
+├── api/                       # Vercel serverless functions (HTTPS proxy → OKE)
+│   ├── trials.js              # /api/trials → OKE server
+│   ├── intelligence.js        # /api/intelligence → trial-intelligence
+│   ├── entity-insight.js      # /api/entity-insight → OKE
+│   ├── entity-intelligence.js # /api/entity-intelligence → OKE
+│   ├── site-search.js         # /api/site-search → OKE (PG fallback)
+│   ├── site-profile.js        # /api/site-profile → OKE (PG fallback)
+│   ├── trial-risk.js          # /api/trial-risk → OKE
+│   └── dq.js                  # /api/dq/parse-rule → LLM rule parser
 ├── server/                    # Express API on OKE (ARM64)
-│   ├── index.js               # /api/trials, /api/trial-intelligence, /health
-│   ├── snapshot.js            # SQLite snapshot builder (runs as k8s CronJob)
+│   ├── index.js               # All endpoints (see API section)
+│   ├── snapshot.js            # AACT → SQLite snapshot builder (k8s CronJob)
 │   └── Dockerfile
 ├── k8s/                       # Kubernetes manifests
 │   ├── deployment.yaml        # trials-api Deployment + Service + LoadBalancer
-│   ├── cronjob.yaml           # Nightly AACT → SQLite snapshot refresh
-│   ├── namespace.yaml
-│   ├── secret.yaml            # aact-credentials (AACT_USER, AACT_PASSWORD, GITHUB_COPILOT_TOKEN)
+│   ├── cronjob.yaml           # Nightly AACT → SQLite snapshot (2AM UTC, 5h timeout)
+│   ├── secret.yaml            # aact-credentials
 │   └── sqlite-debug-pod.yaml  # Read-only debug pod for ad-hoc SQL
 └── .github/workflows/
-    └── build-server.yml       # Builds + pushes server Docker image on push
+    └── build-server.yml       # ARM64 Docker image build on push to server/**
 ```
-
-## `/trials` route
-
-The core feature. A full-page search UI backed by a 580k-study SQLite snapshot of AACT.
-
-**Search params** (all combinable):
-
-| Param | Description |
-|---|---|
-| `q` | Free-text (FTS5 — matches title, conditions, interventions, summary) |
-| `condition` | Condition/disease filter (partial match) |
-| `intervention` | Intervention name filter (partial match) |
-| `phase` | `PHASE1`, `PHASE2`, `PHASE3`, `PHASE4`, `EARLY_PHASE1` |
-| `status` | `RECRUITING`, `COMPLETED`, `ACTIVE_NOT_RECRUITING`, etc. |
-| `sponsor` | Lead sponsor name (partial match, multi-select) |
-| `min_enrollment` / `max_enrollment` | Enrollment size range |
-
-**Chart cross-filtering:** Clicking a bar in Phase, Status, Sponsor, or Enrollment charts re-queries the server with that filter active. Stats use *faceted queries* — each dimension's counts exclude its own filter, so bars always show the full distribution even when one is active.
-
-**Sponsor chart:** Shows top 10 sponsors by default with an "other sponsors" bar representing the remainder. The search box queries all sponsors across the full filtered dataset (server-side, not just top 10).
-
-**Trial Intelligence:** Click any trial row to open an AI-generated risk briefing. See below for how it works.
-
-## How Analyze Trial Risk works
-
-When you click a trial and hit **Analyze Trial Risk**, the server runs four steps:
-
-1. **Looks up the trial** — pulls its full record from the SQLite snapshot: title, phase, conditions, interventions, sponsor, enrollment target, and start/completion dates.
-
-2. **Finds "comparable" trials** — searches the database for other trials that already *finished* (completed or terminated) with similar condition keywords, restricted to the same trial phase. This is your benchmark group. If fewer than 10 keyword matches exist, it falls back to a random sample of same-phase completed/terminated trials.
-
-3. **Crunches benchmarks** — entirely from the comparable group, it computes:
-   - What % got cancelled early (termination rate)
-   - How long trials typically ran (median + P25/P75 in months)
-   - Typical enrollment size vs. this trial's target
-   - Common reasons comparable trials were stopped
-
-4. **Asks GPT-4.1 to write the briefing** — all the above numbers get sent to the AI with a prompt framing it as a senior CRO/sponsor executive risk briefing. GPT-4.1 writes 3–5 plain-English paragraphs interpreting what the benchmarks mean for this specific trial.
-
-**Note on observational registries:** Some trials (like large national registries) store a placeholder enrollment of `99,999,999` in CT.gov to mean "ongoing, uncapped." The enrollment comparison will be nonsensical for these — the AI usually recognises the registry context and says so.
 
 ## Server API
 
-Base URL (OKE): `http://129.80.137.184`  
-Proxied via Vercel at: `https://cdisc-kg.vercel.app/api/trials`
+Base URL (OKE): `http://129.80.137.184:3001`
+Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 
-### `GET /api/trials`
+### Search & Aggregation
 
-| Mode | Params | Returns |
-|---|---|---|
-| `mode=search` (default) | any combination above + `limit` | `{ total, returned, results[] }` |
-| `mode=stats` | same filters | `{ total, phase{}, status{}, sponsor[][], enrollment{} }` — faceted |
-| `mode=sponsors` | same filters + `sponsor_q` | `{ sponsors: [{val, count}] }` — up to 100 results |
+| Endpoint | Description |
+|---|---|
+| `GET /api/trials?mode=search` | Full-text + faceted trial search. Params: `q`, `phase`, `status`, `sponsor`, `condition`, `intervention`, `min_enrollment`, `max_enrollment`, `limit` |
+| `GET /api/trials?mode=stats` | Faceted aggregation — phase, status, sponsor top-20, condition top-20, intervention top-20, enrollment buckets. Each dimension excludes its own filter |
+| `GET /api/trials?mode=sponsors` | Searchable sponsor list with counts (`sponsor_q` for type-ahead) |
+| `GET /api/trials?mode=conditions` | Searchable condition list with counts |
+| `GET /api/trials?mode=interventions` | Searchable intervention list with counts |
 
-### `GET /api/trial-intelligence?nct_id=NCT...`
+### Operational Intelligence
 
-Returns comparable trials, risk signals, and a GPT-4.1 briefing for a given trial.
+| Endpoint | Description |
+|---|---|
+| `GET /api/trial-intelligence?nct_id=...` | Single-trial deep analysis: comparable benchmarks (termination rate, duration P25/P50/P75, enrollment delta), dropout reasons, countries, design, eligibility + GPT-4.1 risk briefing |
+| `GET /api/trial-risk?nct_id=...` | Risk score 0–100 with labeled factors: termination rate, enrollment ambition, site count, design complexity, eligibility complexity |
+| `GET /api/entity-insight?type=...&name=...` | Portfolio analytics for any entity (sponsor/condition/intervention/phase/status/enrollment_range): completion rate, avg enrollment, avg duration, reporting time, cross-dimensional breakdowns, top sites |
+| `GET /api/entity-intelligence?type=...&name=...` | Entity insight + GPT-4.1 3-paragraph strategic briefing |
 
-### `GET /health`
+### Site Intelligence
 
-Returns `{ ok, backend: "sqlite"|"postgres", snapshot_time }`.
+| Endpoint | Description |
+|---|---|
+| `GET /api/site-search?q=...&country=...` | Search facilities by name + country. Returns grouped sites with trial counts and lat/lng |
+| `GET /api/site-profile?name=...&country=...` | Deep site dossier: trial portfolio, phases, statuses, conditions, sponsors, completion rate, duration, SAE subjects, dropout reasons, recent trials |
+
+### Data Quality
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/dq/parse-rule` | Natural-language → structured DQ rule via LLM (grouping rules or enrollment bounds) |
+
+### System
+
+| Endpoint | Description |
+|---|---|
+| `GET /health` | Backend type, snapshot timestamp, status |
 
 ## Infrastructure
 
-- **OKE**: Single ARM64 node (`VM.Standard.A1.Flex`, 4 OCPU / 24 GB), namespace `cdisc-kg`
-- **SQLite snapshot**: 580k studies on a 50 GB PVC (`/data/aact.db`), refreshed nightly by a CronJob. Server falls back to live AACT PostgreSQL if the snapshot is stale or missing.
-- **CI**: `ubuntu-24.04-arm` GitHub Actions runner — native ARM64 build, ~2.5 min (no QEMU)
-- **Vercel**: Serverless proxy layer; keeps the browser on HTTPS to avoid mixed-content issues with the OKE HTTP endpoint
+- **OKE**: Single ARM64 node (`VM.Standard.A1.Flex`, 4 OCPU / 24 GB), namespace `cdisc-kg`, LB IP `129.80.137.184`
+- **SQLite snapshot**: 11 tables on a 50 GB PVC (`/data/aact.db`), refreshed nightly at 2AM UTC (5h timeout). Server falls back to live AACT PostgreSQL if snapshot missing
+- **CI**: `ubuntu-24.04-arm` GitHub Actions runner — native ARM64 build, ~2.5 min. Auto-triggers on push to `server/**`
+- **Vercel**: Serverless proxy layer + static UI hosting. Deploy with `vercel --prod` from project root
+- **LLM**: GPT-4.1 via GitHub Copilot API (`https://api.githubcopilot.com/chat/completions`)
 
-## Debugging the SQLite snapshot
-
-A read-only debug pod mounts the same PVC so you can run ad-hoc SQL:
-
-```bash
-# Start the pod (already deployed; recreate if needed)
-kubectl apply -f k8s/sqlite-debug-pod.yaml
-kubectl wait pod/sqlite-debug -n cdisc-kg --for=condition=Ready
-
-# Open a SQLite shell
-kubectl exec -it sqlite-debug -n cdisc-kg -- sqlite3 /data/aact.db
-
-# Useful commands inside sqlite3
-.tables
-.headers on
-.mode column
-.schema studies
-SELECT overall_status, COUNT(*) FROM studies GROUP BY 1 ORDER BY 2 DESC LIMIT 10;
-SELECT sp.name, COUNT(*) FROM sponsors sp WHERE sp.lead_or_collaborator='lead' GROUP BY sp.name ORDER BY 2 DESC LIMIT 20;
-
-# Clean up when done
-kubectl delete pod sqlite-debug -n cdisc-kg
-```
-
-## Local development
+## Local Development
 
 ```bash
 # Server (requires /data/aact.db or AACT credentials in env)
@@ -144,13 +192,20 @@ Set `VITE_TRIALS_API_BASE=http://localhost:3001` in `ui/.env.local` to hit the l
 ## Deploying
 
 ```bash
-# UI + Vercel functions
-vercel --prod
+# UI + Vercel proxy functions (from project root, NOT home directory)
+cd /path/to/cdisc-kg && vercel --prod
 
-# Server image (auto-built by GHA on push to main; to rebuild manually)
-cd server && docker build -t ghcr.io/wjewell3/cdisc-kg-server:latest . && docker push ...
-
-# Apply k8s changes
-kubectl apply -f k8s/deployment.yaml
+# Server image auto-builds via GHA on push to server/**
+# To force restart after image update:
 kubectl rollout restart deployment/trials-api -n cdisc-kg
+
+# Apply k8s manifest changes
+kubectl apply -f k8s/deployment.yaml
+```
+
+## SQLite Debug
+
+```bash
+kubectl apply -f k8s/sqlite-debug-pod.yaml
+kubectl exec -it sqlite-debug -n cdisc-kg -- sqlite3 /data/aact.db
 ```
