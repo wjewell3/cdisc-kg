@@ -27,6 +27,16 @@ spec:
               value: "neo4j"
             - name: NEO4J_PASS
               value: "trials-kg-2026"
+            - name: AACT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: aact-credentials
+                  key: AACT_USER
+            - name: AACT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aact-credentials
+                  key: AACT_PASSWORD
           volumeMounts:
             - name: data
               mountPath: /data

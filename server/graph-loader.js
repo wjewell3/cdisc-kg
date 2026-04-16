@@ -10,13 +10,54 @@
  */
 import Database from "better-sqlite3";
 import neo4j from "neo4j-driver";
+import pg from "pg";
 
 const DB_PATH = process.env.DB_PATH || "/data/aact.db";
 const NEO4J_URI = process.env.NEO4J_URI || "bolt://neo4j:7687";
 const NEO4J_USER = process.env.NEO4J_USER || "neo4j";
 const NEO4J_PASS = process.env.NEO4J_PASS || "trials-kg-2026";
+const AACT_USER = process.env.AACT_USER;
+const AACT_PASSWORD = process.env.AACT_PASSWORD;
+const AACT_HOST = process.env.AACT_HOST || "aact-db.ctti-clinicaltrials.org";
 
 const db = new Database(DB_PATH, { readonly: true });
+
+let pgPool = null;
+function getPg() {
+  if (pgPool) return pgPool;
+  if (!AACT_USER || !AACT_PASSWORD) return null;
+  pgPool = new pg.Pool({
+    host: AACT_HOST, port: 5432, database: "aact",
+    user: AACT_USER.trim(), password: AACT_PASSWORD.trim(),
+    ssl: { rejectUnauthorized: false },
+    max: 3, idleTimeoutMillis: 30000, connectionTimeoutMillis: 15000,
+  });
+  return pgPool;
+}
+
+async function pgAll(sql) {
+  const pool = getPg();
+  if (!pool) throw new Error("No PG credentials — set AACT_USER and AACT_PASSWORD");
+  log(`  (querying AACT PostgreSQL: ${sql.slice(0, 80).replace(/\s+/g, ' ')}...)`);
+  const { rows } = await pool.query(sql);
+  return rows;
+}
+
+async function pgStream(sql, batchSize = 50000) {
+  // Fetch large PG resultsets in batches to avoid memory spikes
+  const pool = getPg();
+  if (!pool) throw new Error("No PG credentials — set AACT_USER and AACT_PASSWORD");
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const { rows: batch } = await pool.query(`${sql} LIMIT ${batchSize} OFFSET ${offset}`);
+    rows.push(...batch);
+    if (batch.length < batchSize) break;
+    offset += batchSize;
+    log(`  ... fetched ${rows.length} rows from PG`);
+  }
+  return rows;
+}
 const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASS));
 
 function log(msg) { console.log(`[graph-loader] ${new Date().toISOString()} ${msg}`); }
@@ -62,6 +103,10 @@ async function main() {
   const hasCV = tableSet.has("calculated_values");
   const hasFacilities = tableSet.has("facilities");
   const hasCountries = tableSet.has("countries");
+  const hasPg = !!(AACT_USER && AACT_PASSWORD);
+  if (!hasCV || !hasFacilities || !hasCountries) {
+    log(hasPg ? "  Some tables missing from snapshot — will fall back to live AACT PostgreSQL" : "  WARNING: Some tables missing and no AACT_USER/AACT_PASSWORD set — those sections will be skipped");
+  }
 
   // ── Trial nodes ──
   log("Loading Trial nodes...");
@@ -164,68 +209,75 @@ async function main() {
   log(`  ${interventions.length} interventions, ${intEdges.length} USES edges`);
 
   // ── Country nodes + CONDUCTED_IN edges ──
-  if (hasCountries) {
-  log("Loading Countries...");
-  const countries = db.prepare(`SELECT DISTINCT name FROM countries WHERE name IS NOT NULL AND removed = false`).all();
-  await runBatch(`
-    UNWIND $batch AS c
-    MERGE (n:Country {name: c.name})
-  `, countries);
+  if (hasCountries || hasPg) {
+    log("Loading Countries...");
+    const countries = hasCountries
+      ? db.prepare(`SELECT DISTINCT name FROM countries WHERE name IS NOT NULL AND removed = false`).all()
+      : await pgAll(`SELECT DISTINCT name FROM countries WHERE name IS NOT NULL AND removed = false`);
+    await runBatch(`
+      UNWIND $batch AS c
+      MERGE (n:Country {name: c.name})
+    `, countries);
 
-  const countryEdges = db.prepare(`SELECT nct_id, name FROM countries WHERE name IS NOT NULL AND removed = false`).all();
-  await runBatch(`
-    UNWIND $batch AS e
-    MATCH (c:Country {name: e.name})
-    MATCH (t:Trial {nct_id: e.nct_id})
-    CREATE (t)-[:CONDUCTED_IN]->(c)
-  `, countryEdges);
-  log(`  ${countries.length} countries, ${countryEdges.length} CONDUCTED_IN edges`);
-  } else { log("Skipping Countries (table missing)"); }
+    const countryEdges = hasCountries
+      ? db.prepare(`SELECT nct_id, name FROM countries WHERE name IS NOT NULL AND removed = false`).all()
+      : await pgStream(`SELECT nct_id, name FROM countries WHERE name IS NOT NULL AND removed = false`);
+    await runBatch(`
+      UNWIND $batch AS e
+      MATCH (c:Country {name: e.name})
+      MATCH (t:Trial {nct_id: e.nct_id})
+      CREATE (t)-[:CONDUCTED_IN]->(c)
+    `, countryEdges);
+    log(`  ${countries.length} countries, ${countryEdges.length} CONDUCTED_IN edges`);
+  } else { log("Skipping Countries (table missing, no PG fallback)"); }
 
   // ── Site nodes + AT edges ──
-  if (hasFacilities) {
-  // Deduplicate by (name, city, country) to create real site entities
-  log("Loading Sites (deduplicated by name+city+country)...");
-  const sites = db.prepare(`
-    SELECT DISTINCT name, city, state, country,
+  if (hasFacilities || hasPg) {
+    log("Loading Sites (deduplicated by name+city+country)...");
+    const sitesSql = `SELECT DISTINCT name, city, state, country,
            name || '||' || COALESCE(city,'') || '||' || COALESCE(country,'') AS key
-    FROM facilities
-    WHERE name IS NOT NULL
-  `).all();
-  log(`  ${sites.length} unique sites from ${db.prepare('SELECT COUNT(*) AS n FROM facilities').get().n} facility rows`);
+    FROM facilities WHERE name IS NOT NULL`;
+    const sites = hasFacilities
+      ? db.prepare(sitesSql).all()
+      : await pgStream(sitesSql);
+    const facilityCount = hasFacilities
+      ? db.prepare('SELECT COUNT(*) AS n FROM facilities').get().n
+      : sites.length;
+    log(`  ${sites.length} unique sites from ${facilityCount} facility rows`);
 
-  await runBatch(`
-    UNWIND $batch AS s
-    CREATE (n:Site {
-      key: s.key,
-      name: s.name,
-      city: s.city,
-      state: s.state,
-      country: s.country
-    })
-  `, sites, 3000);
+    await runBatch(`
+      UNWIND $batch AS s
+      CREATE (n:Site {
+        key: s.key,
+        name: s.name,
+        city: s.city,
+        state: s.state,
+        country: s.country
+      })
+    `, sites, 3000);
 
-  // Link sites to countries
-  await run(`
-    MATCH (s:Site) WHERE s.country IS NOT NULL
-    MATCH (c:Country {name: s.country})
-    CREATE (s)-[:IN_COUNTRY]->(c)
-  `);
+    // Link sites to countries
+    await run(`
+      MATCH (s:Site) WHERE s.country IS NOT NULL
+      MATCH (c:Country {name: s.country})
+      CREATE (s)-[:IN_COUNTRY]->(c)
+    `);
 
-  // AT edges (trial → site)
-  const atEdges = db.prepare(`
-    SELECT nct_id, name || '||' || COALESCE(city,'') || '||' || COALESCE(country,'') AS site_key
-    FROM facilities WHERE name IS NOT NULL
-  `).all();
-  log(`  Loading ${atEdges.length} AT edges...`);
-  await runBatch(`
-    UNWIND $batch AS e
-    MATCH (t:Trial {nct_id: e.nct_id})
-    MATCH (s:Site {key: e.site_key})
-    CREATE (t)-[:AT]->(s)
-  `, atEdges, 3000);
-  log(`  Site nodes and AT edges created`);
-  } else { log("Skipping Sites (facilities table missing)"); }
+    // AT edges (trial → site)
+    const atSql = `SELECT nct_id, name || '||' || COALESCE(city,'') || '||' || COALESCE(country,'') AS site_key
+      FROM facilities WHERE name IS NOT NULL`;
+    const atEdges = hasFacilities
+      ? db.prepare(atSql).all()
+      : await pgStream(atSql);
+    log(`  Loading ${atEdges.length} AT edges...`);
+    await runBatch(`
+      UNWIND $batch AS e
+      MATCH (t:Trial {nct_id: e.nct_id})
+      MATCH (s:Site {key: e.site_key})
+      CREATE (t)-[:AT]->(s)
+    `, atEdges, 3000);
+    log(`  Site nodes and AT edges created`);
+  } else { log("Skipping Sites (facilities table missing, no PG fallback)"); }
 
   // ── Summary ──
   const counts = await run(`
@@ -248,6 +300,7 @@ async function main() {
 
   await driver.close();
   db.close();
+  if (pgPool) await pgPool.end();
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
