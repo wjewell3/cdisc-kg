@@ -49,6 +49,19 @@ export function useDataQuality() {
     });
   }, []);
 
+  const updateGrouping = useCallback((id, { field, canonical, rawValues, note }) => {
+    setRules((prev) => {
+      const next = {
+        ...prev,
+        groupings: prev.groupings.map((g) =>
+          g.id === id ? { ...g, field, canonical, rawValues, note } : g
+        ),
+      };
+      persist(next);
+      return next;
+    });
+  }, []);
+
   const setEnrollmentBounds = useCallback((min, max) => {
     setRules((prev) => {
       const next = {
@@ -104,6 +117,7 @@ export function useDataQuality() {
     rules,
     addGrouping,
     removeGrouping,
+    updateGrouping,
     setEnrollmentBounds,
     exportRules,
     importRules,

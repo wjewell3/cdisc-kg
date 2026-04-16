@@ -60,7 +60,7 @@ export default function TrialsPanel() {
   const [rulesOpen, setRulesOpen] = useState(false);
 
   const {
-    rules, addGrouping, removeGrouping, setEnrollmentBounds,
+    rules, addGrouping, removeGrouping, updateGrouping, setEnrollmentBounds,
     exportRules, importRules, normalizeAggData, enrollMin, enrollMax,
   } = useDataQuality();
 
@@ -786,6 +786,7 @@ export default function TrialsPanel() {
         rules={rules}
         addGrouping={addGrouping}
         removeGrouping={removeGrouping}
+        updateGrouping={updateGrouping}
         setEnrollmentBounds={setEnrollmentBounds}
         enrollMin={enrollMin}
         enrollMax={enrollMax}

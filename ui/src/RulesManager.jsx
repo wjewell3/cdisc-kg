@@ -7,6 +7,7 @@ export default function RulesManager({
   rules,
   addGrouping,
   removeGrouping,
+  updateGrouping,
   setEnrollmentBounds,
   enrollMin,
   enrollMax,
@@ -25,6 +26,30 @@ export default function RulesManager({
   const [addCanonical, setAddCanonical] = useState("");
   const [addRawValues, setAddRawValues] = useState("");
   const [addNote, setAddNote] = useState("");
+
+  // Inline edit state — id of rule being edited, plus draft values
+  const [editId, setEditId] = useState(null);
+  const [editField, setEditField] = useState("");
+  const [editCanonical, setEditCanonical] = useState("");
+  const [editRawValues, setEditRawValues] = useState("");
+  const [editNote, setEditNote] = useState("");
+
+  const startEdit = (g) => {
+    setEditId(g.id);
+    setEditField(g.field);
+    setEditCanonical(g.canonical);
+    setEditRawValues((g.rawValues || []).join("\n"));
+    setEditNote(g.note || "");
+  };
+
+  const cancelEdit = () => setEditId(null);
+
+  const saveEdit = () => {
+    const rawValues = editRawValues.split("\n").map((v) => v.trim()).filter(Boolean);
+    if (!editCanonical.trim() || rawValues.length === 0) return;
+    updateGrouping(editId, { field: editField, canonical: editCanonical.trim(), rawValues, note: editNote.trim() });
+    setEditId(null);
+  };
 
   const parseWithAI = async () => {
     if (!aiText.trim() || aiLoading) return;
@@ -237,12 +262,51 @@ export default function RulesManager({
                   <div className="rm-field-label">{f}</div>
                   {groupingsByField[f].map((g) => (
                     <div key={g.id} className="rm-rule-row">
-                      <div className="rm-rule-info">
-                        <span className="rm-rule-canonical">"{g.canonical}"</span>
-                        <span className="rm-rule-raw">← {(g.rawValues || []).join(" · ")}</span>
-                        {g.note && <span className="rm-rule-note">{g.note}</span>}
-                      </div>
-                      <button className="rm-remove-btn" onClick={() => removeGrouping(g.id)} title="Remove">×</button>
+                      {editId === g.id ? (
+                        <div className="rm-edit-form">
+                          <div className="rm-manual-grid">
+                            <select className="rm-select" value={editField} onChange={(e) => setEditField(e.target.value)}>
+                              {FIELDS.map((f2) => <option key={f2} value={f2}>{f2}</option>)}
+                            </select>
+                            <input
+                              className="rm-input"
+                              placeholder="Canonical label"
+                              value={editCanonical}
+                              onChange={(e) => setEditCanonical(e.target.value)}
+                            />
+                          </div>
+                          <textarea
+                            className="rm-textarea"
+                            placeholder="Raw values (one per line)"
+                            value={editRawValues}
+                            onChange={(e) => setEditRawValues(e.target.value)}
+                            rows={3}
+                          />
+                          <input
+                            className="rm-input"
+                            placeholder="Note (optional)"
+                            value={editNote}
+                            onChange={(e) => setEditNote(e.target.value)}
+                            style={{ marginTop: 6 }}
+                          />
+                          <div className="rm-edit-actions">
+                            <button className="rm-confirm-btn" onClick={saveEdit} disabled={!editCanonical.trim() || !editRawValues.trim()}>✓ Save</button>
+                            <button className="rm-discard-btn" onClick={cancelEdit}>✗ Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="rm-rule-info">
+                            <span className="rm-rule-canonical">"{g.canonical}"</span>
+                            <span className="rm-rule-raw">← {(g.rawValues || []).join(" · ")}</span>
+                            {g.note && <span className="rm-rule-note">{g.note}</span>}
+                          </div>
+                          <div className="rm-rule-actions">
+                            <button className="rm-edit-btn" onClick={() => startEdit(g)} title="Edit">✎</button>
+                            <button className="rm-remove-btn" onClick={() => removeGrouping(g.id)} title="Remove">×</button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
