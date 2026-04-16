@@ -1246,3 +1246,28 @@
 }
 .intel-comparables-table a { color: #388bfd; text-decoration: none; }
 .intel-comparables-table a:hover { text-decoration: underline; }
+
+/* Inline metrics strip shown below chart when bar is clicked */
+.bar-metrics-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 6px 10px 8px;
+  background: #161b22;
+  border-top: 1px solid #21262d;
+  border-radius: 0 0 6px 6px;
+  font-size: 11.5px;
+  min-height: 28px;
+}
+.bms-stat {
+  color: #c9d1d9;
+  font-variant-numeric: tabular-nums;
+}
+.bms-sep {
+  color: #484f58;
+}
+.bms-loading {
+  color: #484f58;
+  font-style: italic;
+}

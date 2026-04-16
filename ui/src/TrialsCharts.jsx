@@ -47,7 +47,36 @@ function filterTrials(trials, activeFilters, excludeField = null) {
   );
 }
 
-function SvgBarChart({ data, title, field, activeValues, onFilter, onInsight, maxItems = 8, total = null }) {
+function trialsApiBase() {
+  return import.meta.env.VITE_TRIALS_API_BASE || "";
+}
+
+function completionColor(rate) {
+  if (rate == null) return undefined;
+  return rate >= 75 ? "#3fb950" : rate >= 50 ? "#d29922" : "#f85149";
+}
+
+function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8, total = null }) {
+  const [selectedLabel, setSelectedLabel] = useState(null);
+  const [barMetrics, setBarMetrics] = useState(null);
+  const [barMetricsLoading, setBarMetricsLoading] = useState(false);
+
+  function handleBarClick(label) {
+    if (label === selectedLabel) {
+      setSelectedLabel(null);
+      setBarMetrics(null);
+      return;
+    }
+    setSelectedLabel(label);
+    setBarMetrics(null);
+    setBarMetricsLoading(true);
+    const base = trialsApiBase();
+    fetch(`${base}/api/entity-insight?type=${encodeURIComponent(field)}&name=${encodeURIComponent(label)}`)
+      .then((r) => r.json())
+      .then((d) => { setBarMetrics(d.summary); setBarMetricsLoading(false); })
+      .catch(() => setBarMetricsLoading(false));
+  }
+
   const displayData = data.slice(0, maxItems);
 
   // Append an "(other sponsors)" bar when total is provided and not all are shown
@@ -90,7 +119,7 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, onInsight, ma
               onClick={() => {
                 if (!isOthers) {
                   onFilter(field, label);
-                  onInsight?.(field, label);
+                  handleBarClick(label);
                 }
               }}
               style={{ cursor: isOthers ? "default" : "pointer" }}
@@ -127,11 +156,48 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, onInsight, ma
           );
         })}
       </svg>
+      {selectedLabel && (
+        <div className="bar-metrics-strip">
+          {barMetricsLoading ? (
+            <span className="bms-loading">Loading…</span>
+          ) : barMetrics ? (
+            <>
+              <span className="bms-stat" style={{ color: completionColor(barMetrics.completion_rate_pct) }}>
+                {barMetrics.completion_rate_pct ?? "—"}% completed
+              </span>
+              <span className="bms-sep">·</span>
+              <span className="bms-stat">avg {barMetrics.avg_enrollment ?? "—"} enrolled</span>
+              <span className="bms-sep">·</span>
+              <span className="bms-stat">{barMetrics.active_pct ?? "—"}% active</span>
+            </>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
 
 function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter }) {
+  const [selectedSlice, setSelectedSlice] = useState(null);
+  const [sliceMetrics, setSliceMetrics] = useState(null);
+  const [sliceMetricsLoading, setSliceMetricsLoading] = useState(false);
+
+  function handleSliceClick(raw) {
+    if (raw === selectedSlice) {
+      setSelectedSlice(null);
+      setSliceMetrics(null);
+      return;
+    }
+    setSelectedSlice(raw);
+    setSliceMetrics(null);
+    setSliceMetricsLoading(true);
+    const base = trialsApiBase();
+    fetch(`${base}/api/entity-insight?type=${encodeURIComponent(field)}&name=${encodeURIComponent(raw)}`)
+      .then((r) => r.json())
+      .then((d) => { setSliceMetrics(d.summary); setSliceMetricsLoading(false); })
+      .catch(() => setSliceMetricsLoading(false));
+  }
+
   const displayData = data.slice(0, 8);
   const total = displayData.reduce((s, d) => s + d[1], 0);
   const cx = 90, cy = 90, outerR = 62, innerR = 38;
@@ -175,7 +241,7 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
               fill={s.color}
               opacity={hasAny && !isActive ? 0.3 : 1}
               style={{ cursor: "pointer" }}
-              onClick={() => onFilter(field, s.raw)}
+              onClick={() => { onFilter(field, s.raw); handleSliceClick(s.raw); }}
               role="button"
               aria-pressed={isActive}
               aria-label={`Filter by ${s.label}: ${s.count}`}
@@ -196,7 +262,7 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
           return (
             <g
               key={s.raw}
-              onClick={() => onFilter(field, s.raw)}
+              onClick={() => { onFilter(field, s.raw); handleSliceClick(s.raw); }}
               style={{ cursor: "pointer" }}
             >
               <rect x={lx} y={ly} width={10} height={10} rx={2} fill={s.color} opacity={hasAny && !isActive ? 0.55 : 1} />
@@ -207,12 +273,48 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
           );
         })}
       </svg>
+      {selectedSlice && (
+        <div className="bar-metrics-strip">
+          {sliceMetricsLoading ? (
+            <span className="bms-loading">Loading…</span>
+          ) : sliceMetrics ? (
+            <>
+              <span className="bms-stat" style={{ color: completionColor(sliceMetrics.completion_rate_pct) }}>
+                {sliceMetrics.completion_rate_pct ?? "—"}% completed
+              </span>
+              <span className="bms-sep">·</span>
+              <span className="bms-stat">avg {sliceMetrics.avg_enrollment ?? "—"} enrolled</span>
+              <span className="bms-sep">·</span>
+              <span className="bms-stat">{sliceMetrics.active_pct ?? "—"}% active</span>
+            </>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
 
 function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilter }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
+  const [selectedLabel, setSelectedLabel] = useState(null);
+  const [barMetrics, setBarMetrics] = useState(null);
+  const [barMetricsLoading, setBarMetricsLoading] = useState(false);
+
+  function handleBarClick(label) {
+    if (label === selectedLabel) {
+      setSelectedLabel(null);
+      setBarMetrics(null);
+      return;
+    }
+    setSelectedLabel(label);
+    setBarMetrics(null);
+    setBarMetricsLoading(true);
+    const base = trialsApiBase();
+    fetch(`${base}/api/entity-insight?type=enrollment_range&name=${encodeURIComponent(label)}`)
+      .then((r) => r.json())
+      .then((d) => { setBarMetrics(d.summary); setBarMetricsLoading(false); })
+      .catch(() => setBarMetricsLoading(false));
+  }
   const BUCKETS = [
     { label: "< 100", min: 0, max: 99 },
     { label: "100\u2013499", min: 100, max: 499 },
@@ -249,7 +351,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
           return (
             <g
               key={b.label}
-              onClick={() => onFilter("_enroll_range", b.label)}
+              onClick={() => { onFilter("_enroll_range", b.label); handleBarClick(b.label); }}
               onMouseEnter={() => setHoveredIdx(i)}
               onMouseLeave={() => setHoveredIdx(null)}
               style={{ cursor: "pointer" }}
@@ -278,11 +380,28 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
           );
         })()}
       </svg>
+      {selectedLabel && (
+        <div className="bar-metrics-strip">
+          {barMetricsLoading ? (
+            <span className="bms-loading">Loading…</span>
+          ) : barMetrics ? (
+            <>
+              <span className="bms-stat" style={{ color: completionColor(barMetrics.completion_rate_pct) }}>
+                {barMetrics.completion_rate_pct ?? "—"}% completed
+              </span>
+              <span className="bms-sep">·</span>
+              <span className="bms-stat">avg {barMetrics.avg_enrollment ?? "—"} enrolled</span>
+              <span className="bms-sep">·</span>
+              <span className="bms-stat">{barMetrics.active_pct ?? "—"}% active</span>
+            </>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
 
-export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, onInsight, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
+export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -449,7 +568,6 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="sponsor"
               activeValues={getActiveVals("sponsor")}
               onFilter={onFilter}
-              onInsight={onInsight}
               total={sponsorSearch ? null : totalCount}
             />
           </div>
@@ -470,7 +588,6 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="condition"
               activeValues={getActiveVals("condition")}
               onFilter={onFilter}
-              onInsight={onInsight}
               total={conditionSearch ? null : totalCount}
             />
           </div>
@@ -491,7 +608,6 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
               field="intervention"
               activeValues={getActiveVals("intervention")}
               onFilter={onFilter}
-              onInsight={onInsight}
               total={interventionSearch ? null : totalCount}
             />
           </div>
