@@ -104,9 +104,15 @@ function buildSqliteWhere({ q = "", condition = "", intervention = "", phase = "
   const params = [];
 
   if (q) {
-    where.push(`s.nct_id IN (SELECT nct_id FROM studies_fts WHERE studies_fts MATCH ?)`);
-    // FTS5 MATCH — wrap with quotes to handle special chars, search as prefix
-    params.push(`"${q.replace(/"/g, '""')}"`);
+    if (/^NCT\d{8}$/i.test(q.trim())) {
+      // Direct NCT ID lookup — FTS5 UNINDEXED column can't be MATCHed
+      where.push(`s.nct_id = ?`);
+      params.push(q.trim().toUpperCase());
+    } else {
+      where.push(`s.nct_id IN (SELECT nct_id FROM studies_fts WHERE studies_fts MATCH ?)`);
+      // FTS5 MATCH — wrap with quotes to handle special chars, search as prefix
+      params.push(`"${q.replace(/"/g, '""')}"`);
+    }
   }
 
   if (condition) {
@@ -968,6 +974,31 @@ function queryEntityInsight(type, name) {
   } else if (type === "intervention") {
     sq = `SELECT DISTINCT nct_id FROM interventions WHERE name = ?`;
     params = [name];
+  } else if (type === "phase") {
+    // name is the raw phase value e.g. "PHASE1" or "Unknown"
+    sq = name === "Unknown"
+      ? `SELECT nct_id FROM studies WHERE phase IS NULL`
+      : `SELECT nct_id FROM studies WHERE phase = ?`;
+    params = name === "Unknown" ? [] : [name];
+  } else if (type === "status") {
+    sq = name === "Unknown"
+      ? `SELECT nct_id FROM studies WHERE overall_status IS NULL`
+      : `SELECT nct_id FROM studies WHERE overall_status = ?`;
+    params = name === "Unknown" ? [] : [name];
+  } else if (type === "enrollment_range") {
+    // name is a bucket label e.g. "< 100", "100–499", etc.
+    const BUCKETS = {
+      "< 100":      [0,    99],
+      "100–499":   [100,   499],
+      "500–999":   [500,   999],
+      "1k–4.9k":  [1000,  4999],
+      "5k–19k":   [5000,  19999],
+      "≥ 20k":     [20000, 999999999],
+    };
+    const range = BUCKETS[name];
+    if (!range) return null;
+    sq = `SELECT nct_id FROM studies WHERE enrollment >= ? AND enrollment <= ?`;
+    params = range;
   } else {
     return null;
   }
@@ -990,6 +1021,11 @@ function queryEntityInsight(type, name) {
     topConditions    = db.prepare(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c    WHERE c.nct_id IN (${sq}) GROUP BY c.name ORDER BY count DESC LIMIT 10`).all(...params);
     topInterventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${sq}) GROUP BY i.name ORDER BY count DESC LIMIT 10`).all(...params);
   } else if (type === "condition") {
+    topSponsors      = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${sq}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 10`).all(...params);
+    topInterventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${sq}) GROUP BY i.name ORDER BY count DESC LIMIT 10`).all(...params);
+  } else if (type === "phase" || type === "status" || type === "enrollment_range") {
+    // Cross-dimensional: show top of all three entity types
+    topConditions    = db.prepare(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c    WHERE c.nct_id IN (${sq}) GROUP BY c.name ORDER BY count DESC LIMIT 10`).all(...params);
     topSponsors      = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${sq}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 10`).all(...params);
     topInterventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${sq}) GROUP BY i.name ORDER BY count DESC LIMIT 10`).all(...params);
   } else {
@@ -1028,12 +1064,12 @@ function queryEntityInsight(type, name) {
 app.get("/api/entity-insight", (req, res) => {
   if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
   const { type, name } = req.query;
-  if (!["sponsor", "condition", "intervention"].includes(type) || !name) {
-    return res.status(400).json({ error: "valid type (sponsor|condition|intervention) and name required" });
+  if (!["sponsor", "condition", "intervention", "phase", "status", "enrollment_range"].includes(type) || !name) {
+    return res.status(400).json({ error: "valid type (sponsor|condition|intervention|phase|status|enrollment_range) and name required" });
   }
   try {
     const result = queryEntityInsight(type, name);
-    if (!result) return res.status(400).json({ error: "Invalid entity type" });
+    if (!result) return res.status(400).json({ error: "Invalid entity type or enrollment range" });
     if (result.empty) return res.status(404).json({ error: `No trials found for ${type}: ${name}` });
     return res.json(result);
   } catch (e) {
@@ -1044,7 +1080,7 @@ app.get("/api/entity-insight", (req, res) => {
 
 app.get("/api/entity-intelligence", async (req, res) => {
   const { type, name } = req.query;
-  if (!["sponsor", "condition", "intervention"].includes(type) || !name) {
+  if (!["sponsor", "condition", "intervention", "phase", "status", "enrollment_range"].includes(type) || !name) {
     return res.status(400).json({ error: "valid type and name required" });
   }
   if (!db) return res.status(503).json({ error: "SQLite snapshot required" });

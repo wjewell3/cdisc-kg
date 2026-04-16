@@ -37,7 +37,7 @@ const PHASE_CLASS = {
   "N/A": "phase-na",
 };
 
-export default function TrialsPanel() {
+export default function TrialsPanel({ focusNctId }) {
   const [query, setQuery] = useState("");
   const [step, setStep] = useState("question"); // question | loading | results | error
   const [resolutions, setResolutions] = useState([]);
@@ -118,6 +118,25 @@ export default function TrialsPanel() {
       setBaseLoading(false);
     }).catch(() => { setBaseLoading(false); });
   }, []);
+
+  // When navigated here with a specific NCT ID (e.g. from SiteIntelligence),
+  // search for that trial and open its intelligence panel.
+  useEffect(() => {
+    if (!focusNctId) return;
+    const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+    const url = `${base}/api/trials?q=${encodeURIComponent(focusNctId)}&limit=1`;
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.results?.[0]) {
+          setStep("results");
+          setResults(data);
+          setSelectedTrial(data.results[0]);
+          setIntelligence(null);
+        }
+      })
+      .catch(() => {});
+  }, [focusNctId]);
 
   // When chart filters change, re-query the server for filtered rows + stats.
   // All filter types (phase/status/sponsor/enrollment-range) go to the server.
