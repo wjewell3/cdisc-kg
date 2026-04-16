@@ -41,7 +41,14 @@ function trialsApiBase() {
   return import.meta.env.VITE_TRIALS_API_BASE || "";
 }
 
-const TYPE_LABEL = { sponsor: "Sponsor", condition: "Condition", intervention: "Intervention" };
+const TYPE_LABEL = {
+  sponsor: "Sponsor",
+  condition: "Condition",
+  intervention: "Intervention",
+  phase: "Phase",
+  status: "Status",
+  enrollment_range: "Enrollment Range",
+};
 
 export default function InsightPanel({ insightTarget, onClose }) {
   const [data, setData] = useState(null);

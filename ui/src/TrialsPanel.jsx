@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
-import SiteIntelligence from "./SiteIntelligence";
+import InsightPanel from "./InsightPanel";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 
@@ -38,9 +38,9 @@ const PHASE_CLASS = {
   "N/A": "phase-na",
 };
 
-export default function TrialsPanel({ focusNctId }) {
-  const [view, setView] = useState("search"); // "search" | "sites"
+export default function TrialsPanel() {
   const [query, setQuery] = useState("");
+  const [insightTarget, setInsightTarget] = useState(null);
   const [step, setStep] = useState("question"); // question | loading | results | error
   const [resolutions, setResolutions] = useState([]);
   const [results, setResults] = useState(null);
@@ -120,25 +120,6 @@ export default function TrialsPanel({ focusNctId }) {
       setBaseLoading(false);
     }).catch(() => { setBaseLoading(false); });
   }, []);
-
-  // When navigated here with a specific NCT ID (e.g. from SiteIntelligence),
-  // search for that trial and open its intelligence panel.
-  useEffect(() => {
-    if (!focusNctId) return;
-    const base = import.meta.env.VITE_TRIALS_API_BASE || "";
-    const url = `${base}/api/trials?q=${encodeURIComponent(focusNctId)}&limit=1`;
-    fetch(url)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.results?.[0]) {
-          setStep("results");
-          setResults(data);
-          setSelectedTrial(data.results[0]);
-          setIntelligence(null);
-        }
-      })
-      .catch(() => {});
-  }, [focusNctId]);
 
   // When chart filters change, re-query the server for filtered rows + stats.
   // All filter types (phase/status/sponsor/enrollment-range) go to the server.
@@ -314,16 +295,38 @@ export default function TrialsPanel({ focusNctId }) {
     return source.results;
   }, [chartResults, results, baseResults]);
 
+  // Map chart field names to entity-insight API type names
+  const FIELD_TO_INSIGHT_TYPE = {
+    sponsor: "sponsor",
+    condition: "condition",
+    intervention: "intervention",
+    phase: "phase",
+    status: "status",
+    _enroll_range: "enrollment_range",
+  };
+
   const handleChartFilter = useCallback((field, value) => {
     setSelectedTrial(null);
     if (field === null || value === null) {
       setChartFilters([]);
+      setInsightTarget(null);
     } else {
       setChartFilters((prev) => {
         const exists = prev.some((f) => f.field === field && f.value === value);
-        return exists
-          ? prev.filter((f) => !(f.field === field && f.value === value))
-          : [...prev, { field, value }];
+        if (exists) {
+          // Toggling off — clear insight if it matches this field+value
+          setInsightTarget((cur) =>
+            cur && cur._field === field && cur.name === value ? null : cur
+          );
+          return prev.filter((f) => !(f.field === field && f.value === value));
+        } else {
+          // Toggling on — open insight panel for this entity
+          const insightType = FIELD_TO_INSIGHT_TYPE[field];
+          if (insightType) {
+            setInsightTarget({ type: insightType, name: value, _field: field });
+          }
+          return [...prev, { field, value }];
+        }
       });
     }
   }, []);
@@ -381,16 +384,6 @@ export default function TrialsPanel({ focusNctId }) {
           </div>
         </div>
         <div className="trials-badge-row">
-          <div className="trials-sub-tabs">
-            <button
-              className={`trials-sub-tab ${view === "search" ? "active" : ""}`}
-              onClick={() => setView("search")}
-            >Search</button>
-            <button
-              className={`trials-sub-tab ${view === "sites" ? "active" : ""}`}
-              onClick={() => setView("sites")}
-            >Sites</button>
-          </div>
           <button className="rules-manager-btn" onClick={() => setRulesOpen(true)}>
             ⚙ Rules{(rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)) > 0 ? ` (${rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)})` : ""}
             {(enrollMin !== null || enrollMax !== null) && <span className="rules-bounds-badge">●</span>}
@@ -400,24 +393,7 @@ export default function TrialsPanel({ focusNctId }) {
         </div>
       </div>
 
-      {view === "sites" ? (
-        <SiteIntelligence onSelectTrial={(nct_id) => {
-          setView("search");
-          // Trigger search for this NCT ID
-          const base = import.meta.env.VITE_TRIALS_API_BASE || "";
-          fetch(`${base}/api/trials?q=${encodeURIComponent(nct_id)}&limit=1`)
-            .then(r => r.json())
-            .then(data => {
-              if (data.results?.[0]) {
-                setStep("results");
-                setResults(data);
-                setSelectedTrial(data.results[0]);
-                setIntelligence(null);
-              }
-            })
-            .catch(() => {});
-        }} />
-      ) : (<div className="trials-body">
+      <div className="trials-body">
 
         {/* ── Section 1: Search + preset queries ───────────────────────── */}
         <div className="trials-section compact-section">
@@ -835,8 +811,9 @@ export default function TrialsPanel({ focusNctId }) {
           </div>
         )}
       </div>
-      )}
     </div>
+
+    <InsightPanel insightTarget={insightTarget} onClose={() => setInsightTarget(null)} />
 
     {rulesOpen && (
       <RulesManager
