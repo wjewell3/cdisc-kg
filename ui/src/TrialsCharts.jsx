@@ -326,20 +326,26 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
   }, [activeFilters, aggData]);
 
   const phaseData = useMemo(() => {
+    let raw;
     if (aggData?.phase) {
-      return Object.entries(aggData.phase).sort((a, b) => {
-        const ai = PHASE_ORDER.indexOf(a[0]); const bi = PHASE_ORDER.indexOf(b[0]);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      });
+      raw = Object.entries(aggData.phase);
+    } else {
+      raw = countBy(filterTrials(trials, activeFilters, "phase"), (t) => t.phase || "Unknown");
     }
-    const raw = countBy(filterTrials(trials, activeFilters, "phase"), (t) => t.phase || "Unknown");
-    return raw.sort((a, b) => { const ai = PHASE_ORDER.indexOf(a[0]); const bi = PHASE_ORDER.indexOf(b[0]); return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi); });
-  }, [trials, activeFilters, aggData]);
+    const normalized = normalizeAggData ? normalizeAggData("phase", raw) : raw;
+    return normalized.sort((a, b) => {
+      const ai = PHASE_ORDER.indexOf(a[0]); const bi = PHASE_ORDER.indexOf(b[0]);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+  }, [trials, activeFilters, aggData, normalizeAggData]);
 
   const statusData = useMemo(() => {
-    if (aggData?.status) return Object.entries(aggData.status).sort((a, b) => b[1] - a[1]);
-    return countBy(filterTrials(trials, activeFilters, "status"), (t) => t.status || "Unknown");
-  }, [trials, activeFilters, aggData]);
+    const raw = aggData?.status
+      ? Object.entries(aggData.status)
+      : countBy(filterTrials(trials, activeFilters, "status"), (t) => t.status || "Unknown");
+    const normalized = normalizeAggData ? normalizeAggData("status", raw) : raw;
+    return normalized.sort((a, b) => b[1] - a[1]);
+  }, [trials, activeFilters, aggData, normalizeAggData]);
 
   const sponsorData = useMemo(() => {
     const raw = sponsorSearchData !== null ? sponsorSearchData
