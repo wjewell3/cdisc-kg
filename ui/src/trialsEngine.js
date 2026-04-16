@@ -200,12 +200,10 @@ export async function executeInterventionSearch(params, interventionQ) {
 
 // ── Graph Query (NL → Cypher via LLM) ─────────────────────────────────────
 
-const GRAPH_API_BASE = import.meta.env.VITE_TRIALS_API_BASE || "";
-
 export async function executeGraphQuery(question) {
-  const url = GRAPH_API_BASE
-    ? `${GRAPH_API_BASE.replace(/\/$/, "")}/api/graph/query`
-    : `/api/graph?path=query`;
+  // LLM calls happen on Vercel (GitHub Copilot API is IP-restricted from OKE).
+  // Always use the Vercel /api/graph-query endpoint regardless of GRAPH_API_BASE.
+  const url = new URL("/api/graph-query", window.location.origin).toString();
 
   const res = await fetch(url, {
     method: "POST",
