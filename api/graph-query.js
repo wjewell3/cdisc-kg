@@ -35,8 +35,8 @@ IMPORTANT RULES:
 4. Always alias returned columns with descriptive names using AS.
 5. For text matching use toLower() with CONTAINS or STARTS WITH — never regex.
 6. Do NOT use CREATE, MERGE, SET, DELETE, DETACH DELETE, REMOVE, DROP, or CALL {}.
-7. status values are strings like: "Recruiting", "Completed", "Active, not recruiting", "Terminated", "Withdrawn".
-8. phase values: "Phase 1", "Phase 2", "Phase 3", "Phase 4", "Phase 1/Phase 2", "Phase 2/Phase 3", "N/A".
+7. status values (AACT enums, UPPERCASE): "RECRUITING", "COMPLETED", "ACTIVE_NOT_RECRUITING", "TERMINATED", "WITHDRAWN", "NOT_YET_RECRUITING", "SUSPENDED", "UNKNOWN".
+8. phase values (AACT enums, UPPERCASE): "PHASE1", "PHASE2", "PHASE3", "PHASE4", "PHASE1/PHASE2", "PHASE2/PHASE3", "EARLY_PHASE1", "NA".
 9. For path queries, use shortestPath() with [:TREATS|USES*..8].
 10. Site nodes may be sparsely populated — prefer Trial/Sponsor/Condition/Intervention for most queries.`;
 
@@ -58,6 +58,9 @@ async function callLLM(token, messages, maxTokens = 400, temperature = 0) {
   });
   if (!response.ok) {
     const text = await response.text();
+    if (response.status === 403) {
+      throw new Error(`GitHub Copilot API token expired or quota exceeded. Preset questions work without it — freeform questions require a valid token.`);
+    }
     throw new Error(`GitHub Copilot API ${response.status}: ${text.slice(0, 200)}`);
   }
   const data = await response.json();
@@ -71,32 +74,38 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { question } = req.body || {};
+  const { question, cypher: presetCypher } = req.body || {};
   if (!question || typeof question !== "string" || question.trim().length < 5) {
     return res.status(400).json({ error: "question required (min 5 chars)" });
   }
-
-  const token = process.env.GITHUB_COPILOT_TOKEN;
-  if (!token) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured" });
   if (!OKE_BASE) return res.status(503).json({ error: "TRIALS_API_BASE not configured" });
 
+  const token = process.env.GITHUB_COPILOT_TOKEN;
   const sanitized = question.trim().slice(0, 500);
 
   try {
-    // Step 1: Generate Cypher from natural language (Vercel → GitHub Copilot ✓)
-    let generatedCypher = await callLLM(token, [
-      { role: "system", content: GRAPH_SCHEMA_PROMPT },
-      { role: "user", content: sanitized },
-    ], 400, 0);
+    // Step 1: Use preset Cypher if provided (no LLM needed); else generate via GPT-4.1
+    let generatedCypher;
+    if (presetCypher && typeof presetCypher === "string" && presetCypher.trim().length > 10) {
+      generatedCypher = presetCypher.trim();
+    } else {
+      // Freeform question — LLM required
+      if (!token) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured — freeform questions require an LLM token. Preset questions work without one." });
 
-    // Strip markdown fences
-    generatedCypher = generatedCypher
-      .replace(/^```(?:cypher)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
+      let rawCypher = await callLLM(token, [
+        { role: "system", content: GRAPH_SCHEMA_PROMPT },
+        { role: "user", content: sanitized },
+      ], 400, 0);
 
-    if (!generatedCypher || generatedCypher.length < 10) {
-      return res.status(422).json({ error: "Could not generate a valid query for that question" });
+      // Strip markdown fences
+      generatedCypher = rawCypher
+        .replace(/^```(?:cypher)?\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+
+      if (!generatedCypher || generatedCypher.length < 10) {
+        return res.status(422).json({ error: "Could not generate a valid query for that question" });
+      }
     }
 
     // Step 2: Execute Cypher on OKE (Vercel → OKE Neo4j ✓)
@@ -118,9 +127,9 @@ export default async function handler(req, res) {
 
     const { columns, rows, total } = await execResponse.json();
 
-    // Step 3: Generate narrative (Vercel → GitHub Copilot ✓)
+    // Step 3: Generate narrative (optional — silently skipped if no token or LLM failure)
     let narrative = null;
-    if (rows && rows.length > 0) {
+    if (rows && rows.length > 0 && token) {
       try {
         const resultPreview = JSON.stringify(rows.slice(0, 15), null, 2);
         narrative = await callLLM(token, [
@@ -128,7 +137,6 @@ export default async function handler(req, res) {
           { role: "user", content: `Question: "${sanitized}"\n\nReturned ${total} rows. Top results:\n${resultPreview}` },
         ], 350, 0.3);
       } catch (e) {
-        // Narrative is optional — don't fail the whole request
         console.error("[graph-query] narrative failed:", e.message);
       }
     }

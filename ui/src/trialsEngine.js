@@ -201,14 +201,18 @@ export async function executeInterventionSearch(params, interventionQ) {
 // ── Graph Query (NL → Cypher via LLM) ─────────────────────────────────────
 
 export async function executeGraphQuery(question) {
+  // Preset questions have hardcoded Cypher — bypass LLM so they work even
+  // when the GitHub Copilot API token is expired or hit quota.
+  const preset = TRIAL_QUERIES.find(q => q.isGraph && q.cypher && q.text === question);
+
   // LLM calls happen on Vercel (GitHub Copilot API is IP-restricted from OKE).
-  // Always use the Vercel /api/graph-query endpoint regardless of GRAPH_API_BASE.
   const url = new URL("/api/graph-query", window.location.origin).toString();
 
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    // Include preset Cypher in payload to skip LLM generation step on server
+    body: JSON.stringify(preset ? { question, cypher: preset.cypher } : { question }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -285,7 +289,8 @@ export const FILTER_CATALOG = [
   },
 ];
 
-/** Preset cross-trial demo queries — mix of SQL filter + graph-native questions */
+/** Preset cross-trial demo queries — mix of SQL filter + graph-native questions.
+ *  Graph presets include hardcoded Cypher so they work even when the LLM is unavailable. */
 export const TRIAL_QUERIES = [
   {
     id: "g1",
@@ -293,6 +298,15 @@ export const TRIAL_QUERIES = [
     description: "Graph traversal — conditions that share clinical interventions via the trial-drug network",
     tags: ["Graph", "Adjacency", "Oncology"],
     isGraph: true,
+    // Optimized: finds top-100 interventions in BC trials first, then traverses — avoids 8k trial fan-out
+    cypher: `MATCH (c1:Condition {name: 'Breast Cancer'})<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)
+WITH i, COUNT(t) AS bc_count ORDER BY bc_count DESC LIMIT 100
+MATCH (i)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
+WHERE c2.name <> 'Breast Cancer'
+WITH c2.name AS condition, COUNT(DISTINCT i) AS shared_interventions
+RETURN condition, shared_interventions
+ORDER BY shared_interventions DESC
+LIMIT 20`,
   },
   {
     id: "g2",
@@ -300,6 +314,16 @@ export const TRIAL_QUERIES = [
     description: "Missing-edge detection — conditions adjacent to Pfizer's portfolio where they have zero trials",
     tags: ["Graph", "Strategic Gaps", "Pfizer"],
     isGraph: true,
+    cypher: `MATCH (s:Sponsor {name: 'Pfizer'})-[:RUNS]->(t:Trial)-[:TREATS]->(my:Condition)
+WITH COLLECT(DISTINCT my.name) AS myNames
+UNWIND myNames AS mn
+MATCH (mc:Condition {name: mn})<-[:TREATS]-(t2:Trial)-[:TREATS]->(gap:Condition)
+WHERE NOT gap.name IN myNames
+WITH gap.name AS expansion_target, COUNT(DISTINCT t2) AS adjacency_strength,
+     COLLECT(DISTINCT mn)[0..3] AS via_conditions
+RETURN expansion_target, adjacency_strength, via_conditions
+ORDER BY adjacency_strength DESC
+LIMIT 20`,
   },
   {
     id: "g3",
@@ -307,6 +331,15 @@ export const TRIAL_QUERIES = [
     description: "Graph aggregation — sponsor trial counts for Phase 3 cancer studies",
     tags: ["Graph", "Sponsors", "Phase 3"],
     isGraph: true,
+    cypher: `MATCH (s:Sponsor)-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)
+WHERE t.phase = 'PHASE3'
+AND (toLower(c.name) CONTAINS 'cancer' OR toLower(c.name) CONTAINS 'carcinoma'
+     OR toLower(c.name) CONTAINS 'leukemia' OR toLower(c.name) CONTAINS 'lymphoma'
+     OR toLower(c.name) CONTAINS 'melanoma' OR toLower(c.name) CONTAINS 'neoplasm')
+WITH s.name AS sponsor, COUNT(DISTINCT t) AS trials
+RETURN sponsor, trials
+ORDER BY trials DESC
+LIMIT 25`,
   },
   {
     id: "g4",
@@ -314,6 +347,15 @@ export const TRIAL_QUERIES = [
     description: "Drug repurposing signal — interventions used in trials for both conditions",
     tags: ["Graph", "Repurposing", "CNS"],
     isGraph: true,
+    cypher: `MATCH (t1:Trial)-[:TREATS]->(c1:Condition), (t1)-[:USES]->(iv:Intervention)
+WHERE toLower(c1.name) CONTAINS 'alzheimer'
+WITH iv, COUNT(DISTINCT t1) AS alzheimer_trials
+MATCH (t2:Trial)-[:USES]->(iv), (t2)-[:TREATS]->(c2:Condition)
+WHERE toLower(c2.name) CONTAINS 'parkinson'
+WITH iv.name AS intervention, alzheimer_trials, COUNT(DISTINCT t2) AS parkinson_trials
+RETURN intervention, alzheimer_trials, parkinson_trials
+ORDER BY alzheimer_trials + parkinson_trials DESC
+LIMIT 20`,
   },
   {
     id: "g5",
@@ -321,6 +363,15 @@ export const TRIAL_QUERIES = [
     description: "Operational risk — conditions where trials are most likely to be terminated early",
     tags: ["Graph", "Risk", "Termination"],
     isGraph: true,
+    cypher: `MATCH (c:Condition)<-[:TREATS]-(t:Trial)
+WITH c.name AS condition,
+     count(t) AS total,
+     sum(CASE WHEN t.status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated
+WHERE total >= 100
+RETURN condition, total, terminated,
+       round(100.0 * terminated / total) AS termination_pct
+ORDER BY termination_pct DESC
+LIMIT 20`,
   },
   {
     id: "t1",

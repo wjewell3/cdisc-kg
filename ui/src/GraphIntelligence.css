@@ -566,3 +566,73 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ── Mobile Responsive ─────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  /* Two-col grid already handled above */
+  .kg-two-col { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  /* KG context panel — force single column */
+  .kg-context-body {
+    grid-template-columns: 1fr;
+  }
+  .kg-context-entity {
+    border-right: none;
+  }
+
+  /* Context header — hide hint text */
+  .kg-context-hint { display: none; }
+
+  /* Overlap rows — compress the fixed columns */
+  .kg-overlap-header-row,
+  .kg-overlap-row {
+    grid-template-columns: 1fr 110px 55px;
+    gap: 6px;
+  }
+  .kg-overlap-name { font-size: 12px; }
+  .kg-overlap-bar-label { font-size: 10px; min-width: 22px; }
+  .kg-overlap-trials { font-size: 11px; }
+
+  /* Path chain — allow horizontal scroll rather than wrapping awkwardly */
+  .kg-path-chain {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+  .kg-path-node {
+    min-width: 80px;
+    padding: 5px 8px;
+  }
+  .kg-path-name {
+    font-size: 10px;
+  }
+
+  /* KG search form — full width */
+  .kg-search-form { flex-direction: column; gap: 6px; }
+  .kg-input { font-size: 16px; } /* prevent iOS zoom */
+  .kg-btn { width: 100%; }
+
+  /* Stats bar — wrap pills */
+  .kg-stats-bar { flex-wrap: wrap; gap: 4px; }
+  .kg-stats-total { width: 100%; margin-top: 2px; }
+
+  /* Entity header wrapping */
+  .kg-context-entity-header { flex-wrap: wrap; }
+
+  /* Adjacency list rows — hide the extra_drugs column on mobile */
+  .kg-adj-trials { display: none; }
+}
+
+@media (max-width: 420px) {
+  .kg-context-entity { padding: 10px 12px 12px; }
+  .kg-overlap-header-row,
+  .kg-overlap-row {
+    grid-template-columns: 1fr 90px;
+  }
+  /* Hide last column (trials/via) at very small widths */
+  .kg-overlap-row > :last-child,
+  .kg-overlap-header-row > :last-child { display: none; }
+}

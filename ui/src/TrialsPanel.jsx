@@ -252,18 +252,17 @@ export default function TrialsPanel() {
 
     // Check if this is a graph-native question (NL → Cypher)
     if (isGraphQuestion(text)) {
-      setStep("loading");
       setResolutions([{ label: `Graph query: "${text}"`, param: "graph", value: text, kgPath: "NL → Cypher → Neo4j" }]);
       setActiveResolutions([]);
       setGraphResult({ loading: true, error: null, cypher: null, columns: [], rows: [], narrative: null });
+      // Don't show full-page spinner — keep charts visible beneath the graph panel.
+      // Move to "results" so the base charts section renders (from baseResults).
+      setStep("results");
       try {
         const data = await executeGraphQuery(text);
         setGraphResult({ loading: false, error: null, ...data });
-        setStep("results");
       } catch (err) {
         setGraphResult({ loading: false, error: err.message, cypher: null, columns: [], rows: [], narrative: null });
-        setError(err.message);
-        setStep("error");
       }
       return;
     }
@@ -479,12 +478,86 @@ export default function TrialsPanel() {
           </div>
         )}
 
+        {/* ── Graph Query Panel — independent of step, shows above charts ── */}
+        {graphResult && (
+          <div className="trials-section graph-query-section slide-in">
+            <div className="section-header">
+              <div className="section-icon">&#x2B21;</div>
+              <h2>Graph Query Results</h2>
+              {!graphResult.loading && !graphResult.error && (
+                <span className="result-count">{graphResult.total} rows</span>
+              )}
+            </div>
+
+            {graphResult.loading ? (
+              <div className="loading-state" style={{ padding: "20px 0" }}>
+                <div className="loading-spinner" />
+                <p>Querying knowledge graph…</p>
+              </div>
+            ) : graphResult.error ? (
+              <div className="error-state">
+                <div className="error-icon">&#x26A0;&#xFE0F;</div>
+                <p className="error-msg">
+                  {graphResult.error.includes("quota") || graphResult.error.includes("expired") || graphResult.error.includes("forbidden") || graphResult.error.includes("403")
+                    ? "GitHub Copilot API token expired or quota exceeded. Preset questions work without it — freeform questions need a valid token."
+                    : graphResult.error}
+                </p>
+              </div>
+            ) : (
+              <div className="graph-result-panel">
+                {graphResult.narrative && (
+                  <div className="graph-narrative">
+                    <span className="graph-narrative-icon">&#x1F4A1;</span>
+                    <p>{graphResult.narrative}</p>
+                  </div>
+                )}
+                {graphResult.cypher && (
+                  <details className="graph-cypher-details">
+                    <summary className="graph-cypher-summary">Cypher query</summary>
+                    <pre className="graph-cypher-code">{graphResult.cypher}</pre>
+                  </details>
+                )}
+                {graphResult.rows.length > 0 ? (
+                  <div className="graph-table-wrap">
+                    <table className="graph-result-table">
+                      <thead>
+                        <tr>
+                          {graphResult.columns.map(col => (
+                            <th key={col}>{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {graphResult.rows.map((row, i) => (
+                          <tr key={i}>
+                            {graphResult.columns.map(col => (
+                              <td key={col}>
+                                {Array.isArray(row[col])
+                                  ? row[col].join(", ")
+                                  : typeof row[col] === "number"
+                                    ? row[col].toLocaleString()
+                                    : String(row[col] ?? "")}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="graph-empty">No results returned for this query.</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Section 2: Visual Insights (charts as filters) ───────────── */}
         {step === "loading" ? (
           <div className="trials-section slide-in">
             <div className="loading-state">
               <div className="loading-spinner" />
-              <p>{graphResult?.loading ? "Translating your question to a graph query\u2026" : "Querying\u2026"}</p>
+              <p>Querying…</p>
             </div>
           </div>
         ) : step === "error" ? (
@@ -495,59 +568,6 @@ export default function TrialsPanel() {
                 ? "AACT database is temporarily unavailable. Please try again soon."
                 : `Query failed: ${error}`}</p>
               <button className="reset-btn" onClick={reset}>Try Again</button>
-            </div>
-          </div>
-        ) : graphResult && !graphResult.loading && !graphResult.error ? (
-          /* ── Graph Query Results ──────────────────────────────── */
-          <div className="trials-section slide-in">
-            <div className="section-header">
-              <div className="section-icon">&#x2B21;</div>
-              <h2>Graph Query Results</h2>
-              <span className="result-count">{graphResult.total} rows</span>
-            </div>
-            <div className="graph-result-panel">
-              {graphResult.narrative && (
-                <div className="graph-narrative">
-                  <span className="graph-narrative-icon">&#x1F4A1;</span>
-                  <p>{graphResult.narrative}</p>
-                </div>
-              )}
-              {graphResult.cypher && (
-                <details className="graph-cypher-details">
-                  <summary className="graph-cypher-summary">Generated Cypher query</summary>
-                  <pre className="graph-cypher-code">{graphResult.cypher}</pre>
-                </details>
-              )}
-              {graphResult.rows.length > 0 ? (
-                <div className="graph-table-wrap">
-                  <table className="graph-result-table">
-                    <thead>
-                      <tr>
-                        {graphResult.columns.map(col => (
-                          <th key={col}>{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {graphResult.rows.map((row, i) => (
-                        <tr key={i}>
-                          {graphResult.columns.map(col => (
-                            <td key={col}>
-                              {Array.isArray(row[col])
-                                ? row[col].join(", ")
-                                : typeof row[col] === "number"
-                                  ? row[col].toLocaleString()
-                                  : String(row[col] ?? "")}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="graph-empty">No results returned for this query.</div>
-              )}
             </div>
           </div>
         ) : (

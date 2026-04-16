@@ -1085,14 +1085,51 @@
 }
 
 @media (max-width: 640px) {
-  .trials-header { flex-direction: column; align-items: flex-start; }
+  .trials-header { flex-direction: column; align-items: flex-start; gap: 8px; }
   .trials-title  { font-size: 17px; }
   .trials-section { padding: 16px; }
   .query-form { flex-direction: column; }
+  /* Prevent iOS auto-zoom on input focus (requires 16px min) */
+  .query-input { font-size: 16px; }
   .query-submit { width: 100%; }
   .preset-grid  { grid-template-columns: 1fr; }
   .trial-detail { min-width: 0; }
   .trials-charts-grid { grid-template-columns: 1fr; }
+
+  /* Badge row: wrap and reduce size */
+  .trials-badge-row { flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  .aact-badge, .sdtm-badge { font-size: 10px; padding: 2px 6px; }
+  .rules-manager-btn { font-size: 11px; padding: 4px 8px; }
+
+  /* kg-params-bar filter pills — wrap on mobile */
+  .kg-params-bar { flex-wrap: wrap; row-gap: 4px; padding: 6px 16px; }
+  .kg-param-pill, .kg-filter-pill { font-size: 10px; padding: 2px 6px; }
+
+  /* Preset dropdown items — constrain text */
+  .preset-dropdown-item { padding: 10px 12px; }
+  .preset-text { font-size: 13px; white-space: normal; line-height: 1.4; }
+  .preset-desc { display: none; } /* hide description on mobile to save space */
+
+  /* Graph result panel */
+  .graph-narrative { flex-direction: column; gap: 6px; padding: 10px 12px; }
+  .graph-narrative p { font-size: 13px; }
+  .graph-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .graph-result-table { min-width: 360px; font-size: 12px; }
+  .graph-result-table th,
+  .graph-result-table td { padding: 6px 8px; }
+  .graph-cypher-code { font-size: 10px; padding: 8px; overflow-x: auto; }
+
+  /* Section header stacks on very small screens */
+  .section-header { flex-wrap: wrap; gap: 4px; }
+  .section-header h2 { font-size: 14px; }
+  .result-count { font-size: 10px; }
+}
+
+@media (max-width: 420px) {
+  .trials-header .trials-logo { display: none; }
+  .trials-body { padding: 0 8px 24px; }
+  .trials-section { padding: 12px; border-radius: 6px; }
+  .graph-result-table { min-width: 300px; }
 }
 
 /* ── Trial Intelligence Panel ── */
