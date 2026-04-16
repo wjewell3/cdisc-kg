@@ -183,41 +183,48 @@ function sqliteSearch({ q, condition, intervention, phase, status, sponsor, limi
 }
 
 function sqliteStats({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment }) {
-  const { where, params } = buildSqliteWhere({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment });
-  const enrollWhere = where ? `${where} AND s.enrollment IS NOT NULL` : "WHERE s.enrollment IS NOT NULL";
-  const enrollParams = [...params]; // same params, no extras needed
+  // Faceted stats: each dimension's query EXCLUDES its own filter so bars
+  // never collapse when clicked, but counts reflect all other active filters.
+  const base = { q, condition, intervention };
+  const { where: phaseWhere,  params: phaseParams  } = buildSqliteWhere({ ...base, phase: "",  status,    sponsor,   min_enrollment, max_enrollment });
+  const { where: statusWhere, params: statusParams } = buildSqliteWhere({ ...base, phase,      status: "", sponsor,   min_enrollment, max_enrollment });
+  const { where: spWhere,     params: spParams     } = buildSqliteWhere({ ...base, phase,      status,    sponsor: "", min_enrollment, max_enrollment });
+  const { where: enWhere,     params: enParams     } = buildSqliteWhere({ ...base, phase,      status,    sponsor,   min_enrollment: "", max_enrollment: "" });
+  const { where: fullWhere,   params: fullParams   } = buildSqliteWhere({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment });
 
-  const phaseRows = db.prepare(`SELECT COALESCE(s.phase, 'Unknown') AS val, COUNT(*) AS count FROM studies s ${where} GROUP BY 1 ORDER BY count DESC`).all(...params);
-  const statusRows = db.prepare(`SELECT COALESCE(s.overall_status, 'Unknown') AS val, COUNT(*) AS count FROM studies s ${where} GROUP BY 1 ORDER BY count DESC`).all(...params);
-  const sponsorRows = db.prepare(`
+  const enrollWhere = enWhere ? `${enWhere} AND s.enrollment IS NOT NULL` : "WHERE s.enrollment IS NOT NULL";
+
+  const phaseRows  = db.prepare(`SELECT COALESCE(s.phase, 'Unknown') AS val, COUNT(*) AS count FROM studies s ${phaseWhere} GROUP BY 1 ORDER BY count DESC`).all(...phaseParams);
+  const statusRows = db.prepare(`SELECT COALESCE(s.overall_status, 'Unknown') AS val, COUNT(*) AS count FROM studies s ${statusWhere} GROUP BY 1 ORDER BY count DESC`).all(...statusParams);
+  const spRows     = db.prepare(`
     SELECT sp.name AS val, COUNT(*) AS count
     FROM studies s
     JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
-    ${where}
+    ${spWhere}
     GROUP BY sp.name ORDER BY count DESC LIMIT 20
-  `).all(...params);
+  `).all(...spParams);
   const enrollRows = db.prepare(`
     SELECT
       CASE
         WHEN s.enrollment < 100 THEN '< 100'
-        WHEN s.enrollment < 500 THEN '100–499'
-        WHEN s.enrollment < 1000 THEN '500–999'
-        WHEN s.enrollment < 5000 THEN '1k–4.9k'
-        WHEN s.enrollment < 20000 THEN '5k–19k'
-        ELSE '≥ 20k'
+        WHEN s.enrollment < 500 THEN '100\u2013499'
+        WHEN s.enrollment < 1000 THEN '500\u2013999'
+        WHEN s.enrollment < 5000 THEN '1k\u20134.9k'
+        WHEN s.enrollment < 20000 THEN '5k\u201319k'
+        ELSE '\u2265 20k'
       END AS val,
       COUNT(*) AS count
     FROM studies s ${enrollWhere}
     GROUP BY 1 ORDER BY MIN(s.enrollment)
-  `).all(...enrollParams);
-  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM studies s ${where}`).get(...params);
+  `).all(...enParams);
+  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM studies s ${fullWhere}`).get(...fullParams);
 
   const toObj = (rows) => Object.fromEntries(rows.map((r) => [r.val, r.count]));
   return {
     total: parseInt(total),
     phase: toObj(phaseRows),
     status: toObj(statusRows),
-    sponsor: sponsorRows.map((r) => [r.val, r.count]),
+    sponsor: spRows.map((r) => [r.val, r.count]),
     enrollment: toObj(enrollRows),
   };
 }
