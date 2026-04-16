@@ -414,132 +414,169 @@ app.get("/api/trials", async (req, res) => {
 
 // ── Site Intelligence (Knowledge Graph) ───────────────────────────────────────
 
-app.get("/api/site-search", (req, res) => {
-  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
-  try { db.prepare("SELECT 1 FROM facilities LIMIT 1").get(); } catch { return res.status(503).json({ error: "Facilities table not yet available — snapshot in progress" }); }
+app.get("/api/site-search", async (req, res) => {
   const { q, country, limit = "20" } = req.query;
   if (!q || q.length < 2) return res.status(400).json({ error: "q required (min 2 chars)" });
   const lim = Math.min(parseInt(limit) || 20, 100);
-  const countryClause = country ? "AND f.country = ?" : "";
-  const countryParam = country ? [country] : [];
-  const rows = db.prepare(`
-    SELECT f.name, f.city, f.state, f.country,
-           COUNT(DISTINCT f.nct_id) AS trial_count,
-           ROUND(AVG(f.latitude), 4) AS latitude,
-           ROUND(AVG(f.longitude), 4) AS longitude
-    FROM facilities f
-    WHERE f.name LIKE ? ${countryClause}
-    GROUP BY f.name, f.city, f.state, f.country
-    ORDER BY trial_count DESC
-    LIMIT ?
-  `).all(`%${q}%`, ...countryParam, lim);
-  return res.json({ sites: rows });
+
+  // Try SQLite first (facilities table only exists after operational snapshot)
+  if (db) {
+    try {
+      db.prepare("SELECT 1 FROM facilities LIMIT 1").get();
+      const countryClause = country ? "AND f.country = ?" : "";
+      const countryParam = country ? [country] : [];
+      const rows = db.prepare(`
+        SELECT f.name, f.city, f.state, f.country,
+               COUNT(DISTINCT f.nct_id) AS trial_count,
+               ROUND(AVG(f.latitude), 4) AS latitude,
+               ROUND(AVG(f.longitude), 4) AS longitude
+        FROM facilities f
+        WHERE f.name LIKE ? ${countryClause}
+        GROUP BY f.name, f.city, f.state, f.country
+        ORDER BY trial_count DESC
+        LIMIT ?
+      `).all(`%${q}%`, ...countryParam, lim);
+      return res.json({ sites: rows, source: "sqlite" });
+    } catch { /* fall through to live PG */ }
+  }
+
+  // Fallback: query live AACT PostgreSQL
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Facilities not yet available — snapshot in progress. AACT credentials required for live fallback." });
+  try {
+    const countryClause = country ? "AND f.country = $3" : "";
+    const pgParams = country ? [`%${q}%`, lim, country] : [`%${q}%`, lim];
+    const { rows } = await pool.query(`
+      SELECT f.name, f.city, f.state, f.country,
+             COUNT(DISTINCT f.nct_id) AS trial_count,
+             ROUND(AVG(f.latitude)::numeric, 4) AS latitude,
+             ROUND(AVG(f.longitude)::numeric, 4) AS longitude
+      FROM facilities f
+      WHERE f.name ILIKE $1 ${countryClause}
+      GROUP BY f.name, f.city, f.state, f.country
+      ORDER BY trial_count DESC
+      LIMIT $2
+    `, pgParams);
+    return res.json({ sites: rows.map(r => ({ ...r, trial_count: parseInt(r.trial_count) })), source: "live" });
+  } catch (e) {
+    return res.status(502).json({ error: "Site search failed", detail: e.message });
+  }
 });
 
-app.get("/api/site-profile", (req, res) => {
-  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
-  try { db.prepare("SELECT 1 FROM facilities LIMIT 1").get(); } catch { return res.status(503).json({ error: "Facilities table not yet available — snapshot in progress" }); }
+app.get("/api/site-profile", async (req, res) => {
   const { name, city, state, country } = req.query;
   if (!name) return res.status(400).json({ error: "name required" });
 
-  // Build where clause for exact facility match
-  const facWhere = ["f.name = ?"];
-  const facParams = [name];
-  if (city) { facWhere.push("f.city = ?"); facParams.push(city); }
-  if (state) { facWhere.push("f.state = ?"); facParams.push(state); }
-  if (country) { facWhere.push("f.country = ?"); facParams.push(country); }
-  const w = facWhere.join(" AND ");
+  // ── SQLite path ────────────────────────────────────────────────────────────
+  if (db) {
+    try {
+      db.prepare("SELECT 1 FROM facilities LIMIT 1").get(); // throws if table missing
 
-  // Get all trial IDs for this facility
-  const trialIds = db.prepare(`SELECT DISTINCT f.nct_id FROM facilities f WHERE ${w}`).all(...facParams).map(r => r.nct_id);
-  if (trialIds.length === 0) return res.status(404).json({ error: "Site not found" });
+      const facWhere = ["f.name = ?"];
+      const facParams = [name];
+      if (city) { facWhere.push("f.city = ?"); facParams.push(city); }
+      if (state) { facWhere.push("f.state = ?"); facParams.push(state); }
+      if (country) { facWhere.push("f.country = ?"); facParams.push(country); }
+      const w = facWhere.join(" AND ");
 
-  const ph = trialIds.map(() => "?").join(",");
+      const trialIds = db.prepare(`SELECT DISTINCT f.nct_id FROM facilities f WHERE ${w}`).all(...facParams).map(r => r.nct_id);
+      if (trialIds.length === 0) return res.status(404).json({ error: "Site not found" });
+      const ph = trialIds.map(() => "?").join(",");
 
-  // Phase distribution
-  const phases = db.prepare(`SELECT COALESCE(phase, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${ph}) GROUP BY 1 ORDER BY count DESC`).all(...trialIds);
+      const phases      = db.prepare(`SELECT COALESCE(phase, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${ph}) GROUP BY 1 ORDER BY count DESC`).all(...trialIds);
+      const statuses    = db.prepare(`SELECT COALESCE(overall_status, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${ph}) GROUP BY 1 ORDER BY count DESC`).all(...trialIds);
+      const conditions  = db.prepare(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c WHERE c.nct_id IN (${ph}) GROUP BY c.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+      const interventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${ph}) GROUP BY i.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+      const sponsors    = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${ph}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
 
-  // Status distribution
-  const statuses = db.prepare(`SELECT COALESCE(overall_status, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${ph}) GROUP BY 1 ORDER BY count DESC`).all(...trialIds);
+      let ops = { total_trials: trialIds.length, reported_results: null, avg_duration_months: null, avg_months_to_report: null, total_sae_subjects: null };
+      let dropouts = [], durations = [], trialCountries = [], loc = null;
+      try {
+        ops = db.prepare(`SELECT COUNT(*) AS total_trials, SUM(CASE WHEN cv.were_results_reported = 1 THEN 1 ELSE 0 END) AS reported_results, ROUND(AVG(cv.actual_duration), 1) AS avg_duration_months, ROUND(AVG(cv.months_to_report_results), 1) AS avg_months_to_report, SUM(cv.number_of_sae_subjects) AS total_sae_subjects FROM calculated_values cv WHERE cv.nct_id IN (${ph})`).get(...trialIds) || ops;
+        dropouts = db.prepare(`SELECT dw.reason, SUM(dw.count) AS total FROM drop_withdrawals dw WHERE dw.nct_id IN (${ph}) AND dw.reason IS NOT NULL GROUP BY dw.reason ORDER BY total DESC LIMIT 10`).all(...trialIds);
+        durations = db.prepare(`SELECT CASE WHEN cv.actual_duration < 12 THEN '< 1 yr' WHEN cv.actual_duration < 24 THEN '1\u20132 yr' WHEN cv.actual_duration < 36 THEN '2\u20133 yr' WHEN cv.actual_duration < 60 THEN '3\u20135 yr' ELSE '5+ yr' END AS bucket, COUNT(*) AS count FROM calculated_values cv WHERE cv.nct_id IN (${ph}) AND cv.actual_duration IS NOT NULL GROUP BY 1 ORDER BY MIN(cv.actual_duration)`).all(...trialIds);
+        trialCountries = db.prepare(`SELECT ctry.name AS val, COUNT(DISTINCT ctry.nct_id) AS count FROM countries ctry WHERE ctry.nct_id IN (${ph}) AND ctry.removed = 0 GROUP BY ctry.name ORDER BY count DESC LIMIT 10`).all(...trialIds);
+        loc = db.prepare(`SELECT city, state, country, latitude, longitude FROM facilities f WHERE ${w} LIMIT 1`).get(...facParams);
+      } catch { /* enrichment tables not yet available */ }
 
-  // Top conditions
-  const conditions = db.prepare(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c WHERE c.nct_id IN (${ph}) GROUP BY c.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+      const cs = db.prepare(`SELECT COUNT(*) AS finished, SUM(CASE WHEN overall_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed, SUM(CASE WHEN overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated FROM studies WHERE nct_id IN (${ph}) AND overall_status IN ('COMPLETED','TERMINATED')`).get(...trialIds);
+      const recentTrials = db.prepare(`SELECT s.nct_id, s.brief_title, s.overall_status, s.phase, s.enrollment, s.start_date, s.completion_date FROM studies s WHERE s.nct_id IN (${ph}) ORDER BY s.start_date DESC LIMIT 10`).all(...trialIds);
 
-  // Top interventions
-  const interventions = db.prepare(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${ph}) GROUP BY i.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+      const toObj = (rows) => Object.fromEntries(rows.map(r => [r.val, r.count]));
+      const completionRate = cs.finished > 0 ? parseFloat(((cs.completed / cs.finished) * 100).toFixed(1)) : null;
 
-  // Top sponsors
-  const sponsors = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${ph}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
+      return res.json({
+        site: { name, city: loc?.city, state: loc?.state, country: loc?.country, latitude: loc?.latitude, longitude: loc?.longitude },
+        summary: { total_trials: trialIds.length, completion_rate_pct: completionRate, completed: cs.completed, terminated: cs.terminated, results_reported: ops.reported_results, avg_duration_months: ops.avg_duration_months, avg_months_to_report: ops.avg_months_to_report, total_sae_subjects: ops.total_sae_subjects },
+        phases: toObj(phases), statuses: toObj(statuses),
+        conditions: conditions.map(r => [r.val, r.count]),
+        interventions: interventions.map(r => [r.val, r.count]),
+        sponsors: sponsors.map(r => [r.val, r.count]),
+        dropouts: dropouts.map(r => [r.reason, r.total]),
+        durations: Object.fromEntries(durations.map(r => [r.bucket, r.count])),
+        countries: trialCountries.map(r => [r.val, r.count]),
+        recent_trials: recentTrials,
+        source: "sqlite",
+      });
+    } catch { /* facilities table not yet available — fall through to PG */ }
+  }
 
-  // Operational metrics from calculated_values (graceful — tables may not exist yet)
-  let ops = { total_trials: trialIds.length, reported_results: null, avg_duration_months: null, avg_months_to_report: null, total_sae_subjects: null };
-  let dropouts = [], durations = [], trialCountries = [], loc = null;
+  // ── PostgreSQL fallback ────────────────────────────────────────────────────
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Site profiles require the operational snapshot (facilities table). Snapshot is in progress." });
   try {
-    ops = db.prepare(`
-      SELECT
-        COUNT(*) AS total_trials,
-        SUM(CASE WHEN cv.were_results_reported = 1 THEN 1 ELSE 0 END) AS reported_results,
-        ROUND(AVG(cv.actual_duration), 1) AS avg_duration_months,
-        ROUND(AVG(cv.months_to_report_results), 1) AS avg_months_to_report,
-        SUM(cv.number_of_sae_subjects) AS total_sae_subjects,
-        SUM(cv.number_of_nsae_subjects) AS total_nsae_subjects
-      FROM calculated_values cv
-      WHERE cv.nct_id IN (${ph})
-    `).get(...trialIds) || ops;
-    dropouts = db.prepare(`SELECT dw.reason, SUM(dw.count) AS total FROM drop_withdrawals dw WHERE dw.nct_id IN (${ph}) AND dw.reason IS NOT NULL GROUP BY dw.reason ORDER BY total DESC LIMIT 10`).all(...trialIds);
-    durations = db.prepare(`SELECT CASE WHEN cv.actual_duration < 12 THEN '< 1 yr' WHEN cv.actual_duration < 24 THEN '1–2 yr' WHEN cv.actual_duration < 36 THEN '2–3 yr' WHEN cv.actual_duration < 60 THEN '3–5 yr' ELSE '5+ yr' END AS bucket, COUNT(*) AS count FROM calculated_values cv WHERE cv.nct_id IN (${ph}) AND cv.actual_duration IS NOT NULL GROUP BY 1 ORDER BY MIN(cv.actual_duration)`).all(...trialIds);
-    trialCountries = db.prepare(`SELECT ctry.name AS val, COUNT(DISTINCT ctry.nct_id) AS count FROM countries ctry WHERE ctry.nct_id IN (${ph}) AND ctry.removed = 0 GROUP BY ctry.name ORDER BY count DESC LIMIT 10`).all(...trialIds);
-    loc = db.prepare(`SELECT city, state, country, latitude, longitude FROM facilities f WHERE ${w} LIMIT 1`).get(...facParams);
-  } catch { /* enrichment tables not yet available — snapshot in progress */ }
+    const clauses = ["f.name = $1"];
+    const pgParams = [name];
+    if (city)    { clauses.push(`f.city = $${pgParams.push(city)}`); }
+    if (state)   { clauses.push(`f.state = $${pgParams.push(state)}`); }
+    if (country) { clauses.push(`f.country = $${pgParams.push(country)}`); }
+    const w = clauses.join(" AND ");
 
-  // Completion rate (uses studies table — always available)
-  const completionStats = db.prepare(`
-    SELECT
-      COUNT(*) AS finished,
-      SUM(CASE WHEN overall_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
-      SUM(CASE WHEN overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated
-    FROM studies
-    WHERE nct_id IN (${ph}) AND overall_status IN ('COMPLETED', 'TERMINATED')
-  `).get(...trialIds);
+    const { rows: facRows } = await pool.query(`SELECT DISTINCT nct_id FROM facilities f WHERE ${w}`, pgParams);
+    if (facRows.length === 0) return res.status(404).json({ error: "Site not found" });
+    const trialIds = facRows.map(r => r.nct_id);
+    const idList = trialIds.map((_, i) => `$${i + 1}`).join(",");
 
-  // Recent trials (last 10)
-  const recentTrials = db.prepare(`
-    SELECT s.nct_id, s.brief_title, s.overall_status, s.phase,
-           s.enrollment, s.start_date, s.completion_date
-    FROM studies s
-    WHERE s.nct_id IN (${ph})
-    ORDER BY s.start_date DESC NULLS LAST
-    LIMIT 10
-  `).all(...trialIds);
+    const [phases, statuses, conditions, interventions, sponsors, cs, recentTrials, locRow, ops, dropouts, trialCountries] = await Promise.all([
+      pool.query(`SELECT COALESCE(phase, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${idList}) GROUP BY 1 ORDER BY count DESC`, trialIds),
+      pool.query(`SELECT COALESCE(overall_status, 'Unknown') AS val, COUNT(*) AS count FROM studies WHERE nct_id IN (${idList}) GROUP BY 1 ORDER BY count DESC`, trialIds),
+      pool.query(`SELECT c.name AS val, COUNT(DISTINCT c.nct_id) AS count FROM conditions c WHERE c.nct_id IN (${idList}) GROUP BY c.name ORDER BY count DESC LIMIT 15`, trialIds),
+      pool.query(`SELECT i.name AS val, COUNT(DISTINCT i.nct_id) AS count FROM interventions i WHERE i.nct_id IN (${idList}) GROUP BY i.name ORDER BY count DESC LIMIT 15`, trialIds),
+      pool.query(`SELECT s.name AS val, COUNT(DISTINCT s.nct_id) AS count FROM sponsors s WHERE s.nct_id IN (${idList}) AND s.lead_or_collaborator = 'lead' GROUP BY s.name ORDER BY count DESC LIMIT 15`, trialIds),
+      pool.query(`SELECT COUNT(*) AS finished, SUM(CASE WHEN overall_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed, SUM(CASE WHEN overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated FROM studies WHERE nct_id IN (${idList}) AND overall_status IN ('COMPLETED','TERMINATED')`, trialIds),
+      pool.query(`SELECT nct_id, brief_title, overall_status, phase, enrollment, start_date::text, completion_date::text FROM studies WHERE nct_id IN (${idList}) ORDER BY start_date DESC NULLS LAST LIMIT 10`, trialIds),
+      pool.query(`SELECT city, state, country, latitude::float, longitude::float FROM facilities f WHERE ${w} LIMIT 1`, pgParams),
+      pool.query(`SELECT COUNT(*) AS total_trials, SUM(CASE WHEN were_results_reported THEN 1 ELSE 0 END) AS reported_results, ROUND(AVG(actual_duration)::numeric, 1) AS avg_duration_months, ROUND(AVG(months_to_report_results)::numeric, 1) AS avg_months_to_report FROM calculated_values WHERE nct_id IN (${idList})`, trialIds).catch(() => ({ rows: [{}] })),
+      pool.query(`SELECT reason, SUM(count) AS total FROM drop_withdrawals WHERE nct_id IN (${idList}) AND reason IS NOT NULL GROUP BY reason ORDER BY total DESC LIMIT 10`, trialIds).catch(() => ({ rows: [] })),
+      pool.query(`SELECT name AS val, COUNT(DISTINCT nct_id) AS count FROM countries WHERE nct_id IN (${idList}) AND removed = false GROUP BY name ORDER BY count DESC LIMIT 10`, trialIds).catch(() => ({ rows: [] })),
+    ]);
 
+    const loc = locRow.rows[0] || {};
+    const opsRow = ops.rows[0] || {};
+    const csRow = cs.rows[0];
+    const finished = parseInt(csRow.finished) || 0;
+    const completed = parseInt(csRow.completed) || 0;
+    const terminated = parseInt(csRow.terminated) || 0;
+    const completionRate = finished > 0 ? parseFloat(((completed / finished) * 100).toFixed(1)) : null;
+    const toObj = (rows) => Object.fromEntries(rows.map(r => [r.val, parseInt(r.count)]));
 
-  const toObj = (rows) => Object.fromEntries(rows.map(r => [r.val, r.count]));
-  const completionRate = completionStats.finished > 0
-    ? parseFloat(((completionStats.completed / completionStats.finished) * 100).toFixed(1))
-    : null;
-
-  return res.json({
-    site: { name, city: loc?.city, state: loc?.state, country: loc?.country, latitude: loc?.latitude, longitude: loc?.longitude },
-    summary: {
-      total_trials: trialIds.length,
-      completion_rate_pct: completionRate,
-      completed: completionStats.completed,
-      terminated: completionStats.terminated,
-      results_reported: ops.reported_results,
-      avg_duration_months: ops.avg_duration_months,
-      avg_months_to_report: ops.avg_months_to_report,
-      total_sae_subjects: ops.total_sae_subjects,
-    },
-    phases: toObj(phases),
-    statuses: toObj(statuses),
-    conditions: conditions.map(r => [r.val, r.count]),
-    interventions: interventions.map(r => [r.val, r.count]),
-    sponsors: sponsors.map(r => [r.val, r.count]),
-    dropouts: dropouts.map(r => [r.reason, r.total]),
-    durations: Object.fromEntries(durations.map(r => [r.bucket, r.count])),
-    countries: trialCountries.map(r => [r.val, r.count]),
-    recent_trials: recentTrials,
-  });
+    return res.json({
+      site: { name, city: loc.city, state: loc.state, country: loc.country, latitude: loc.latitude, longitude: loc.longitude },
+      summary: { total_trials: trialIds.length, completion_rate_pct: completionRate, completed, terminated, results_reported: opsRow.reported_results ? parseInt(opsRow.reported_results) : null, avg_duration_months: opsRow.avg_duration_months ? parseFloat(opsRow.avg_duration_months) : null, avg_months_to_report: opsRow.avg_months_to_report ? parseFloat(opsRow.avg_months_to_report) : null, total_sae_subjects: null },
+      phases: toObj(phases.rows), statuses: toObj(statuses.rows),
+      conditions: conditions.rows.map(r => [r.val, parseInt(r.count)]),
+      interventions: interventions.rows.map(r => [r.val, parseInt(r.count)]),
+      sponsors: sponsors.rows.map(r => [r.val, parseInt(r.count)]),
+      dropouts: dropouts.rows.map(r => [r.reason, parseInt(r.total)]),
+      durations: {},
+      countries: trialCountries.rows.map(r => [r.val, parseInt(r.count)]),
+      recent_trials: recentTrials.rows,
+      source: "live",
+    });
+  } catch (e) {
+    console.error("[site-profile] PG fallback failed:", e.message);
+    return res.status(502).json({ error: "Site profile failed", detail: e.message });
+  }
 });
 
 // ── Trial Risk Score ──────────────────────────────────────────────────────────

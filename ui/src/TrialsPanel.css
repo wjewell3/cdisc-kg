@@ -55,6 +55,33 @@
   align-items: center;
 }
 
+.trials-sub-tabs {
+  display: flex;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.trials-sub-tab {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 14px;
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, color 0.15s;
+}
+.trials-sub-tab.active {
+  background: #21262d;
+  color: #f0f6fc;
+}
+.trials-sub-tab:hover:not(.active) {
+  background: #1c2128;
+  color: #c9d1d9;
+}
+
 .rules-manager-btn {
   font-size: 11px;
   font-weight: 600;

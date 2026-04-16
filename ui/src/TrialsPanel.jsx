@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
+import SiteIntelligence from "./SiteIntelligence";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 
@@ -38,6 +39,7 @@ const PHASE_CLASS = {
 };
 
 export default function TrialsPanel({ focusNctId }) {
+  const [view, setView] = useState("search"); // "search" | "sites"
   const [query, setQuery] = useState("");
   const [step, setStep] = useState("question"); // question | loading | results | error
   const [resolutions, setResolutions] = useState([]);
@@ -379,6 +381,16 @@ export default function TrialsPanel({ focusNctId }) {
           </div>
         </div>
         <div className="trials-badge-row">
+          <div className="trials-sub-tabs">
+            <button
+              className={`trials-sub-tab ${view === "search" ? "active" : ""}`}
+              onClick={() => setView("search")}
+            >Search</button>
+            <button
+              className={`trials-sub-tab ${view === "sites" ? "active" : ""}`}
+              onClick={() => setView("sites")}
+            >Sites</button>
+          </div>
           <button className="rules-manager-btn" onClick={() => setRulesOpen(true)}>
             ⚙ Rules{(rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)) > 0 ? ` (${rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)})` : ""}
             {(enrollMin !== null || enrollMax !== null) && <span className="rules-bounds-badge">●</span>}
@@ -388,7 +400,24 @@ export default function TrialsPanel({ focusNctId }) {
         </div>
       </div>
 
-      <div className="trials-body">
+      {view === "sites" ? (
+        <SiteIntelligence onSelectTrial={(nct_id) => {
+          setView("search");
+          // Trigger search for this NCT ID
+          const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+          fetch(`${base}/api/trials?q=${encodeURIComponent(nct_id)}&limit=1`)
+            .then(r => r.json())
+            .then(data => {
+              if (data.results?.[0]) {
+                setStep("results");
+                setResults(data);
+                setSelectedTrial(data.results[0]);
+                setIntelligence(null);
+              }
+            })
+            .catch(() => {});
+        }} />
+      ) : (<div className="trials-body">
 
         {/* ── Section 1: Search + preset queries ───────────────────────── */}
         <div className="trials-section compact-section">
@@ -806,6 +835,7 @@ export default function TrialsPanel({ focusNctId }) {
           </div>
         )}
       </div>
+      )}
     </div>
 
     {rulesOpen && (
