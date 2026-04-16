@@ -465,20 +465,28 @@ app.get("/api/site-profile", (req, res) => {
   // Top sponsors
   const sponsors = db.prepare(`SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id) AS count FROM sponsors sp WHERE sp.nct_id IN (${ph}) AND sp.lead_or_collaborator = 'lead' GROUP BY sp.name ORDER BY count DESC LIMIT 15`).all(...trialIds);
 
-  // Operational metrics from calculated_values
-  const ops = db.prepare(`
-    SELECT
-      COUNT(*) AS total_trials,
-      SUM(CASE WHEN cv.were_results_reported = 1 THEN 1 ELSE 0 END) AS reported_results,
-      ROUND(AVG(cv.actual_duration), 1) AS avg_duration_months,
-      ROUND(AVG(cv.months_to_report_results), 1) AS avg_months_to_report,
-      SUM(cv.number_of_sae_subjects) AS total_sae_subjects,
-      SUM(cv.number_of_nsae_subjects) AS total_nsae_subjects
-    FROM calculated_values cv
-    WHERE cv.nct_id IN (${ph})
-  `).get(...trialIds);
+  // Operational metrics from calculated_values (graceful — tables may not exist yet)
+  let ops = { total_trials: trialIds.length, reported_results: null, avg_duration_months: null, avg_months_to_report: null, total_sae_subjects: null };
+  let dropouts = [], durations = [], trialCountries = [], loc = null;
+  try {
+    ops = db.prepare(`
+      SELECT
+        COUNT(*) AS total_trials,
+        SUM(CASE WHEN cv.were_results_reported = 1 THEN 1 ELSE 0 END) AS reported_results,
+        ROUND(AVG(cv.actual_duration), 1) AS avg_duration_months,
+        ROUND(AVG(cv.months_to_report_results), 1) AS avg_months_to_report,
+        SUM(cv.number_of_sae_subjects) AS total_sae_subjects,
+        SUM(cv.number_of_nsae_subjects) AS total_nsae_subjects
+      FROM calculated_values cv
+      WHERE cv.nct_id IN (${ph})
+    `).get(...trialIds) || ops;
+    dropouts = db.prepare(`SELECT dw.reason, SUM(dw.count) AS total FROM drop_withdrawals dw WHERE dw.nct_id IN (${ph}) AND dw.reason IS NOT NULL GROUP BY dw.reason ORDER BY total DESC LIMIT 10`).all(...trialIds);
+    durations = db.prepare(`SELECT CASE WHEN cv.actual_duration < 12 THEN '< 1 yr' WHEN cv.actual_duration < 24 THEN '1–2 yr' WHEN cv.actual_duration < 36 THEN '2–3 yr' WHEN cv.actual_duration < 60 THEN '3–5 yr' ELSE '5+ yr' END AS bucket, COUNT(*) AS count FROM calculated_values cv WHERE cv.nct_id IN (${ph}) AND cv.actual_duration IS NOT NULL GROUP BY 1 ORDER BY MIN(cv.actual_duration)`).all(...trialIds);
+    trialCountries = db.prepare(`SELECT ctry.name AS val, COUNT(DISTINCT ctry.nct_id) AS count FROM countries ctry WHERE ctry.nct_id IN (${ph}) AND ctry.removed = 0 GROUP BY ctry.name ORDER BY count DESC LIMIT 10`).all(...trialIds);
+    loc = db.prepare(`SELECT city, state, country, latitude, longitude FROM facilities f WHERE ${w} LIMIT 1`).get(...facParams);
+  } catch { /* enrichment tables not yet available — snapshot in progress */ }
 
-  // Completion rate
+  // Completion rate (uses studies table — always available)
   const completionStats = db.prepare(`
     SELECT
       COUNT(*) AS finished,
@@ -487,38 +495,6 @@ app.get("/api/site-profile", (req, res) => {
     FROM studies
     WHERE nct_id IN (${ph}) AND overall_status IN ('COMPLETED', 'TERMINATED')
   `).get(...trialIds);
-
-  // Dropout reasons
-  const dropouts = db.prepare(`
-    SELECT dw.reason, SUM(dw.count) AS total
-    FROM drop_withdrawals dw
-    WHERE dw.nct_id IN (${ph}) AND dw.reason IS NOT NULL
-    GROUP BY dw.reason ORDER BY total DESC LIMIT 10
-  `).all(...trialIds);
-
-  // Duration distribution
-  const durations = db.prepare(`
-    SELECT
-      CASE
-        WHEN cv.actual_duration < 12 THEN '< 1 yr'
-        WHEN cv.actual_duration < 24 THEN '1–2 yr'
-        WHEN cv.actual_duration < 36 THEN '2–3 yr'
-        WHEN cv.actual_duration < 60 THEN '3–5 yr'
-        ELSE '5+ yr'
-      END AS bucket,
-      COUNT(*) AS count
-    FROM calculated_values cv
-    WHERE cv.nct_id IN (${ph}) AND cv.actual_duration IS NOT NULL
-    GROUP BY 1 ORDER BY MIN(cv.actual_duration)
-  `).all(...trialIds);
-
-  // Countries for this site's trials
-  const trialCountries = db.prepare(`
-    SELECT ctry.name AS val, COUNT(DISTINCT ctry.nct_id) AS count
-    FROM countries ctry
-    WHERE ctry.nct_id IN (${ph}) AND ctry.removed = 0
-    GROUP BY ctry.name ORDER BY count DESC LIMIT 10
-  `).all(...trialIds);
 
   // Recent trials (last 10)
   const recentTrials = db.prepare(`
@@ -530,8 +506,6 @@ app.get("/api/site-profile", (req, res) => {
     LIMIT 10
   `).all(...trialIds);
 
-  // Location info from first facility record
-  const loc = db.prepare(`SELECT city, state, country, latitude, longitude FROM facilities f WHERE ${w} LIMIT 1`).get(...facParams);
 
   const toObj = (rows) => Object.fromEntries(rows.map(r => [r.val, r.count]));
   const completionRate = completionStats.finished > 0
@@ -556,7 +530,7 @@ app.get("/api/site-profile", (req, res) => {
     interventions: interventions.map(r => [r.val, r.count]),
     sponsors: sponsors.map(r => [r.val, r.count]),
     dropouts: dropouts.map(r => [r.reason, r.total]),
-    durations: toObj(durations),
+    durations: Object.fromEntries(durations.map(r => [r.bucket, r.count])),
     countries: trialCountries.map(r => [r.val, r.count]),
     recent_trials: recentTrials,
   });
@@ -729,13 +703,16 @@ app.get("/api/trial-intelligence", async (req, res) => {
 
   if (!trial) return res.status(404).json({ error: `Trial ${id} not found in snapshot` });
 
-  // 2a. Fetch operational enrichment from new KG tables
-  const cv = db.prepare(`SELECT * FROM calculated_values WHERE nct_id = ?`).get(id);
-  const design = db.prepare(`SELECT * FROM designs WHERE nct_id = ?`).get(id);
-  const elig = db.prepare(`SELECT criteria FROM eligibilities WHERE nct_id = ?`).get(id);
-  const dropouts = db.prepare(`SELECT reason, SUM(count) AS total FROM drop_withdrawals WHERE nct_id = ? AND reason IS NOT NULL GROUP BY reason ORDER BY total DESC LIMIT 8`).all(id);
-  const trialCountries = db.prepare(`SELECT name FROM countries WHERE nct_id = ? AND removed = 0`).all(id).map(r => r.name);
-  const facilityCount = cv?.number_of_facilities || null;
+  // 2a. Fetch operational enrichment from new KG tables (graceful — may not exist yet)
+  let cv = null, design = null, elig = null, dropouts = [], trialCountries = [], facilityCount = null;
+  try {
+    cv = db.prepare(`SELECT * FROM calculated_values WHERE nct_id = ?`).get(id);
+    design = db.prepare(`SELECT * FROM designs WHERE nct_id = ?`).get(id);
+    elig = db.prepare(`SELECT criteria FROM eligibilities WHERE nct_id = ?`).get(id);
+    dropouts = db.prepare(`SELECT reason, SUM(count) AS total FROM drop_withdrawals WHERE nct_id = ? AND reason IS NOT NULL GROUP BY reason ORDER BY total DESC LIMIT 8`).all(id);
+    trialCountries = db.prepare(`SELECT name FROM countries WHERE nct_id = ? AND removed = 0`).all(id).map(r => r.name);
+    facilityCount = cv?.number_of_facilities || null;
+  } catch { /* tables not yet available — snapshot in progress */ }
 
   // 3. Find condition-similar completed/terminated trials via FTS5 then same-phase filter
   const topKeyword = (trial.conditions_text || trial.brief_title || "")
