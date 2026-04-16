@@ -57,26 +57,6 @@ function completionColor(rate) {
 }
 
 function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8, total = null }) {
-  const [selectedLabel, setSelectedLabel] = useState(null);
-  const [barMetrics, setBarMetrics] = useState(null);
-  const [barMetricsLoading, setBarMetricsLoading] = useState(false);
-
-  function handleBarClick(label) {
-    if (label === selectedLabel) {
-      setSelectedLabel(null);
-      setBarMetrics(null);
-      return;
-    }
-    setSelectedLabel(label);
-    setBarMetrics(null);
-    setBarMetricsLoading(true);
-    const base = trialsApiBase();
-    fetch(`${base}/api/entity-insight?type=${encodeURIComponent(field)}&name=${encodeURIComponent(label)}`)
-      .then((r) => r.json())
-      .then((d) => { setBarMetrics(d.summary); setBarMetricsLoading(false); })
-      .catch(() => setBarMetricsLoading(false));
-  }
-
   const displayData = data.slice(0, maxItems);
 
   // Append an "(other sponsors)" bar when total is provided and not all are shown
@@ -119,7 +99,6 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8,
               onClick={() => {
                 if (!isOthers) {
                   onFilter(field, label);
-                  handleBarClick(label);
                 }
               }}
               style={{ cursor: isOthers ? "default" : "pointer" }}
@@ -156,48 +135,11 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8,
           );
         })}
       </svg>
-      {selectedLabel && (
-        <div className="bar-metrics-strip">
-          {barMetricsLoading ? (
-            <span className="bms-loading">Loading…</span>
-          ) : barMetrics ? (
-            <>
-              <span className="bms-stat" style={{ color: completionColor(barMetrics.completion_rate_pct) }}>
-                {barMetrics.completion_rate_pct ?? "—"}% completed
-              </span>
-              <span className="bms-sep">·</span>
-              <span className="bms-stat">avg {barMetrics.avg_enrollment ?? "—"} enrolled</span>
-              <span className="bms-sep">·</span>
-              <span className="bms-stat">{barMetrics.active_pct ?? "—"}% active</span>
-            </>
-          ) : null}
-        </div>
-      )}
     </div>
   );
 }
 
 function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter }) {
-  const [selectedSlice, setSelectedSlice] = useState(null);
-  const [sliceMetrics, setSliceMetrics] = useState(null);
-  const [sliceMetricsLoading, setSliceMetricsLoading] = useState(false);
-
-  function handleSliceClick(raw) {
-    if (raw === selectedSlice) {
-      setSelectedSlice(null);
-      setSliceMetrics(null);
-      return;
-    }
-    setSelectedSlice(raw);
-    setSliceMetrics(null);
-    setSliceMetricsLoading(true);
-    const base = trialsApiBase();
-    fetch(`${base}/api/entity-insight?type=${encodeURIComponent(field)}&name=${encodeURIComponent(raw)}`)
-      .then((r) => r.json())
-      .then((d) => { setSliceMetrics(d.summary); setSliceMetricsLoading(false); })
-      .catch(() => setSliceMetricsLoading(false));
-  }
-
   const displayData = data.slice(0, 8);
   const total = displayData.reduce((s, d) => s + d[1], 0);
   const cx = 90, cy = 90, outerR = 62, innerR = 38;
@@ -241,7 +183,7 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
               fill={s.color}
               opacity={hasAny && !isActive ? 0.3 : 1}
               style={{ cursor: "pointer" }}
-              onClick={() => { onFilter(field, s.raw); handleSliceClick(s.raw); }}
+              onClick={() => onFilter(field, s.raw)}
               role="button"
               aria-pressed={isActive}
               aria-label={`Filter by ${s.label}: ${s.count}`}
@@ -262,7 +204,7 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
           return (
             <g
               key={s.raw}
-              onClick={() => { onFilter(field, s.raw); handleSliceClick(s.raw); }}
+              onClick={() => { onFilter(field, s.raw); }}
               style={{ cursor: "pointer" }}
             >
               <rect x={lx} y={ly} width={10} height={10} rx={2} fill={s.color} opacity={hasAny && !isActive ? 0.55 : 1} />
@@ -273,48 +215,12 @@ function SvgDonutChart({ data, title, field, displayMap, activeValues, onFilter 
           );
         })}
       </svg>
-      {selectedSlice && (
-        <div className="bar-metrics-strip">
-          {sliceMetricsLoading ? (
-            <span className="bms-loading">Loading…</span>
-          ) : sliceMetrics ? (
-            <>
-              <span className="bms-stat" style={{ color: completionColor(sliceMetrics.completion_rate_pct) }}>
-                {sliceMetrics.completion_rate_pct ?? "—"}% completed
-              </span>
-              <span className="bms-sep">·</span>
-              <span className="bms-stat">avg {sliceMetrics.avg_enrollment ?? "—"} enrolled</span>
-              <span className="bms-sep">·</span>
-              <span className="bms-stat">{sliceMetrics.active_pct ?? "—"}% active</span>
-            </>
-          ) : null}
-        </div>
-      )}
     </div>
   );
 }
 
 function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilter }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
-  const [selectedLabel, setSelectedLabel] = useState(null);
-  const [barMetrics, setBarMetrics] = useState(null);
-  const [barMetricsLoading, setBarMetricsLoading] = useState(false);
-
-  function handleBarClick(label) {
-    if (label === selectedLabel) {
-      setSelectedLabel(null);
-      setBarMetrics(null);
-      return;
-    }
-    setSelectedLabel(label);
-    setBarMetrics(null);
-    setBarMetricsLoading(true);
-    const base = trialsApiBase();
-    fetch(`${base}/api/entity-insight?type=enrollment_range&name=${encodeURIComponent(label)}`)
-      .then((r) => r.json())
-      .then((d) => { setBarMetrics(d.summary); setBarMetricsLoading(false); })
-      .catch(() => setBarMetricsLoading(false));
-  }
   const BUCKETS = [
     { label: "< 100", min: 0, max: 99 },
     { label: "100\u2013499", min: 100, max: 499 },
@@ -351,7 +257,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
           return (
             <g
               key={b.label}
-              onClick={() => { onFilter("_enroll_range", b.label); handleBarClick(b.label); }}
+              onClick={() => { onFilter("_enroll_range", b.label); }}
               onMouseEnter={() => setHoveredIdx(i)}
               onMouseLeave={() => setHoveredIdx(null)}
               style={{ cursor: "pointer" }}
@@ -378,30 +284,79 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
               <text x={padLeft + 6} y={finalY + 12} fontSize={10} fill="#e6edf3">{ttText}</text>
             </g>
           );
-        })()}
+        })()}        
       </svg>
-      {selectedLabel && (
-        <div className="bar-metrics-strip">
-          {barMetricsLoading ? (
-            <span className="bms-loading">Loading…</span>
-          ) : barMetrics ? (
-            <>
-              <span className="bms-stat" style={{ color: completionColor(barMetrics.completion_rate_pct) }}>
-                {barMetrics.completion_rate_pct ?? "—"}% completed
-              </span>
-              <span className="bms-sep">·</span>
-              <span className="bms-stat">avg {barMetrics.avg_enrollment ?? "—"} enrolled</span>
-              <span className="bms-sep">·</span>
-              <span className="bms-stat">{barMetrics.active_pct ?? "—"}% active</span>
-            </>
-          ) : null}
-        </div>
-      )}
     </div>
   );
 }
 
-export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
+const ENROLL_BUCKET_MID = {
+  "< 100": 50, "100\u2013499": 300, "500\u2013999": 750,
+  "1k\u20134.9k": 3000, "5k\u201319k": 12000, "\u2265 20k": 30000,
+};
+
+const ACTIVE_STATUSES = new Set(["RECRUITING", "ACTIVE_NOT_RECRUITING", "ENROLLING_BY_INVITATION", "NOT_YET_RECRUITING"]);
+
+function computeStats(agg) {
+  if (!agg) return null;
+  const total = agg.total || 0;
+  if (total === 0) return null;
+  const status = agg.status || {};
+  const completed = status.COMPLETED || 0;
+  let active = 0;
+  for (const [k, v] of Object.entries(status)) { if (ACTIVE_STATUSES.has(k)) active += v; }
+  const completion_pct = +(completed / total * 100).toFixed(1);
+  const active_pct = +(active / total * 100).toFixed(1);
+  let enrollSum = 0, enrollCount = 0;
+  for (const [label, count] of Object.entries(agg.enrollment || {})) {
+    const mid = ENROLL_BUCKET_MID[label];
+    if (mid && count) { enrollSum += mid * count; enrollCount += count; }
+  }
+  const avg_enrollment = enrollCount > 0 ? Math.round(enrollSum / enrollCount) : null;
+  return { total, completion_pct, active_pct, avg_enrollment };
+}
+
+function StatsBanner({ stats, baseline, hasFilters }) {
+  if (!stats) return null;
+  function signal(val, base, higherBetter = true) {
+    if (val == null || base == null || !hasFilters) return "sb-neutral";
+    const diff = val - base;
+    if (Math.abs(diff) < 1) return "sb-neutral";
+    return (higherBetter ? diff > 0 : diff < 0) ? "sb-better" : "sb-worse";
+  }
+  const bStats = baseline || stats;
+  return (
+    <div className="stats-banner">
+      <div className={`sb-stat ${signal(stats.completion_pct, bStats.completion_pct)}`}>
+        <span className="sb-value">{stats.completion_pct ?? "\u2014"}%</span>
+        <span className="sb-label">completed</span>
+        {hasFilters && baseline && Math.abs(stats.completion_pct - baseline.completion_pct) >= 1 && (
+          <span className="sb-delta">{stats.completion_pct > baseline.completion_pct ? "\u25b2" : "\u25bc"}{Math.abs(+(stats.completion_pct - baseline.completion_pct).toFixed(1))}pp</span>
+        )}
+      </div>
+      <div className="sb-divider" />
+      <div className={`sb-stat ${signal(stats.active_pct, bStats.active_pct)}`}>
+        <span className="sb-value">{stats.active_pct ?? "\u2014"}%</span>
+        <span className="sb-label">active</span>
+        {hasFilters && baseline && Math.abs(stats.active_pct - baseline.active_pct) >= 1 && (
+          <span className="sb-delta">{stats.active_pct > baseline.active_pct ? "\u25b2" : "\u25bc"}{Math.abs(+(stats.active_pct - baseline.active_pct).toFixed(1))}pp</span>
+        )}
+      </div>
+      <div className="sb-divider" />
+      <div className="sb-stat sb-neutral">
+        <span className="sb-value">{stats.avg_enrollment != null ? stats.avg_enrollment.toLocaleString() : "\u2014"}</span>
+        <span className="sb-label">avg enrolled</span>
+      </div>
+      <div className="sb-divider" />
+      <div className="sb-stat sb-neutral">
+        <span className="sb-value">{stats.total.toLocaleString()}</span>
+        <span className="sb-label">trials</span>
+      </div>
+    </div>
+  );
+}
+
+export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -501,6 +456,9 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
 
   if (!hasAnyData) return null;
 
+  const currentStats = computeStats(aggData);
+  const baselineStats = computeStats(baseAggData);
+
   return (
     <div className="trials-charts-section">
       <div className="trials-charts-header">
@@ -513,6 +471,7 @@ export default function TrialsCharts({ trials, aggData, activeFilters = [], onFi
           </button>
         )}
       </div>
+      <StatsBanner stats={currentStats} baseline={baselineStats} hasFilters={activeFilters.length > 0} />
       <div className="trials-charts-grid">
         {hasData(phaseData) && (
           phaseData.length > 3 ? (

@@ -482,6 +482,7 @@ export default function TrialsPanel() {
                 <TrialsCharts
                   trials={(results || baseResults).results}
                   aggData={chartAggData || aggData}
+                  baseAggData={aggData}
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
                   fetchSponsors={fetchSponsors}

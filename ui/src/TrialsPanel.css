@@ -1247,27 +1247,54 @@
 .intel-comparables-table a { color: #388bfd; text-decoration: none; }
 .intel-comparables-table a:hover { text-decoration: underline; }
 
-/* Inline metrics strip shown below chart when bar is clicked */
-.bar-metrics-strip {
+/* Stats banner above charts */
+.stats-banner {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  padding: 6px 10px 8px;
+  align-items: stretch;
+  gap: 0;
   background: #161b22;
-  border-top: 1px solid #21262d;
-  border-radius: 0 0 6px 6px;
-  font-size: 11.5px;
-  min-height: 28px;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  overflow: hidden;
 }
-.bms-stat {
-  color: #c9d1d9;
+.sb-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 6px;
+  gap: 2px;
+  position: relative;
+  transition: background 0.15s;
+}
+.sb-value {
+  font-size: 18px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
-.bms-sep {
-  color: #484f58;
+.sb-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b949e;
 }
-.bms-loading {
-  color: #484f58;
-  font-style: italic;
+.sb-delta {
+  font-size: 10px;
+  font-weight: 600;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+}
+.sb-neutral .sb-value { color: #c9d1d9; }
+.sb-better .sb-value { color: #3fb950; }
+.sb-worse  .sb-value { color: #f85149; }
+.sb-better .sb-delta { color: #3fb950; }
+.sb-worse  .sb-delta { color: #f85149; }
+.sb-divider {
+  width: 1px;
+  background: #21262d;
+  align-self: stretch;
 }
