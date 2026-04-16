@@ -356,7 +356,9 @@ function StatsBanner({ stats, baseline, hasFilters }) {
   );
 }
 
-export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
+export { computeStats };
+
+export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter, stats, baselineStats, hasFilteredStats, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -456,8 +458,8 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
 
   if (!hasAnyData) return null;
 
-  const currentStats = computeStats(aggData);
-  const baselineStats = computeStats(baseAggData);
+  const currentStats = stats || computeStats(aggData);
+  const bStats = baselineStats || computeStats(baseAggData);
 
   return (
     <div className="trials-charts-section">
@@ -471,7 +473,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
           </button>
         )}
       </div>
-      <StatsBanner stats={currentStats} baseline={baselineStats} hasFilters={activeFilters.length > 0} />
+      <StatsBanner stats={currentStats} baseline={bStats} hasFilters={hasFilteredStats ?? activeFilters.length > 0} />
       <div className="trials-charts-grid">
         {hasData(phaseData) && (
           phaseData.length > 3 ? (

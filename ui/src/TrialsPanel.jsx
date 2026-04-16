@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
-import TrialsCharts from "./TrialsCharts";
+import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
@@ -58,6 +58,10 @@ export default function TrialsPanel() {
   const [intelStep, setIntelStep] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+
+  const currentAgg = chartAggData || aggData;
+  const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
+  const panelBaseStats = useMemo(() => computeStats(aggData), [aggData]);
 
   const {
     rules, addGrouping, removeGrouping, updateGrouping, setEnrollmentBounds,
@@ -481,8 +485,11 @@ export default function TrialsPanel() {
                 {/* Charts — full width above results */}
                 <TrialsCharts
                   trials={(results || baseResults).results}
-                  aggData={chartAggData || aggData}
+                  aggData={currentAgg}
                   baseAggData={aggData}
+                  stats={panelStats}
+                  baselineStats={panelBaseStats}
+                  hasFilteredStats={chartFilters.length > 0}
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
                   fetchSponsors={fetchSponsors}
