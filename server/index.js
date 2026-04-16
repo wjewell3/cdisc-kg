@@ -1399,7 +1399,21 @@ app.get("/api/graph/sponsor-network", async (req, res) => {
       ORDER BY trials DESC LIMIT 10
     `, { sponsor });
 
+    // Total trial count
+    const countRecord = await cypher(`
+      MATCH (sp:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)
+      RETURN COUNT(t) AS total
+    `, { sponsor });
+
+    // Top interventions
+    const intRecords = await cypher(`
+      MATCH (sp:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)-[:USES]->(i:Intervention)
+      RETURN i.name AS intervention, COUNT(DISTINCT t) AS trials
+      ORDER BY trials DESC LIMIT 10
+    `, { sponsor });
+
     res.json({
+      trial_count: nInt(countRecord[0]?.get("total") ?? 0),
       top_sites: siteRecords.map(r => ({
         site: r.get("site"), country: r.get("country"),
         trials: nInt(r.get("trials")), completed: nInt(r.get("completed")),
@@ -1411,6 +1425,10 @@ app.get("/api/graph/sponsor-network", async (req, res) => {
       })),
       conditions: condRecords.map(r => ({
         condition: r.get("condition"),
+        trials: nInt(r.get("trials")),
+      })),
+      interventions: intRecords.map(r => ({
+        intervention: r.get("intervention"),
         trials: nInt(r.get("trials")),
       })),
     });

@@ -42,7 +42,8 @@ function TherapeuticAdjacency() {
     setResults(null);
     try {
       const data = await graphFetch("therapeutic-adjacency", { condition: condition.trim(), limit: 20 });
-      setResults(data);
+      // API returns a flat array of { condition, shared_interventions, example_drugs }
+      setResults({ condition: condition.trim(), adjacent: Array.isArray(data) ? data : [] });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -50,12 +51,12 @@ function TherapeuticAdjacency() {
     }
   }
 
-  const maxWeight = results?.adjacentConditions?.[0]?.sharedInterventions ?? 1;
+  const maxWeight = results?.adjacent?.[0]?.shared_interventions ?? 1;
 
   return (
     <div className="kg-section">
       <div className="kg-section-header">
-        <span className="kg-icon">⬡</span>
+        <span className="kg-icon">&#x2b21;</span>
         <div>
           <h3>Therapeutic Adjacency</h3>
           <p>Conditions frequently targeted by the same interventions — drug repurposing signals &amp; competitive landscape</p>
@@ -81,35 +82,33 @@ function TherapeuticAdjacency() {
         <div className="kg-results">
           <div className="kg-results-meta">
             <span className="kg-badge-teal">{results.condition}</span>
-            <span className="kg-meta-text">
-              {results.trialCount?.toLocaleString()} trials · {results.interventionCount?.toLocaleString()} interventions
-            </span>
-            <span className="kg-meta-text">→ {results.adjacentConditions?.length} adjacent conditions</span>
+            <span className="kg-meta-text">→ {results.adjacent.length} adjacent conditions found</span>
           </div>
 
           <div className="kg-explain">
             <strong>How to read this:</strong> Each row is a condition that shares clinical interventions with <em>{results.condition}</em>.
-            The bar shows how many distinct interventions overlap — higher overlap = stronger therapeutic adjacency.
+            The bar shows how many distinct interventions overlap — higher = stronger therapeutic adjacency.
           </div>
 
           <div className="kg-adjacency-list">
-            {results.adjacentConditions?.map((c, i) => (
+            {results.adjacent.map((c, i) => (
               <div key={i} className="kg-adj-row">
                 <div className="kg-adj-name" title={c.condition}>{c.condition}</div>
                 <div className="kg-adj-bar-wrap">
                   <div
                     className="kg-adj-bar"
-                    style={{ width: `${Math.max(4, (c.sharedInterventions / maxWeight) * 100)}%` }}
+                    style={{ width: `${Math.max(4, (c.shared_interventions / maxWeight) * 100)}%` }}
                   />
                 </div>
                 <div className="kg-adj-count">
-                  <span className="kg-adj-interventions">{c.sharedInterventions.toLocaleString()}</span>
+                  <span className="kg-adj-interventions">{c.shared_interventions.toLocaleString()}</span>
                   <span className="kg-adj-label"> shared interventions</span>
                 </div>
-                <div className="kg-adj-trials">
-                  <span>{c.sharedTrials?.toLocaleString()}</span>
-                  <span className="kg-adj-label"> trials</span>
-                </div>
+                {c.example_drugs?.length > 0 && (
+                  <div className="kg-adj-trials" title={c.example_drugs.join(", ")}>
+                    <span className="kg-adj-label">e.g. </span>{c.example_drugs[0]}{c.example_drugs.length > 1 ? `…` : ""}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -171,14 +170,14 @@ function SponsorNetwork() {
       {results && (
         <div className="kg-results">
           <div className="kg-results-meta">
-            <span className="kg-badge-purple">{results.sponsor}</span>
-            <span className="kg-meta-text">{results.trialCount?.toLocaleString()} total trials</span>
+            <span className="kg-badge-purple">{sponsor}</span>
+            {results.trial_count > 0 && <span className="kg-meta-text">{results.trial_count.toLocaleString()} total trials</span>}
           </div>
 
           <div className="kg-two-col">
             <div className="kg-col">
               <h4 className="kg-col-title">Top Conditions</h4>
-              {results.topConditions?.map((c, i) => (
+              {results.conditions?.map((c, i) => (
                 <div key={i} className="kg-list-row">
                   <span className="kg-list-rank">{i + 1}</span>
                   <span className="kg-list-name">{c.condition}</span>
@@ -189,7 +188,7 @@ function SponsorNetwork() {
 
             <div className="kg-col">
               <h4 className="kg-col-title">Top Interventions</h4>
-              {results.topInterventions?.map((c, i) => (
+              {results.interventions?.map((c, i) => (
                 <div key={i} className="kg-list-row">
                   <span className="kg-list-rank">{i + 1}</span>
                   <span className="kg-list-name">{c.intervention}</span>
@@ -199,14 +198,14 @@ function SponsorNetwork() {
             </div>
           </div>
 
-          {results.competitorOverlap?.length > 0 && (
+          {results.competitors?.length > 0 && (
             <div className="kg-competitor-section">
-              <h4 className="kg-col-title">Competitor Overlap <span className="kg-chip">(sponsors sharing top conditions)</span></h4>
-              {results.competitorOverlap?.map((c, i) => (
+              <h4 className="kg-col-title">Competitor Overlap <span className="kg-chip">(sponsors sharing sites — available after full reload)</span></h4>
+              {results.competitors.map((c, i) => (
                 <div key={i} className="kg-list-row">
                   <span className="kg-list-rank">{i + 1}</span>
                   <span className="kg-list-name">{c.competitor}</span>
-                  <span className="kg-list-count">{c.sharedConditions} shared conditions · {c.sharedTrials?.toLocaleString()} trials</span>
+                  <span className="kg-list-count">{c.shared_sites} shared sites · {c.competitor_trials?.toLocaleString()} trials</span>
                 </div>
               ))}
             </div>
