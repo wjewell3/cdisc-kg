@@ -357,7 +357,7 @@ export default function TrialsPanel() {
         </div>
         <div className="trials-badge-row">
           <button className="rules-manager-btn" onClick={() => setRulesOpen(true)}>
-            ⚙ Rules{rules.groupings.length > 0 ? ` (${rules.groupings.length})` : ""}
+            ⚙ Rules{(rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)) > 0 ? ` (${rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)})` : ""}
             {(enrollMin !== null || enrollMax !== null) && <span className="rules-bounds-badge">●</span>}
           </button>
           <span className="aact-badge">AACT Snapshot</span>

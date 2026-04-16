@@ -36,7 +36,12 @@ export default function RulesManager({
         body: JSON.stringify({ text: aiText }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (!res.ok) {
+        const isExpired = (data.detail || "").includes("403") || (data.error || "").includes("403");
+        throw new Error(isExpired
+          ? "GitHub Copilot token expired — refresh it with: kubectl delete secret aact-credentials -n cdisc-kg && kubectl create secret generic aact-credentials -n cdisc-kg --from-literal=GITHUB_COPILOT_TOKEN=<new-token> ... then vercel env rm GITHUB_COPILOT_TOKEN && vercel env add GITHUB_COPILOT_TOKEN production"
+          : data.error || `HTTP ${res.status}`);
+      }
       setAiResult(data);
     } catch (e) {
       setAiError(e.message);
@@ -72,13 +77,14 @@ export default function RulesManager({
     return acc;
   }, {});
   const totalGroupings = (rules.groupings || []).length;
+  const totalActive = totalGroupings + (enrollMin !== null || enrollMax !== null ? 1 : 0);
 
   return (
     <div className="rm-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="rm-drawer slide-in">
         <div className="rm-header">
           <h2>⚙ Data Quality Rules</h2>
-          <span className="rm-header-sub">{totalGroupings} grouping{totalGroupings !== 1 ? "s" : ""} active</span>
+          <span className="rm-header-sub">{totalActive} rule{totalActive !== 1 ? "s" : ""} active</span>
           <button className="rm-close" onClick={onClose}>×</button>
         </div>
 
@@ -209,10 +215,23 @@ export default function RulesManager({
 
           {/* ── Active rules ── */}
           <div className="rm-section">
-            <h3>Active Grouping Rules</h3>
-            {totalGroupings === 0 ? (
-              <p className="rm-empty">No grouping rules yet — add one above.</p>
-            ) : (
+            <h3>Active Rules</h3>
+            {(enrollMin !== null || enrollMax !== null) && (
+              <div className="rm-rule-row rm-bounds-active">
+                <div className="rm-rule-info">
+                  <span className="rm-rule-canonical">Enrollment bounds</span>
+                  <span className="rm-rule-raw">
+                    {enrollMin !== null ? `min ${enrollMin.toLocaleString()}` : ""}
+                    {enrollMin !== null && enrollMax !== null ? " · " : ""}
+                    {enrollMax !== null ? `max ${enrollMax.toLocaleString()}` : ""}
+                  </span>
+                </div>
+                <button className="rm-remove-btn" onClick={() => setEnrollmentBounds(null, null)} title="Clear bounds">×</button>
+              </div>
+            )}
+            {totalGroupings === 0 && enrollMin === null && enrollMax === null ? (
+              <p className="rm-empty">No rules yet — add one above.</p>
+            ) : totalGroupings === 0 ? null : (
               FIELDS.map((f) => groupingsByField[f].length > 0 && (
                 <div key={f} className="rm-field-group">
                   <div className="rm-field-label">{f}</div>
