@@ -1,0 +1,94 @@
+{
+  "_meta": {
+    "description": "Data quality normalization rules for clinical trials data. Each rule maps one or more raw source values to a canonical display value within a named group. Used to deduplicate and group synonymous entries in charts and filters.",
+    "schema_version": "1.0",
+    "fields": {
+      "group": "Human-readable label for this canonical value",
+      "canonical": "The normalized value to display/store",
+      "raw_values": "Exact source strings (case-sensitive) that map to this canonical value",
+      "match_case_insensitive": "If true, matching ignores case (default: false)",
+      "notes": "Optional explanation for why these are grouped"
+    }
+  },
+  "intervention": [
+    {
+      "group": "Placebo / No Intervention",
+      "canonical": "Placebo",
+      "match_case_insensitive": true,
+      "raw_values": [
+        "Placebo",
+        "placebo",
+        "PLACEBO",
+        "Placebo Comparator",
+        "placebo comparator",
+        "No intervention",
+        "No Intervention",
+        "NO INTERVENTION",
+        "No treatment",
+        "No Treatment",
+        "Observation",
+        "Watchful waiting",
+        "Watchful Waiting",
+        "Wait and see"
+      ],
+      "notes": "All non-active control arms — editorial decision to group as 'Placebo' for chart deduplication"
+    },
+    {
+      "group": "Standard of Care",
+      "canonical": "Standard of Care",
+      "match_case_insensitive": true,
+      "raw_values": [
+        "Standard of care",
+        "Standard of Care",
+        "Standard Care",
+        "standard care",
+        "SOC",
+        "Best supportive care",
+        "Best Supportive Care",
+        "Usual care",
+        "Usual Care"
+      ],
+      "notes": "Baseline/control arms representing current standard treatment"
+    }
+  ],
+  "status": [
+    {
+      "group": "Active (not enrolling)",
+      "canonical": "ACTIVE_NOT_RECRUITING",
+      "match_case_insensitive": false,
+      "raw_values": [
+        "ACTIVE_NOT_RECRUITING",
+        "Active, not recruiting"
+      ],
+      "notes": "CT.gov uses both formats across eras"
+    }
+  ],
+  "phase": [
+    {
+      "group": "Phase 1/2 Combined",
+      "canonical": "PHASE1/PHASE2",
+      "match_case_insensitive": false,
+      "raw_values": [
+        "Phase 1/Phase 2",
+        "Phase I/Phase II",
+        "Phase 1/2",
+        "Phase I/II"
+      ],
+      "notes": "Combination phase trials stored inconsistently across submission eras"
+    },
+    {
+      "group": "Phase 2/3 Combined",
+      "canonical": "PHASE2/PHASE3",
+      "match_case_insensitive": false,
+      "raw_values": [
+        "Phase 2/Phase 3",
+        "Phase II/Phase III",
+        "Phase 2/3",
+        "Phase II/III"
+      ],
+      "notes": "Combination phase trials stored inconsistently across submission eras"
+    }
+  ],
+  "sponsor": [],
+  "condition": []
+}

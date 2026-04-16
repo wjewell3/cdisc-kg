@@ -53,6 +53,7 @@ export default function TrialsPanel() {
   const [chartAggData, setChartAggData] = useState(null); // aggregates re-fetched on chart filter clicks
   const [displayCount, setDisplayCount] = useState(25);
   const [intelligence, setIntelligence] = useState(null); // { data, loading, error }
+  const [searchFocused, setSearchFocused] = useState(false);
 
   const analyzeTrialIntelligence = useCallback(async (nct_id) => {
     setIntelligence({ loading: true, data: null, error: null });
@@ -220,7 +221,7 @@ export default function TrialsPanel() {
     }
   }, []);
 
-  const handlePreset = useCallback((q) => runQuery(q.text), [runQuery]);
+  const handlePreset = useCallback((q) => { setSearchFocused(false); runQuery(q.text); }, [runQuery]);
 
   const handleSubmit = useCallback(
     (e) => {
@@ -320,36 +321,40 @@ export default function TrialsPanel() {
             )}
           </div>
 
-          <form onSubmit={handleSubmit} className="query-form" style={{ margin: 0 }}>
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder='e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
-              className="query-input"
-            />
-            <button type="submit" className="query-submit" disabled={!query.trim()}>
-              Search →
-            </button>
-          </form>
+          <div className="search-wrap">
+            <form onSubmit={handleSubmit} className="query-form" style={{ margin: 0 }}>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+                placeholder='e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
+                className="query-input"
+              />
+              <button type="submit" className="query-submit" disabled={!query.trim()}>
+                Search →
+              </button>
+            </form>
 
-          {/* Preset queries — always visible */}
-          <div className="preset-section">
-            <div className="preset-grid">
-              {TRIAL_QUERIES.map((q) => (
-                <button
-                  key={q.id}
-                  className={`preset-card ${activeQuery === q.text ? "preset-card-active" : ""}`}
-                  onClick={() => handlePreset(q)}
-                >
-                  <span className="preset-text">"{q.text}"</span>
-                  <span className="preset-desc">{q.description}</span>
-                  <div className="preset-tags">
-                    {q.tags.map((t) => <span key={t} className="preset-tag">{t}</span>)}
-                  </div>
-                </button>
-              ))}
-            </div>
+            {/* Preset queries — shown as dropdown when search box is focused */}
+            {searchFocused && (
+              <div className="preset-dropdown">
+                {TRIAL_QUERIES.map((q) => (
+                  <button
+                    key={q.id}
+                    className={`preset-dropdown-item ${activeQuery === q.text ? "preset-card-active" : ""}`}
+                    onMouseDown={(e) => { e.preventDefault(); handlePreset(q); }}
+                  >
+                    <span className="preset-text">"{q.text}"</span>
+                    <span className="preset-desc">{q.description}</span>
+                    <div className="preset-tags">
+                      {q.tags.map((t) => <span key={t} className="preset-tag">{t}</span>)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

@@ -150,7 +150,11 @@
 .query-form {
   display: flex;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 0;
+}
+
+.search-wrap {
+  position: relative;
 }
 
 .query-input {
@@ -265,7 +269,44 @@
   letter-spacing: 0.03em;
 }
 
-/* ── Resolution cards ── */
+/* ── Preset dropdown (shown on search focus) ── */
+.preset-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.preset-dropdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #21262d;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.preset-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.preset-dropdown-item:hover,
+.preset-dropdown-item.preset-card-active {
+  background: #1c2128;
+}
+
+
 .resolution-count {
   margin-left: auto;
   font-size: 12px;

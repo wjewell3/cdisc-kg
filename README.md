@@ -57,7 +57,25 @@ The core feature. A full-page search UI backed by a 580k-study SQLite snapshot o
 
 **Sponsor chart:** Shows top 10 sponsors by default with an "other sponsors" bar representing the remainder. The search box queries all sponsors across the full filtered dataset (server-side, not just top 10).
 
-**Trial Intelligence:** Clicking a trial fetches comparable trials (via FTS5), computes risk signals (early stopping, missing DMC, enrollment gaps), and sends them to GPT-4.1 for a plain-English briefing.
+**Trial Intelligence:** Click any trial row to open an AI-generated risk briefing. See below for how it works.
+
+## How Analyze Trial Risk works
+
+When you click a trial and hit **Analyze Trial Risk**, the server runs four steps:
+
+1. **Looks up the trial** — pulls its full record from the SQLite snapshot: title, phase, conditions, interventions, sponsor, enrollment target, and start/completion dates.
+
+2. **Finds "comparable" trials** — searches the database for other trials that already *finished* (completed or terminated) with similar condition keywords, restricted to the same trial phase. This is your benchmark group. If fewer than 10 keyword matches exist, it falls back to a random sample of same-phase completed/terminated trials.
+
+3. **Crunches benchmarks** — entirely from the comparable group, it computes:
+   - What % got cancelled early (termination rate)
+   - How long trials typically ran (median + P25/P75 in months)
+   - Typical enrollment size vs. this trial's target
+   - Common reasons comparable trials were stopped
+
+4. **Asks GPT-4.1 to write the briefing** — all the above numbers get sent to the AI with a prompt framing it as a senior CRO/sponsor executive risk briefing. GPT-4.1 writes 3–5 plain-English paragraphs interpreting what the benchmarks mean for this specific trial.
+
+**Note on observational registries:** Some trials (like large national registries) store a placeholder enrollment of `99,999,999` in CT.gov to mean "ongoing, uncapped." The enrollment comparison will be nonsensical for these — the AI usually recognises the registry context and says so.
 
 ## Server API
 
