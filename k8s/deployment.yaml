@@ -66,6 +66,12 @@ spec:
                 secretKeyRef:
                   name: aact-credentials
                   key: GITHUB_COPILOT_TOKEN
+            - name: NEO4J_URI
+              value: "bolt://neo4j:7687"
+            - name: NEO4J_USER
+              value: "neo4j"
+            - name: NEO4J_PASS
+              value: "trials-kg-2026"
           volumeMounts:
             - name: data
               mountPath: /data
