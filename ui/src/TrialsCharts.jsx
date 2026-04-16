@@ -268,29 +268,33 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
   );
 }
 
-export default function TrialsCharts({ trials, aggData, activeFilters = [], onFilter }) {
+export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
+  // For each chart's OWN dimension, always use base (unfiltered) agg so bars never disappear.
+  // For the total count badge and enrollment histogram, use filtered aggData.
+  const dimAgg = baseAggData || aggData;
+
   const phaseData = useMemo(() => {
-    if (aggData?.phase) {
-      return Object.entries(aggData.phase).sort((a, b) => {
+    if (dimAgg?.phase) {
+      return Object.entries(dimAgg.phase).sort((a, b) => {
         const ai = PHASE_ORDER.indexOf(a[0]); const bi = PHASE_ORDER.indexOf(b[0]);
         return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
       });
     }
     const raw = countBy(filterTrials(trials, activeFilters, "phase"), (t) => t.phase || "Unknown");
     return raw.sort((a, b) => { const ai = PHASE_ORDER.indexOf(a[0]); const bi = PHASE_ORDER.indexOf(b[0]); return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi); });
-  }, [trials, activeFilters, aggData]);
+  }, [trials, activeFilters, dimAgg]);
 
   const statusData = useMemo(() => {
-    if (aggData?.status) return Object.entries(aggData.status).sort((a, b) => b[1] - a[1]);
+    if (dimAgg?.status) return Object.entries(dimAgg.status).sort((a, b) => b[1] - a[1]);
     return countBy(filterTrials(trials, activeFilters, "status"), (t) => t.status || "Unknown");
-  }, [trials, activeFilters, aggData]);
+  }, [trials, activeFilters, dimAgg]);
 
   const sponsorData = useMemo(() => {
-    if (aggData?.sponsor) return aggData.sponsor.slice(0, 8);
+    if (dimAgg?.sponsor) return dimAgg.sponsor.slice(0, 8);
     return countBy(filterTrials(trials, activeFilters, "sponsor"), (t) => t.sponsor || "Unknown").slice(0, 8);
-  }, [trials, activeFilters, aggData]);
+  }, [trials, activeFilters, dimAgg]);
 
   const totalCount = aggData?.total ?? trials.length;
   const hasEnrollment = aggData?.enrollment
