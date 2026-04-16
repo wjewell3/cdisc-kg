@@ -1481,3 +1481,116 @@
 .preset-graph {
   border-left: 2px solid rgba(167, 139, 250, 0.4);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   KG Universe — always-visible schema viz
+   ═══════════════════════════════════════════════════════════════ */
+.kg-universe-section {
+  padding-bottom: 4px;
+}
+.kg-universe-hint {
+  margin: 0 0 12px 0;
+  padding: 0 20px;
+  font-size: 12px;
+  color: #6e7681;
+  line-height: 1.5;
+}
+
+/* GraphViz wrapper */
+.graph-viz-wrap {
+  position: relative;
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+  background: #0f172a;
+  border-top: 1px solid #21262d;
+}
+.graph-viz-schema-label {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #334155;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  z-index: 2;
+  pointer-events: none;
+}
+.graph-viz-tooltip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #e2e8f0;
+  pointer-events: none;
+  z-index: 10;
+  max-width: 220px;
+  backdrop-filter: blur(4px);
+}
+.graph-viz-tooltip strong {
+  display: block;
+  font-size: 13px;
+  color: #f1f5f9;
+  margin-bottom: 3px;
+}
+.graph-viz-tooltip-via {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.graph-viz-legend {
+  position: absolute;
+  bottom: 10px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: #475569;
+  z-index: 2;
+  pointer-events: none;
+  flex-wrap: wrap;
+}
+.gvl-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: -4px;
+}
+.gvl-hint {
+  margin-left: 6px;
+  color: #334155;
+  font-size: 10px;
+}
+
+/* Table/Graph toggle */
+.graph-view-toggle {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.gvt-btn {
+  background: #161b22;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.gvt-btn:hover {
+  background: #21262d;
+  color: #c9d1d9;
+}
+.gvt-btn.active {
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(14, 165, 233, 0.4);
+  color: #38bdf8;
+}

@@ -3,6 +3,7 @@ import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSe
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import { KGContextPanel } from "./GraphIntelligence";
+import GraphViz from "./GraphViz";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 import "./GraphIntelligence.css";
@@ -61,6 +62,8 @@ export default function TrialsPanel() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [graphResult, setGraphResult] = useState(null); // { cypher, columns, rows, narrative, loading, error }
+  const [graphQueryId, setGraphQueryId] = useState(null); // preset id (g1-g5) for viz shape
+  const [graphView, setGraphView] = useState("graph"); // "graph" | "table"
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -249,11 +252,16 @@ export default function TrialsPanel() {
     setShowFilterPicker(false);
     setDisplayCount(25);
     setGraphResult(null);
+    setGraphQueryId(null);
 
     // Check if this is a graph-native question (NL → Cypher)
     if (isGraphQuestion(text)) {
       setResolutions([{ label: `Graph query: "${text}"`, param: "graph", value: text, kgPath: "NL → Cypher → Neo4j" }]);
       setActiveResolutions([]);
+      // Capture preset id so the viz knows which shape to build
+      const preset = TRIAL_QUERIES.find(q => q.isGraph && q.text === text);
+      setGraphQueryId(preset?.id ?? null);
+      setGraphView("graph");
       setGraphResult({ loading: true, error: null, cypher: null, columns: [], rows: [], narrative: null });
       // Don't show full-page spinner — keep charts visible beneath the graph panel.
       // Move to "results" so the base charts section renders (from baseResults).
@@ -478,14 +486,44 @@ export default function TrialsPanel() {
           </div>
         )}
 
-        {/* ── Graph Query Panel — independent of step, shows above charts ── */}
+        {/* ── KG Universe — always-visible schema viz ───────────────── */}
+        <div className="trials-section kg-universe-section">
+          <div className="section-header">
+            <div className="section-icon">&#x2B21;</div>
+            <h2>Knowledge Graph</h2>
+            <span className="result-count">580k+ trials</span>
+          </div>
+          <p className="kg-universe-hint">
+            The KG connects every trial to its sponsor, conditions, interventions, and countries.
+            Run a graph query above to zoom into a subgraph.
+          </p>
+          <GraphViz
+            queryId={graphResult && !graphResult.loading && !graphResult.error && graphResult.rows?.length > 0 ? graphQueryId : null}
+            columns={graphResult?.columns ?? []}
+            rows={graphResult && !graphResult.loading && !graphResult.error ? (graphResult.rows ?? []) : []}
+          />
+        </div>
+
+        {/* ── Graph Query Results panel ─────────────────────────────── */}
         {graphResult && (
           <div className="trials-section graph-query-section slide-in">
             <div className="section-header">
-              <div className="section-icon">&#x2B21;</div>
+              <div className="section-icon">&#x2B22;</div>
               <h2>Graph Query Results</h2>
               {!graphResult.loading && !graphResult.error && (
                 <span className="result-count">{graphResult.total} rows</span>
+              )}
+              {!graphResult.loading && !graphResult.error && graphResult.rows?.length > 0 && (
+                <div className="graph-view-toggle">
+                  <button
+                    className={`gvt-btn${graphView === "graph" ? " active" : ""}`}
+                    onClick={() => setGraphView("graph")}
+                  >&#x25CB; Graph</button>
+                  <button
+                    className={`gvt-btn${graphView === "table" ? " active" : ""}`}
+                    onClick={() => setGraphView("table")}
+                  >&#x22A4; Table</button>
+                </div>
               )}
             </div>
 
@@ -518,32 +556,34 @@ export default function TrialsPanel() {
                   </details>
                 )}
                 {graphResult.rows.length > 0 ? (
-                  <div className="graph-table-wrap">
-                    <table className="graph-result-table">
-                      <thead>
-                        <tr>
-                          {graphResult.columns.map(col => (
-                            <th key={col}>{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {graphResult.rows.map((row, i) => (
-                          <tr key={i}>
+                  graphView === "table" ? (
+                    <div className="graph-table-wrap">
+                      <table className="graph-result-table">
+                        <thead>
+                          <tr>
                             {graphResult.columns.map(col => (
-                              <td key={col}>
-                                {Array.isArray(row[col])
-                                  ? row[col].join(", ")
-                                  : typeof row[col] === "number"
-                                    ? row[col].toLocaleString()
-                                    : String(row[col] ?? "")}
-                              </td>
+                              <th key={col}>{col}</th>
                             ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {graphResult.rows.map((row, i) => (
+                            <tr key={i}>
+                              {graphResult.columns.map(col => (
+                                <td key={col}>
+                                  {Array.isArray(row[col])
+                                    ? row[col].join(", ")
+                                    : typeof row[col] === "number"
+                                      ? row[col].toLocaleString()
+                                      : String(row[col] ?? "")}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null /* graph view is shown in the KG Universe section above */
                 ) : (
                   <div className="graph-empty">No results returned for this query.</div>
                 )}
