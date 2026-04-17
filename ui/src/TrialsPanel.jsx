@@ -401,11 +401,13 @@ export default function TrialsPanel() {
   const kgFilterStats = useMemo(() => {
     const agg = currentAgg;
     if (!agg || !chartFilters.length) return null; // null = use defaults
+    // agg arrays are [name, count] tuples
+    const sumArr = (arr) => arr?.reduce((s, d) => s + (Array.isArray(d) ? (d[1] || 0) : (d.count || 0)), 0) || 0;
     return {
       total: agg.total || 0,
-      sponsors: agg.sponsor?.reduce((s, d) => s + (d.count || 0), 0) || 0,
-      conditions: agg.condition?.reduce((s, d) => s + (d.count || 0), 0) || 0,
-      interventions: agg.intervention?.reduce((s, d) => s + (d.count || 0), 0) || 0,
+      sponsors: sumArr(agg.sponsor),
+      conditions: sumArr(agg.condition),
+      interventions: sumArr(agg.intervention),
     };
   }, [currentAgg, chartFilters]);
 
