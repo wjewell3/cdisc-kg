@@ -23,8 +23,9 @@ function rateColor(rate) {
 }
 
 // ── Mini bar component (reused) ────────────────────────────────────
-function MiniBar({ data, title, maxItems = 10, valueLabel = "", highlightFn }) {
-  const items = data.slice(0, maxItems);
+function MiniBar({ data, title, maxItems = 10, valueLabel = "", highlightFn, sort = "desc" }) {
+  const sorted = sort === "none" ? data : [...data].sort((a, b) => sort === "asc" ? a.value - b.value : b.value - a.value);
+  const items = sorted.slice(0, maxItems);
   if (!items.length) return null;
   const maxVal = Math.max(...items.map(d => d.value), 1);
   return (
