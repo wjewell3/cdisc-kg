@@ -41,7 +41,7 @@ export default function SiteIntelligence({ onSelectTrial }) {
     setSearchResults(null);
     try {
       const base = trialsApiBase();
-      const url = base ? `${base}/api/site?mode=search&q=${encodeURIComponent(query)}` : `/api/site?mode=search&q=${encodeURIComponent(query)}`;
+      const url = base ? `${base}/api/site-search?q=${encodeURIComponent(query)}` : `/api/site?mode=search&q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);

@@ -94,20 +94,23 @@ Together, these layers provide both the operational data semantics (Neo4j trials
 | Active trial % | Stats banner |
 | Avg enrollment | Stats banner |
 | Trial duration | Trial Intelligence briefing |
-| Termination rate | Trial risk scoring (benchmarked) |
+| Termination rate | Trial risk scoring (benchmarked) + Failure Analysis KPI (by condition/phase) |
+| Termination rate by therapeutic area | Operational KPIs → Failure Analysis tab (stop reasons, breakdowns by condition + phase) |
+| Sponsor completion rates | Operational KPIs → Sponsor Performance tab (completion rate leaderboard) |
+| Enrollment ambition vs actuals | Operational KPIs → Enrollment Benchmark tab (by allocation, masking, intervention model) |
 | Dropout reasons | Trial Intelligence briefing |
 | Design complexity | Trial risk score factor |
 | Eligibility complexity | Trial risk score factor |
 | Site/facility count | Trial risk score factor |
 | Countries | Trial Intelligence briefing |
+| Site portfolio & profile | Site Intelligence tab (search + deep site dossier) |
+| Entity insight (any dimension) | InsightPanel (double-click chart bar → portfolio analytics + GPT-4.1 briefing) |
 
 ### Dimensions Ingested but NOT Yet Surfaced — Roadmap
 
 | Dimension | Source | Planned Surface |
 |---|---|---|
 | **Avg duration by phase/therapeutic area** | `calculated_values.actual_duration` | Operational KPI chart — heatmap or grouped bars |
-| **Termination rate by therapeutic area** | `studies.overall_status` + `conditions` | Operational KPI chart — which disease areas have highest failure rates |
-| **Enrollment ambition vs actuals** | `studies.enrollment` + `enrollment_type` (anticipated vs actual) | Scatter or comparison chart |
 | **Age range / demographics** | `calculated_values.minimum_age_num`, `maximum_age_num` | Chart facet — filter by pediatric/adult/geriatric |
 | **SAE subject counts** | `calculated_values.number_of_sae_subjects`, `number_of_nsae_subjects` | Safety signal dimension — high SAE sponsors/conditions |
 | **Outcome count** | `calculated_values.number_of_primary/secondary_outcomes_to_measure` | Complexity signal — trials measuring many endpoints |
@@ -136,27 +139,28 @@ Together, these layers provide both the operational data semantics (Neo4j trials
 cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
-│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph, Data Catalog, Standards Q&A, SDTM Training, Demo
-│       ├── TrialsPanel.jsx    # Main search + cross-filter chart UI
-│       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner
+│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph, Data Catalog, Standards Q&A, SDTM Training, Site Intelligence, Demo
+│       ├── TrialsPanel.jsx    # Main search + cross-filter charts + operational KPIs + entity insight + graph→filter bridge
+│       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner (double-click bar → entity insight)
+│       ├── OperationalKPIs.jsx # 3-tab panel: Failure Analysis, Sponsor Performance, Enrollment Benchmark
 │       ├── GraphViz.jsx       # Cytoscape.js trial-graph visualization (Neo4j → browser)
 │       ├── RulesManager.jsx   # DQ rules: grouping normalization, enrollment bounds
 │       ├── TreeView.jsx       # SDTM standards data catalog (Browse tab)
 │       ├── QueryPanel.jsx     # NL → standards graph Q&A
 │       ├── TutorPanel.jsx     # SDTM training module
-│       ├── InsightPanel.jsx   # Entity-level operational insight (available, not wired)
-│       ├── SiteIntelligence.jsx # Site search + deep profile (available, not wired)
+│       ├── InsightPanel.jsx   # Entity-level operational insight (wired to TrialsPanel via chart double-click)
+│       ├── SiteIntelligence.jsx # Site search + deep profile (top-level tab)
 │       └── trialsEngine.js    # API client (fetch wrappers for all modes)
-├── api/                       # Vercel serverless functions (HTTPS proxy → OKE)
+├── api/                       # Vercel serverless functions (HTTPS proxy → OKE, 10 functions for Hobby plan)
 │   ├── trials.js              # /api/trials → OKE server
 │   ├── intelligence.js        # /api/intelligence → trial-intelligence
-│   ├── entity-insight.js      # /api/entity-insight → OKE
-│   ├── entity-intelligence.js # /api/entity-intelligence → OKE
-│   ├── site-search.js         # /api/site-search → OKE (PG fallback)
-│   ├── site-profile.js        # /api/site-profile → OKE (PG fallback)
+│   ├── analytics.js           # /api/analytics?mode=failure-analysis|sponsor-performance|enrollment-benchmark → OKE
+│   ├── entity.js              # /api/entity?mode=insight|intelligence → OKE entity endpoints
+│   ├── site.js                # /api/site?mode=search|profile → OKE site endpoints
 │   ├── trial-risk.js          # /api/trial-risk → OKE
 │   ├── graph.js               # /api/graph → Neo4j graph endpoints (GET proxy)
 │   ├── graph-query.js         # /api/graph-query → NL→Cypher pipeline (POST)
+│   ├── query.js               # /api/query → OKE query proxy
 │   └── dq.js                  # /api/dq/parse-rule → LLM rule parser
 ├── server/                    # Express API on OKE (ARM64)
 │   ├── index.js               # All endpoints (see API section)
@@ -194,6 +198,9 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 | `GET /api/trial-risk?nct_id=...` | Risk score 0–100 with labeled factors: termination rate, enrollment ambition, site count, design complexity, eligibility complexity |
 | `GET /api/entity-insight?type=...&name=...` | Portfolio analytics for any entity (sponsor/condition/intervention/phase/status/enrollment_range): completion rate, avg enrollment, avg duration, reporting time, cross-dimensional breakdowns, top sites |
 | `GET /api/entity-intelligence?type=...&name=...` | Entity insight + GPT-4.1 3-paragraph strategic briefing |
+| `GET /api/failure-analysis?condition=&phase=&sponsor=&intervention=&min_enrollment=&max_enrollment=` | Termination rate, stop reasons, breakdowns by condition and phase for the filtered cohort |
+| `GET /api/sponsor-performance?condition=&phase=&min_trials=` | Sponsor completion-rate leaderboard sorted by % completed, filtered by therapeutic area |
+| `GET /api/enrollment-benchmark?condition=&phase=&allocation=&masking=&intervention_model=` | Enrollment ambition vs actuals by design type; summary stats + breakdowns by allocation/masking |
 
 ### Site Intelligence
 
@@ -271,6 +278,111 @@ kubectl apply -f k8s/sqlite-debug-pod.yaml
 kubectl exec -it sqlite-debug -n cdisc-kg -- sqlite3 /data/aact.db
 ```
 
-Questions for opus:
+job description:
 
-would it make sense for the visual insights to update based on kg queries or nah?
+Data Domain Manager, Trial Data
+Thermo Fisher Scientific
+Thermo Fisher Scientific
+
+This job is no longer accepting applications
+
+See open jobs at Thermo Fisher Scientific.
+See open jobs similar to "Data Domain Manager, Trial Data" North Carolina Biotechnology Center.
+
+North Carolina, USA
+
+USD 130k-180k / year
+
+Posted on Mar 22, 2026
+Work Schedule
+
+Standard (Mon-Fri)
+Environmental Conditions
+
+Office
+Job Description
+
+At Thermo Fisher’s PPD clinical research business, we’re using digital innovation, data science, and AI to reimagine how life-changing therapies reach patients. Our teams combine deep scientific expertise with advanced analytics, automation, and digital platforms to make research smarter, faster, and more connected.
+
+
+At PPD we know that innovation happens when diverse minds meet. Our Digital Science, Data, and AI professionals collaborate closely with scientists, clinicians, and operational experts to solve real-world challenges in clinical research. Alongside our partnership with Open AI, you can be part of the collaboration that will help to improve the speed and success of drug development, enabling customers to get medicines to patients faster and more cost effectively.
+
+
+You’ll join a culture that values experimentation, learning, and collaboration — where your ideas can help shape how we deliver life-saving solutions and improve global health outcomes. Whether you’re a data engineer, product manager, software developer, or AI scientist, you’ll find opportunities here to apply your skills to work that truly matters — improving global health outcomes.
+
+
+Position Summary
+The Data Domain Manager, Trial Data (known internally as an Associate Director, IT) is the hands-on owner for their assigned data domain, driving the day-to-day plan, backlog, and delivery under the direction of the Domain Lead. This role goes deep on sources, flows, lineage, quality rules, and semantic layers to make trusted, interoperable, AI-ready data available for product and analytics use cases.
+
+Reporting to the Trial Data Domain Lead in the CRG Digital Data Capabilities organization, the Data Domain Manager works daily with the Data Solutions Architect while partnering closely with Data Platforms, Data Governance, Digital Products, CRG IT/data owners, and external partners to land designs, resolve data issues fast, and evidence value.
+
+Key Responsibilities
+Domain Roadmap Input and Execution
+
+Partner with the Trial Data Domain lead to develop the vision and roadmap for your data domain, aligned with CRG Digital product roadmaps and key strategic initiatives. Drive execution against these prioritized roadmaps to ensure trusted, high-quality data is available at the right time. Proactively plan for future innovations and drive exploration of new capabilities, including potential external commercialization of new internal data products and capabilities. Develop and report on metrics and KPIs for assessing data consumption.
+
+Data Source and Flow Stewardship
+Based on the strategic roadmap within assigned domain, define data needs and determine internal data availability. Document source systems, tables, interfaces, and lineage; profile data; define and maintain transformation logic and semantic layers. Maintain the domain in the catalog (business definitions, ownership, lineage, policies, sample queries). Partner with internal stakeholders, Legal, and other teams as needed to address barriers to data access. Contribute to assessments of external partners to address data gaps, and to partnership scoping, business case alignment, negotiations, internal management and external alliance management for external data partners.
+
+Delivery Coordination
+Coordinate the technical execution of data delivery within your assigned domain, ensuring that data is available for consumption within CRG Digital’s data platform. Ensure that product/business requirements are translated into technical requirements and that data is appropriately mapped and modeled, applying product management techniques to data models (roadmap, backlog, etc.). Support technical implementation of licensed data products, where relevant, and navigate internal bureaucracy for data contracts, IT access, audits, etc. Coordinate support and usage guidance for integrations of external data products into clinical or analytical services.
+
+Stakeholder, Engagement, Enablement & Reporting
+Develop and maintain strong relationships with key stakeholders in CRG divisions to ensure alignment and support for data initiatives. Serve as the voice of your domain to Data Domain and Data Capabilities leadership. Explain solutions to non-technical audiences; train users on how to access and use delivered data assets; capture adoption feedback.
+
+Quality, Governance & Compliance
+Implement domain-level data quality rules, monitors, and remediation workflows; contribute to defect taxonomy and root cause analysis. Apply mastering and reference-data rules; coordinate with stewards and the Data Governance team on policy alignment and audits.
+
+Required Qualifications:
+
+Bachelor's degree in Life Sciences, Computer Science, Engineering, or equivalent and relevant formal academic / vocational qualification. Masters preferred.
+Previous data engineering/analytics/governance experience with hands-on SQL and modeling experience that provides the knowledge, skills, and abilities to perform the job (comparable to 10 years’ experience)
+Proven experience mapping complex source systems, building or specifying pipelines/models, and operating DQ/MDM controls.
+Demonstrated success partnering within matrix organizations and external partner teams to deliver complex, regulated data deliverables.
+Understanding of clinical trial operations (recruitment, start-up, clinical operations, data management, RBM, safety) and associated regulations.
+In some cases, an equivalency, consisting of appropriate education, training, and/or directly related experience will be considered sufficient for an individual to meet the requirements of the role.
+Digital Domain Manager Competencies:
+
+
+Domain Strategy & Roadmapping
+
+Contributes to strategic vision and rolling 12-month plan for the domain, aligned to CRG Digital product roadmaps and enterprise priorities; with Data Domain Lead, continually reprioritizes the portfolio based on impact, risk, and readiness.
+Data Modeling & Semantics
+
+Translates business needs into technical requirements; partners with Platforms/Engineering to land models, pipelines, and semantic layers in the data platform.
+Data Sourcing & External Partnerships
+
+Analyzes and maps internal sources/flows/lineage and appropriate uses; identifies gaps and helps secure external data through business casing, negotiation, and alliance management.
+Governance, Quality & MDM Stewardship
+
+Works with domain data stewards to drive data quality, MDM and governance decisions; partners with the Data Governance Lead to operationalize policy.
+Metadata, Catalog & Lineage Ownership
+
+Drives cataloging of assets (in conjunction with Data Governance Lead) with business definitions, lineage, and ownership; maintains reference/canonical semantics.
+Stakeholder Engagement & Reporting
+
+Aligns data owners, product owners, and delivery teams without direct authority; drives adoption through narratives, education, and enablement. Provides clear status/risks/metrics to the Domain Lead and product teams; supports demos, readouts, etc.
+Partner Management
+
+Holds vendors to outcomes; fosters a collaborative, inclusive, continuous-improvement culture.
+Clinical Domain Expertise (Contextual Fluency)
+
+Understands clinical trial operations and related processes (e.g., study start-up, data management, RBM, safety) to ensure data strategy meets real-world needs.
+Innovation & Future Readiness
+
+Scans internal/external capabilities; sequences pragmatic pilots that advance interoperability, reusability, and AI enablement; evaluates commercialization where relevant.
+Data Storytelling & Influence
+
+Contributes to narratives linking data product delivery to business value.
+Preferred Qualifications
+
+Experience in a CRO, eClinical data provider, pharmaceutical/biotech company, or digital health/data startup.
+Experience in regulated data environments (e.g., clinical/GxP/Part 11/GDPR/HIPAA).
+Existing understanding of data landscape within assigned domain.
+Experience in making data AI/ML ready.
+At Thermo Fisher Scientific, we are committed to fostering a healthy and harmonious workplace for our employees. We understand the importance of creating an environment that allows individuals to excel. Please see below for the required qualifications for this position, which also includes the possibility of equivalent experience:
+
+Able to communicate, receive, and understand information and ideas with diverse groups of people in a comprehensible and reasonable manner.
+Able to work upright and stationary for typical working hours.
+Ability to use and learn standard office equipment and technology with proficiency.
+Able to perform successfully under pressure while prioritizing and handling multiple projects or activities.
