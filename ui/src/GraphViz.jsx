@@ -103,6 +103,94 @@ const QUERY_PATHS = {
   },
 };
 
+// ── Traversal path diagram — actual bubbles + arrows ────────────────────────
+function PathDiagram({ steps }) {
+  const nodeSteps = steps.filter(s => s.type === "node");
+  const edgeSteps = steps.filter(s => s.type === "edge");
+  if (nodeSteps.length === 0) return null;
+
+  const count = nodeSteps.length;
+  const nodeR = 44;
+  const gapBetween = 60;             // px gap between circle edges
+  const centerStep = nodeR * 2 + gapBetween;
+  const totalW = nodeR + (count - 1) * centerStep + nodeR;
+  const W = totalW + 20;             // 10px padding each side
+  const H = 130;
+  const offsetX = 10 + nodeR;
+
+  const positions = nodeSteps.map((s, i) => ({
+    ...s,
+    cx: offsetX + i * centerStep,
+    cy: H / 2,
+  }));
+
+  const connections = edgeSteps.slice(0, count - 1).map((e, i) => ({
+    edge: e,
+    from: positions[i],
+    to: positions[i + 1],
+  }));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="gv-path-svg"
+      role="img" aria-label="Query traversal path">
+      <defs>
+        <marker id="pd-arrow" viewBox="0 0 10 7" refX="9" refY="3.5"
+          markerWidth="7" markerHeight="5" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7dd3fc" />
+        </marker>
+      </defs>
+
+      {/* Edge lines + labels */}
+      {connections.map((conn, i) => {
+        const x1 = conn.from.cx + nodeR + 2;
+        const x2 = conn.to.cx - nodeR - 3;
+        const y = H / 2;
+        const mx = (x1 + x2) / 2;
+        return (
+          <g key={i}>
+            <line x1={x1} y1={y} x2={x2} y2={y}
+              stroke="#38bdf8" strokeWidth="1.5"
+              markerEnd="url(#pd-arrow)" />
+            <text x={mx} y={y - 9} textAnchor="middle"
+              fontSize="8" fontWeight="700" fill="#7dd3fc"
+              letterSpacing="0.04">
+              {conn.edge.dir} {conn.edge.label}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Node bubbles */}
+      {positions.map((n, i) => {
+        const color = NODE_MAP[n.id]?.color || "#94a3b8";
+        const isBoundary = n.note === "start" || n.note === "result";
+        return (
+          <g key={i}>
+            {isBoundary && (
+              <circle cx={n.cx} cy={n.cy} r={nodeR + 5}
+                fill="none" stroke={color} strokeWidth="1.5"
+                opacity="0.3" strokeDasharray="4 3" />
+            )}
+            <circle cx={n.cx} cy={n.cy} r={nodeR}
+              fill={color + "22"}
+              stroke={color}
+              strokeWidth={isBoundary ? 2.5 : 1.5} />
+            <text x={n.cx} y={n.cy - 10} textAnchor="middle"
+              fontSize="8" fontWeight="700" fill={color}
+              letterSpacing="0.05">
+              {n.id}
+            </text>
+            <text x={n.cx} y={n.cy + 6} textAnchor="middle"
+              fontSize="10" fontWeight="600" fill="#e2e8f0">
+              {n.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function GraphViz({ queryId }) {
   const path = QUERY_PATHS[queryId] || null;
@@ -193,26 +281,7 @@ export default function GraphViz({ queryId }) {
             <span className="qpe-title">{path.title}</span>
             <span className="qpe-desc">{path.description}</span>
           </div>
-          <div className="qpe-steps">
-            {path.steps.map((s, i) =>
-              s.type === "node" ? (
-                <span key={i} className={`qpe-chip qpe-chip-${s.note || "mid"}`}
-                  style={{
-                    background: NODE_MAP[s.id]?.color + "20",
-                    borderColor: NODE_MAP[s.id]?.color + "50",
-                    color: NODE_MAP[s.id]?.color,
-                  }}>
-                  <span className="qpe-chip-type">{s.id}</span>
-                  <span className="qpe-chip-label">{s.label}</span>
-                </span>
-              ) : (
-                <span key={i} className="qpe-arrow">
-                  <span className="qpe-arrow-dir">{s.dir}</span>
-                  <span className="qpe-arrow-label">{s.label}</span>
-                </span>
-              )
-            )}
-          </div>
+          <PathDiagram steps={path.steps} />
         </div>
       ) : (
         <div className="qpe-idle-hint">
