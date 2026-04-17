@@ -1767,6 +1767,9 @@ app.get("/api/sponsor-performance", (req, res) => {
 // Answers: "How does enrollment ambition compare to historical actuals for this design type?"
 app.get("/api/enrollment-benchmark", (req, res) => {
   if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  // designs table required — may be missing in older snapshots
+  const hasDesigns = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='designs'").get();
+  if (!hasDesigns) return res.status(503).json({ error: "Snapshot missing 'designs' table — awaiting nightly refresh" });
   const { condition = "", phase = "", sponsor = "", intervention = "", allocation = "", masking = "", intervention_model = "" } = req.query;
   try {
     const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention });
