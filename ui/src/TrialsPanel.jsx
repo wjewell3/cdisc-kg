@@ -6,6 +6,7 @@ import { KGContextPanel } from "./GraphIntelligence";
 import GraphViz from "./GraphViz";
 import InsightPanel from "./InsightPanel";
 import OperationalKPIs from "./OperationalKPIs";
+import TrialsMap from "./TrialsMap";
 import "./OperationalKPIs.css";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
@@ -396,6 +397,18 @@ export default function TrialsPanel() {
     return { conditions: [...conditions], sponsors: [...sponsors] };
   }, [chartFilters, activeResolutions]);
 
+  // Build filter stats for KG viz bubble counts
+  const kgFilterStats = useMemo(() => {
+    const agg = currentAgg;
+    if (!agg || !chartFilters.length) return null; // null = use defaults
+    return {
+      total: agg.total || 0,
+      sponsors: agg.sponsor?.reduce((s, d) => s + (d.count || 0), 0) || 0,
+      conditions: agg.condition?.reduce((s, d) => s + (d.count || 0), 0) || 0,
+      interventions: agg.intervention?.reduce((s, d) => s + (d.count || 0), 0) || 0,
+    };
+  }, [currentAgg, chartFilters]);
+
   // Build filter params for operational KPI endpoints (mirrors buildCurrentParams but as plain object)
   const okpiFilterParams = useMemo(() => {
     const p = {};
@@ -609,7 +622,7 @@ export default function TrialsPanel() {
           <div className="section-header">
             <div className="section-icon">&#x2B21;</div>
             <h2>Knowledge Graph</h2>
-            <span className="result-count">580k+ trials</span>
+            <span className="result-count">{kgFilterStats ? `${(kgFilterStats.total || 0).toLocaleString()} trials` : "580k+ trials"}</span>
           </div>
           <p className="kg-universe-hint">
             The KG connects every trial to its sponsor, conditions, interventions, and countries.
@@ -617,6 +630,7 @@ export default function TrialsPanel() {
           </p>
           <GraphViz
             queryId={graphResult && !graphResult.loading && !graphResult.error && graphResult.rows?.length > 0 ? graphQueryId : null}
+            filterStats={kgFilterStats}
           />
         </div>
 
@@ -762,6 +776,18 @@ export default function TrialsPanel() {
                 />
 
                 <KGContextPanel conditions={kgEntities.conditions} sponsors={kgEntities.sponsors} />
+
+                {/* ── Geography Map ─────────────────────────────── */}
+                <TrialsMap
+                  filterParams={okpiFilterParams}
+                  onCountryFilter={(country) => {
+                    setChartFilters(prev => {
+                      // Don't add duplicate country filter
+                      if (prev.some(f => f.field === "country" && f.value === country)) return prev;
+                      return [...prev, { field: "country", value: country }];
+                    });
+                  }}
+                />
 
                 {/* ── Operational KPIs ─────────────────────────────── */}
                 <div ref={okpiRef}>

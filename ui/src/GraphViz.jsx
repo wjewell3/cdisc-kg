@@ -7,7 +7,7 @@
  *        times "split" — each instance gets its own greyed-out satellites
  *        for unused node types.
  */
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import cytoscape from "cytoscape";
 
 // ── Schema layout — radii √-proportional to node counts ──────────────────────
@@ -27,6 +27,14 @@ const EDGES = [
 ];
 
 const NODE_MAP = Object.fromEntries(NODES.map(n => [n.id, n]));
+
+// ── Format count for bubble labels ───────────────────────────────────────────
+function fmtCount(n) {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return String(n);
+}
 
 const VW = 590, VH = 278;
 const CX = VW / 2, CY = VH / 2;
@@ -308,13 +316,26 @@ function computePathLayout(path) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function GraphViz({ queryId }) {
+export default function GraphViz({ queryId, filterStats }) {
   const containerRef = useRef(null);
   const cyRef = useRef(null);
   const prevQueryRef = useRef(null);
   const [descVisible, setDescVisible] = useState(false);
 
   const path = QUERY_PATHS[queryId] ?? null;
+
+  // Compute effective counts: filter stats override defaults when present
+  const effectiveCounts = useMemo(() => {
+    const defaults = { Trial: "580k", Sponsor: "49.9k", Condition: "129k", Intervention: "512k", Country: "225" };
+    if (!filterStats) return defaults;
+    return {
+      Trial: filterStats.total != null ? fmtCount(filterStats.total) : defaults.Trial,
+      Sponsor: filterStats.sponsors != null ? fmtCount(filterStats.sponsors) : defaults.Sponsor,
+      Condition: filterStats.conditions != null ? fmtCount(filterStats.conditions) : defaults.Condition,
+      Intervention: filterStats.interventions != null ? fmtCount(filterStats.interventions) : defaults.Intervention,
+      Country: filterStats.countries != null ? fmtCount(filterStats.countries) : defaults.Country,
+    };
+  }, [filterStats]);
 
   // Initialize Cytoscape once
   useEffect(() => {
@@ -352,12 +373,13 @@ export default function GraphViz({ queryId }) {
         const node = cy.getElementById(n.id);
         if (!node.length) return;
         const big = n.r >= 28;
+        const count = effectiveCounts[n.id] || n.count;
         node.removeClass("satellite result active");
         node.data({
           bgColor: n.color,
           borderColor: n.color,
-          displayLabel: big ? `${n.label}\n${n.count}`
-                       : n.r >= 12 ? `${n.count}\n${n.label}`
+          displayLabel: big ? `${n.label}\n${count}`
+                       : n.r >= 12 ? `${count}\n${n.label}`
                        : n.label,
           size: n.r * 2,
         });
@@ -443,7 +465,7 @@ export default function GraphViz({ queryId }) {
     });
 
     prevQueryRef.current = queryId;
-  }, [queryId, path]);
+  }, [queryId, path, effectiveCounts]);
 
   return (
     <div className="graph-viz-wrap">

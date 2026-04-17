@@ -1,0 +1,109 @@
+/* TrialsMap — choropleth map styles */
+.trials-map-container {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.trials-map-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #21262d;
+}
+
+.trials-map-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+.trials-map-stats {
+  font-size: 11px;
+  color: #8b949e;
+  margin-left: auto;
+}
+
+.trials-map-collapse {
+  background: none;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.trials-map-collapse:hover { color: #e6edf3; border-color: #58a6ff; }
+
+.trials-map-collapsed {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin: 12px 0;
+  cursor: pointer;
+}
+.trials-map-collapsed:hover { border-color: #58a6ff; }
+
+.trials-map-toggle {
+  font-size: 13px;
+  color: #58a6ff;
+  font-weight: 500;
+}
+
+.trials-map-body {
+  position: relative;
+}
+
+.trials-map-loading,
+.trials-map-error {
+  padding: 30px;
+  text-align: center;
+  font-size: 12px;
+  color: #8b949e;
+}
+.trials-map-error { color: #f85149; }
+
+.trials-map-tooltip {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #e6edf3;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.trials-map-legend {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 10px 10px;
+  flex-wrap: wrap;
+}
+
+.trials-map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #8b949e;
+}
+
+.trials-map-legend-swatch {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
