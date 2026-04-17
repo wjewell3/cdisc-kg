@@ -134,14 +134,39 @@ function buildInstances(path) {
     (occ[sp.id] ??= []).push(sp);
   });
 
+  // For unused nodes: find their connected active neighbour and compute a
+  // target position offset from that neighbour (so they "follow" their edge).
+  // Schema offsets: vector from neighbour → this node in the schema layout.
+  const activeFirstPos = {}; // typeId → {x, y} of first active instance
   const out = [];
   NODES.forEach(n => {
     const hits = occ[n.id];
+    if (hits) {
+      activeFirstPos[n.id] = { x: hits[0].x, y: hits[0].y };
+    }
+  });
+
+  NODES.forEach(n => {
+    const hits = occ[n.id];
     if (!hits) {
+      // Find the connected active node via EDGES
+      let neighbour = null;
+      for (const e of EDGES) {
+        if (e.from === n.id && activeFirstPos[e.to]) { neighbour = e.to; break; }
+        if (e.to === n.id && activeFirstPos[e.from]) { neighbour = e.from; break; }
+      }
+      let tx = n.x, ty = n.y;
+      if (neighbour) {
+        const nb = NODE_MAP[neighbour];
+        const dx = n.x - nb.x, dy = n.y - nb.y;  // schema offset
+        const ap = activeFirstPos[neighbour];
+        tx = ap.x + dx;
+        ty = ap.y + dy;
+      }
       out.push({
         key: n.id, typeId: n.id,
         homeX: n.x, homeY: n.y,
-        targetX: n.x, targetY: n.y,
+        targetX: tx, targetY: ty,
         r: n.r, color: n.color,
         state: "unused", step: null, note: null,
         pathLabel: null, isSplit: false,
@@ -220,6 +245,25 @@ export default function GraphViz({ queryId }) {
     return pairs;
   }, [path]);
 
+  // Edges from unused nodes to their active neighbors (dim, follow the move)
+  const unusedEdges = useMemo(() => {
+    if (!path) return [];
+    const out = [];
+    instances.forEach(inst => {
+      if (inst.state !== "unused") return;
+      for (const e of EDGES) {
+        const nbId = e.from === inst.typeId ? e.to
+                   : e.to === inst.typeId   ? e.from
+                   : null;
+        if (!nbId || !instPos[nbId]) continue;
+        out.push({
+          unusedKey: inst.key, activeKey: nbId, label: e.label,
+        });
+      }
+    });
+    return out;
+  }, [path, instances, instPos]);
+
   return (
     <div className="graph-viz-wrap">
       <svg viewBox={`0 0 ${VW} ${VH}`} className="graph-viz-svg" role="img"
@@ -287,6 +331,26 @@ export default function GraphViz({ queryId }) {
                 {pe.edge?.dir} {pe.edge?.label}
               </text>
             </g>
+          );
+        })}
+
+        {/* ── Dim edges connecting unused nodes to their active neighbors ── */}
+        {unusedEdges.map((ue, i) => {
+          const up = instPos[ue.unusedKey], ap = instPos[ue.activeKey];
+          if (!up || !ap) return null;
+          const ux1 = moved ? up.targetX : up.homeX;
+          const uy1 = moved ? up.targetY : up.homeY;
+          const ax1 = moved ? ap.targetX : ap.homeX;
+          const ay1 = moved ? ap.targetY : ap.homeY;
+          const dx = ax1 - ux1, dy = ay1 - uy1;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const nx = dx / dist, ny = dy / dist;
+          const x1 = ux1 + nx * (up.r + 2), y1 = uy1 + ny * (up.r + 2);
+          const x2 = ax1 - nx * (ap.r + 4), y2 = ay1 - ny * (ap.r + 4);
+          return (
+            <line key={`ue-${i}`} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke="#334155" strokeWidth="1" markerEnd="url(#gv-arrow-dim)"
+              style={{ opacity: moved ? 0.4 : 0, transition: "opacity 0.3s 0.5s" }} />
           );
         })}
 
