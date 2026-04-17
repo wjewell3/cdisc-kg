@@ -5,9 +5,7 @@ import staticData from "./graphData.json";
 import QueryPanel from "./QueryPanel";
 import TreeView from "./TreeView";
 import TutorPanel from "./TutorPanel";
-import DemoPanel from "./DemoPanel";
 import TrialsPanel from "./TrialsPanel";
-import SiteIntelligence from "./SiteIntelligence";
 import GeographicIntelligence from "./GeographicIntelligence";
 import "./App.css";
 
@@ -37,12 +35,9 @@ const NODE_MAP = Object.fromEntries(ALL_NODES.map((n) => [n.id, n]));
 const ROUTE_TO_PANEL = {
   "/": "trials",
   "/standards": "graph",
-  "/query": "query",
   "/browse": "browse",
   "/learn": "learn",
-  "/demo": "demo",
   "/trials": "trials",
-  "/sites": "sites",
   "/geo": "geo",
 };
 const PANEL_TO_ROUTE = Object.fromEntries(Object.entries(ROUTE_TO_PANEL).map(([k, v]) => [v, k]));
@@ -324,12 +319,6 @@ function App() {
             Standards Graph
           </button>
           <button
-            className={`tab-btn ${activePanel === "query" ? "active" : ""}`}
-            onClick={() => switchPanel("query")}
-          >
-            Standards Q&amp;A
-          </button>
-          <button
             className={`tab-btn ${activePanel === "browse" ? "active" : ""}`}
             onClick={() => switchPanel("browse")}
           >
@@ -340,18 +329,6 @@ function App() {
             onClick={() => switchPanel("learn")}
           >
             SDTM Training
-          </button>
-          <button
-            className={`tab-btn ${activePanel === "demo" ? "active" : ""}`}
-            onClick={() => switchPanel("demo")}
-          >
-            Demo
-          </button>
-          <button
-            className={`tab-btn tab-btn-sites ${activePanel === "sites" ? "active" : ""}`}
-            onClick={() => switchPanel("sites")}
-          >
-            Site Intelligence
           </button>
           <button
             className={`tab-btn tab-btn-geo ${activePanel === "geo" ? "active" : ""}`}
@@ -369,12 +346,12 @@ function App() {
 
       <div className="main">
         {/* Sidebar overlay for mobile */}
-        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "demo" && activePanel !== "trials" && activePanel !== "sites" && activePanel !== "geo" && (
+        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "trials" && activePanel !== "geo" && (
           <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
         )}
 
         {/* Left sidebar — hidden on Browse tab */}
-        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "demo" || activePanel === "trials" || activePanel === "sites" || activePanel === "geo" ? " sidebar-hidden" : ""}`}>
+        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "trials" || activePanel === "geo" ? " sidebar-hidden" : ""}`}>
           <div className="panel">
             <h3>Search</h3>
             <div className="search-box">
@@ -450,10 +427,16 @@ function App() {
                 ))}
             </ul>
           </div>
+
+          {/* Standards Q&A — embedded in sidebar */}
+          <div className="panel">
+            <h3>Standards Q&amp;A</h3>
+            <QueryPanel onFocusNode={(nodeId) => focusNode(nodeId)} onBack={() => {}} embedded />
+          </div>
         </aside>
 
         {/* Graph canvas */}
-        <div className={`graph-container${activePanel === "browse" || activePanel === "learn" || activePanel === "demo" || activePanel === "trials" ? " graph-hidden" : ""}`}>
+        <div className={`graph-container${activePanel === "browse" || activePanel === "learn" || activePanel === "trials" ? " graph-hidden" : ""}`}>
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData}
@@ -659,28 +642,14 @@ function App() {
           </aside>
         )}
 
-        {/* NL Query panel */}
-        {activePanel === "query" && (
-          <QueryPanel onFocusNode={(nodeId) => {
-            switchPanel("graph");
-            focusNode(nodeId);
-          }} onBack={() => switchPanel("graph")} />
-        )}
-
         {/* Browse / hierarchy tree */}
         {activePanel === "browse" && <TreeView />}
 
         {/* Learn / SDTM tutor */}
         {activePanel === "learn" && <TutorPanel />}
 
-        {/* Demo / end-to-end pipeline */}
-        {activePanel === "demo" && <DemoPanel />}
-
         {/* Trials / cross-trial AACT intelligence */}
         {activePanel === "trials" && <TrialsPanel />}
-
-        {/* Site Intelligence — search and profile clinical trial sites */}
-        {activePanel === "sites" && <SiteIntelligence />}
 
         {/* Geographic Intelligence — country/region/site concentration */}
         {activePanel === "geo" && <GeographicIntelligence />}

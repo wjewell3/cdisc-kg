@@ -187,7 +187,7 @@ function ResultView({ result }) {
   );
 }
 
-export default function QueryPanel({ onFocusNode, onBack }) {
+export default function QueryPanel({ onFocusNode, onBack, embedded }) {
   const [input, setInput] = useState("");
   const [llmText, setLlmText] = useState("");
   const [structuredResult, setStructuredResult] = useState(null);
@@ -222,7 +222,8 @@ export default function QueryPanel({ onFocusNode, onBack }) {
   const handleSuggestionClick = (s) => handleQuery(s);
 
   return (
-    <div className="query-panel">
+    <div className={`query-panel${embedded ? " query-panel-embedded" : ""}`}>
+      {!embedded && (
       <div className="query-header">
         {onBack && (
           <button className="query-back-btn" onClick={onBack}>← Back</button>
@@ -230,6 +231,7 @@ export default function QueryPanel({ onFocusNode, onBack }) {
         <h2>Ask the Knowledge Graph</h2>
         <span className="query-subtitle">Natural language CDICS/SDTM queries</span>
       </div>
+      )}
 
       <div className="query-input-area">
         <textarea

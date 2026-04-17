@@ -139,17 +139,16 @@ Together, these layers provide both the operational data semantics (Neo4j trials
 cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
-│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph, Data Catalog, Standards Q&A, SDTM Training, Site Intelligence, Geography, Demo
+│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph (+ embedded Q&A), Data Catalog, SDTM Training, Geography
 │       ├── TrialsPanel.jsx    # Main search + Question Launcher + cross-filter charts + KPI panels + KG Q&A + entity insight + graph→filter bridge
 │       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner (double-click bar → entity insight)
 │       ├── OperationalKPIs.jsx # 3-tab panel: Failure Analysis, Sponsor Performance, Enrollment Benchmark
 │       ├── GraphViz.jsx       # Cytoscape.js trial-graph visualization (Neo4j → browser)
 │       ├── RulesManager.jsx   # DQ rules: grouping normalization, enrollment bounds
 │       ├── TreeView.jsx       # SDTM standards data catalog (Browse tab)
-│       ├── QueryPanel.jsx     # NL → standards graph Q&A
+│       ├── QueryPanel.jsx     # NL → standards graph Q&A (embedded in Standards Graph sidebar)
 │       ├── TutorPanel.jsx     # SDTM training module
 │       ├── InsightPanel.jsx   # Entity-level operational insight (wired to TrialsPanel via chart double-click)
-│       ├── SiteIntelligence.jsx # Site search + deep profile (top-level tab)
 │       ├── GeographicIntelligence.jsx # Country/region/site concentration & gaps (top-level tab)
 │       └── trialsEngine.js    # API client (fetch wrappers for all modes)
 ├── api/                       # Vercel serverless functions (HTTPS proxy → OKE, 10 functions for Hobby plan)

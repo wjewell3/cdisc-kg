@@ -53,6 +53,41 @@
   flex-shrink: 0;
 }
 
+.query-panel-embedded {
+  width: 100%;
+  height: auto;
+  max-height: 400px;
+  background: transparent;
+  border-left: none;
+  overflow-y: auto;
+}
+.query-panel-embedded .query-input-area {
+  padding: 0 0 8px;
+  border-bottom: none;
+}
+.query-panel-embedded .query-input {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.query-panel-embedded .query-btn {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.query-panel-embedded .suggestions {
+  padding: 0;
+}
+.query-panel-embedded .sugg-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+.query-panel-embedded .nl-llm-block {
+  padding: 8px;
+  margin: 0;
+}
+.query-panel-embedded .nl-llm-text {
+  font-size: 12px;
+}
+
 .query-back-btn {
   display: none;
   background: none;
