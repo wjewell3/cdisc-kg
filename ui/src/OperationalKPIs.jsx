@@ -9,6 +9,7 @@
  * All views react to the current chart filters (condition, phase, sponsor, etc.)
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
+import GeographicIntelligence from "./GeographicIntelligence";
 
 const PALETTE = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
 
@@ -364,6 +365,7 @@ const VIEWS = [
   { key: "failure", label: "Failure Analysis", icon: "⚠", question: "What's the real termination rate, and why do trials fail?" },
   { key: "sponsors", label: "Sponsor Performance", icon: "🏆", question: "Which sponsors have the best completion rates?" },
   { key: "enrollment", label: "Enrollment Benchmark", icon: "📊", question: "How does enrollment ambition compare to actuals?" },
+  { key: "geography", label: "Geography", icon: "🌍", question: "Where are the geographic concentrations and gaps in site activation?" },
 ];
 
 export default function OperationalKPIs({ filterParams, initialView }) {
@@ -395,6 +397,7 @@ export default function OperationalKPIs({ filterParams, initialView }) {
       {activeView === "failure" && <FailureAnalysis filterParams={filterParams} />}
       {activeView === "sponsors" && <SponsorPerformance filterParams={filterParams} />}
       {activeView === "enrollment" && <EnrollmentBenchmark filterParams={filterParams} />}
+      {activeView === "geography" && <GeographicIntelligence filterParams={filterParams} />}
     </div>
   );
 }

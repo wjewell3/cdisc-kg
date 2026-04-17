@@ -1765,12 +1765,12 @@ app.get("/api/sponsor-performance", (req, res) => {
 // ── Enrollment Benchmark ─────────────────────────────────────────────────────
 // Compares anticipated vs actual enrollment by design type.
 // Answers: "How does enrollment ambition compare to historical actuals for this design type?"
-app.get("/api/enrollment-benchmark", (req, res) => {
-  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
-  // designs table required — may be missing in older snapshots
-  const hasDesigns = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='designs'").get();
-  if (!hasDesigns) return res.status(503).json({ error: "Snapshot missing 'designs' table — awaiting nightly refresh" });
+app.get("/api/enrollment-benchmark", async (req, res) => {
   const { condition = "", phase = "", sponsor = "", intervention = "", allocation = "", masking = "", intervention_model = "" } = req.query;
+
+  // Try SQLite first (designs table may be missing in older snapshots)
+  const hasDesigns = db?.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='designs'").get();
+  if (db && hasDesigns) {
   try {
     const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention });
 
@@ -1872,54 +1872,112 @@ app.get("/api/enrollment-benchmark", (req, res) => {
       design_options: { allocations, maskings, models },
     });
   } catch (e) {
-    console.error("[enrollment-benchmark]", e.message);
-    res.status(500).json({ error: "Query failed", detail: e.message });
+    console.error("[enrollment-benchmark] sqlite:", e.message);
+    // fall through to PG
+  }
+  }
+
+  // ── PostgreSQL fallback for enrollment-benchmark ───────────────────────
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Snapshot missing 'designs' table and no AACT credentials for live fallback. Awaiting nightly refresh." });
+  try {
+    // Build PG WHERE
+    const pgClauses = ["s.enrollment IS NOT NULL", "s.enrollment > 0"];
+    const pgParams = [];
+    let idx = 1;
+    if (condition) { pgClauses.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${idx})`); pgParams.push(`%${condition}%`); idx++; }
+    if (phase) { pgClauses.push(`s.phase = $${idx}`); pgParams.push(phase); idx++; }
+    if (sponsor) { pgClauses.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${idx})`); pgParams.push(`%${sponsor}%`); idx++; }
+    if (intervention) { pgClauses.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${idx})`); pgParams.push(`%${intervention}%`); idx++; }
+    const designIdx = idx;
+    if (allocation) { pgClauses.push(`d.allocation = $${idx}`); pgParams.push(allocation); idx++; }
+    if (masking) { pgClauses.push(`d.masking = $${idx}`); pgParams.push(masking); idx++; }
+    if (intervention_model) { pgClauses.push(`d.intervention_model = $${idx}`); pgParams.push(intervention_model); idx++; }
+    const pgWhere = pgClauses.length ? `WHERE ${pgClauses.join(" AND ")}` : "";
+
+    const { rows: enrollSummary } = await pool.query(`
+      SELECT s.enrollment_type, COUNT(*) AS trial_count,
+             ROUND(AVG(s.enrollment::numeric), 0) AS avg_enrollment,
+             MIN(s.enrollment) AS min_enrollment, MAX(s.enrollment) AS max_enrollment
+      FROM studies s LEFT JOIN designs d ON d.nct_id = s.nct_id
+      ${pgWhere}
+      GROUP BY s.enrollment_type
+    `, pgParams);
+
+    const { rows: byAllocation } = await pool.query(`
+      SELECT COALESCE(d.allocation, 'Unknown') AS design_val, s.enrollment_type,
+             COUNT(*) AS trial_count, ROUND(AVG(s.enrollment::numeric), 0) AS avg_enrollment
+      FROM studies s JOIN designs d ON d.nct_id = s.nct_id
+      ${pgWhere}
+      GROUP BY d.allocation, s.enrollment_type ORDER BY trial_count DESC
+    `, pgParams);
+
+    const { rows: byMasking } = await pool.query(`
+      SELECT COALESCE(d.masking, 'Unknown') AS design_val, s.enrollment_type,
+             COUNT(*) AS trial_count, ROUND(AVG(s.enrollment::numeric), 0) AS avg_enrollment
+      FROM studies s JOIN designs d ON d.nct_id = s.nct_id
+      ${pgWhere}
+      GROUP BY d.masking, s.enrollment_type ORDER BY trial_count DESC
+    `, pgParams);
+
+    const { rows: rawAllocations } = await pool.query(`SELECT DISTINCT d.allocation AS val FROM designs d JOIN studies s ON s.nct_id = d.nct_id ${pgWhere} ORDER BY val`, pgParams);
+    const { rows: rawMaskings } = await pool.query(`SELECT DISTINCT d.masking AS val FROM designs d JOIN studies s ON s.nct_id = d.nct_id ${pgWhere} ORDER BY val`, pgParams);
+    const { rows: rawModels } = await pool.query(`SELECT DISTINCT d.intervention_model AS val FROM designs d JOIN studies s ON s.nct_id = d.nct_id ${pgWhere} ORDER BY val`, pgParams);
+
+    return res.json({
+      summary: enrollSummary.map(r => ({ enrollment_type: r.enrollment_type || 'Unknown', trial_count: parseInt(r.trial_count), avg_enrollment: r.avg_enrollment ? Math.round(parseFloat(r.avg_enrollment)) : null, min_enrollment: parseInt(r.min_enrollment), max_enrollment: parseInt(r.max_enrollment) })),
+      by_allocation: byAllocation.map(r => ({ design: r.design_val, enrollment_type: r.enrollment_type || 'Unknown', trial_count: parseInt(r.trial_count), avg_enrollment: r.avg_enrollment ? Math.round(parseFloat(r.avg_enrollment)) : null })),
+      by_masking: byMasking.map(r => ({ design: r.design_val, enrollment_type: r.enrollment_type || 'Unknown', trial_count: parseInt(r.trial_count), avg_enrollment: r.avg_enrollment ? Math.round(parseFloat(r.avg_enrollment)) : null })),
+      design_options: { allocations: rawAllocations.map(r => r.val).filter(Boolean), maskings: rawMaskings.map(r => r.val).filter(Boolean), models: rawModels.map(r => r.val).filter(Boolean) },
+      source: "live",
+    });
+  } catch (e) {
+    console.error("[enrollment-benchmark] pg:", e.message);
+    return res.status(500).json({ error: "Query failed", detail: e.message });
   }
 });
 
 // ── Geographic Intelligence ──────────────────────────────────────────────
-app.get("/api/geographic-intelligence", (req, res) => {
-  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
-  const hasCountries = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='countries'").get();
-  const hasFacilities = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facilities'").get();
-  if (!hasCountries || !hasFacilities) return res.status(503).json({ error: "Snapshot missing countries/facilities tables — awaiting nightly refresh" });
-
+app.get("/api/geographic-intelligence", async (req, res) => {
   const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+
+  // Helper: region mapping (shared between SQLite and PG paths)
+  const REGION_CASE = `
+    CASE
+      WHEN ctry.name IN ('United States','Canada') THEN 'North America'
+      WHEN ctry.name IN ('United Kingdom','Germany','France','Italy','Spain','Netherlands','Belgium','Switzerland','Austria','Sweden','Denmark','Norway','Finland','Poland','Czech Republic','Ireland') THEN 'Europe'
+      WHEN ctry.name IN ('China','Japan','South Korea','India','Taiwan','Australia','Thailand','Malaysia','Singapore','Hong Kong','New Zealand') THEN 'Asia-Pacific'
+      WHEN ctry.name IN ('Brazil','Argentina','Mexico','Colombia','Chile','Peru') THEN 'Latin America'
+      WHEN ctry.name IN ('Israel','Turkey','Saudi Arabia','Egypt','South Africa','Iran') THEN 'Middle East & Africa'
+      ELSE 'Other'
+    END`;
+
+  // ── SQLite path ──
+  const hasCountries = db?.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='countries'").get();
+  const hasFacilities = db?.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facilities'").get();
+  if (db && hasCountries) {
   try {
     const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention });
 
-    // 1. Trial counts by country
     const byCountry = db.prepare(`
       SELECT ctry.name AS country, COUNT(DISTINCT ctry.nct_id) AS trial_count
-      FROM countries ctry
-      JOIN studies s ON s.nct_id = ctry.nct_id
-      ${where}
-      GROUP BY ctry.name
-      ORDER BY trial_count DESC
+      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${where}
+      GROUP BY ctry.name ORDER BY trial_count DESC
     `).all(...params);
 
-    // 2. US vs International split
     const usInternational = db.prepare(`
-      SELECT
-        SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END) AS us_trials,
-        SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END) AS intl_trials,
-        COUNT(DISTINCT ctry.nct_id) AS total_trials
-      FROM countries ctry
-      JOIN studies s ON s.nct_id = ctry.nct_id
-      ${where}
+      SELECT SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END) AS us_trials,
+             SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END) AS intl_trials,
+             COUNT(DISTINCT ctry.nct_id) AS total_trials
+      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${where}
     `).get(...params);
 
-    // 3. Active vs Completed by top countries (site activation gaps)
     const countryStatus = db.prepare(`
       SELECT ctry.name AS country, s.overall_status AS status, COUNT(DISTINCT ctry.nct_id) AS count
-      FROM countries ctry
-      JOIN studies s ON s.nct_id = ctry.nct_id
-      ${where}
-      GROUP BY ctry.name, s.overall_status
-      ORDER BY count DESC
+      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${where}
+      GROUP BY ctry.name, s.overall_status ORDER BY count DESC
     `).all(...params);
 
-    // Pivot into per-country status breakdown (top 25 countries)
     const topCountries = byCountry.slice(0, 25).map(c => c.country);
     const statusByCountry = {};
     for (const row of countryStatus) {
@@ -1928,40 +1986,26 @@ app.get("/api/geographic-intelligence", (req, res) => {
       statusByCountry[row.country][row.status] = row.count;
     }
 
-    // 4. Top sites by trial count (requires facilities table)
-    const topSites = db.prepare(`
-      SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id) AS trial_count,
-             f.latitude AS lat, f.longitude AS lng
-      FROM facilities f
-      JOIN studies s ON s.nct_id = f.nct_id
-      ${where}
-      WHERE f.name IS NOT NULL AND f.name <> ''
-      GROUP BY f.name, f.city, f.country
-      ORDER BY trial_count DESC
-      LIMIT 30
-    `).all(...params);
+    let topSites = [];
+    if (hasFacilities) {
+      topSites = db.prepare(`
+        SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id) AS trial_count,
+               f.latitude AS lat, f.longitude AS lng
+        FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
+        ${where ? where + " AND" : "WHERE"} f.name IS NOT NULL AND f.name <> ''
+        GROUP BY f.name, f.city, f.country ORDER BY trial_count DESC LIMIT 30
+      `).all(...params);
+    }
 
-    // 5. Geographic gaps — conditions with trials but few/no sites in major regions
     const regionCounts = db.prepare(`
-      SELECT
-        CASE
-          WHEN ctry.name IN ('United States','Canada') THEN 'North America'
-          WHEN ctry.name IN ('United Kingdom','Germany','France','Italy','Spain','Netherlands','Belgium','Switzerland','Austria','Sweden','Denmark','Norway','Finland','Poland','Czech Republic','Ireland') THEN 'Europe'
-          WHEN ctry.name IN ('China','Japan','South Korea','India','Taiwan','Australia','Thailand','Malaysia','Singapore','Hong Kong','New Zealand') THEN 'Asia-Pacific'
-          WHEN ctry.name IN ('Brazil','Argentina','Mexico','Colombia','Chile','Peru') THEN 'Latin America'
-          WHEN ctry.name IN ('Israel','Turkey','Saudi Arabia','Egypt','South Africa','Iran') THEN 'Middle East & Africa'
-          ELSE 'Other'
-        END AS region,
+      SELECT ${REGION_CASE} AS region,
         COUNT(DISTINCT ctry.nct_id) AS trial_count,
         SUM(CASE WHEN s.overall_status IN ('RECRUITING','ACTIVE_NOT_RECRUITING','ENROLLING_BY_INVITATION','NOT_YET_RECRUITING') THEN 1 ELSE 0 END) AS active_count
-      FROM countries ctry
-      JOIN studies s ON s.nct_id = ctry.nct_id
-      ${where}
-      GROUP BY region
-      ORDER BY trial_count DESC
+      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${where}
+      GROUP BY region ORDER BY trial_count DESC
     `).all(...params);
 
-    res.json({
+    return res.json({
       by_country: byCountry.slice(0, 50),
       us_international: usInternational,
       status_by_country: Object.entries(statusByCountry).map(([country, statuses]) => ({ country, ...statuses })),
@@ -1970,8 +2014,65 @@ app.get("/api/geographic-intelligence", (req, res) => {
       total_countries: byCountry.length,
     });
   } catch (e) {
-    console.error("[geographic-intelligence]", e.message);
-    res.status(500).json({ error: "Query failed", detail: e.message });
+    console.error("[geographic-intelligence] sqlite:", e.message);
+    // fall through to PG
+  }
+  }
+
+  // ── PostgreSQL fallback ──
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Snapshot missing countries/facilities tables and no AACT credentials for live fallback. Awaiting nightly refresh." });
+  try {
+    const pgClauses = [];
+    const pgParams = [];
+    let idx = 1;
+    if (condition) { pgClauses.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${idx})`); pgParams.push(`%${condition}%`); idx++; }
+    if (phase) { pgClauses.push(`s.phase = $${idx}`); pgParams.push(phase); idx++; }
+    if (sponsor) { pgClauses.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${idx})`); pgParams.push(`%${sponsor}%`); idx++; }
+    if (intervention) { pgClauses.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${idx})`); pgParams.push(`%${intervention}%`); idx++; }
+    const pgWhere = pgClauses.length ? `WHERE ${pgClauses.join(" AND ")}` : "";
+
+    const { rows: byCountry } = await pool.query(`
+      SELECT ctry.name AS country, COUNT(DISTINCT ctry.nct_id)::int AS trial_count
+      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
+      GROUP BY ctry.name ORDER BY trial_count DESC LIMIT 50
+    `, pgParams);
+
+    const { rows: [usIntl] } = await pool.query(`
+      SELECT SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END)::int AS us_trials,
+             SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END)::int AS intl_trials,
+             COUNT(DISTINCT ctry.nct_id)::int AS total_trials
+      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
+    `, pgParams);
+
+    const { rows: topSites } = await pool.query(`
+      SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id)::int AS trial_count,
+             ROUND(AVG(f.latitude)::numeric, 4) AS lat, ROUND(AVG(f.longitude)::numeric, 4) AS lng
+      FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
+      ${pgWhere ? pgWhere + " AND" : "WHERE"} f.name IS NOT NULL AND f.name <> ''
+      GROUP BY f.name, f.city, f.state, f.country ORDER BY trial_count DESC LIMIT 30
+    `, pgParams);
+
+    const { rows: regionCounts } = await pool.query(`
+      SELECT ${REGION_CASE} AS region,
+        COUNT(DISTINCT ctry.nct_id)::int AS trial_count,
+        SUM(CASE WHEN s.overall_status IN ('Recruiting','Active, not recruiting','Enrolling by invitation','Not yet recruiting') THEN 1 ELSE 0 END)::int AS active_count
+      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
+      GROUP BY region ORDER BY trial_count DESC
+    `, pgParams);
+
+    return res.json({
+      by_country: byCountry,
+      us_international: usIntl,
+      status_by_country: [],
+      top_sites: topSites,
+      by_region: regionCounts,
+      total_countries: byCountry.length,
+      source: "live",
+    });
+  } catch (e) {
+    console.error("[geographic-intelligence] pg:", e.message);
+    return res.status(500).json({ error: "Query failed", detail: e.message });
   }
 });
 

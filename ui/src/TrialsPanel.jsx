@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useEffect, useRef, Fragment } from "react";
-import { useNavigate } from "react-router-dom";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, executeGraphQuery, isGraphQuestion, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
@@ -45,7 +44,6 @@ const PHASE_CLASS = {
 };
 
 export default function TrialsPanel() {
-  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [step, setStep] = useState("question"); // question | loading | results | error
   const [resolutions, setResolutions] = useState([]);
@@ -510,7 +508,7 @@ export default function TrialsPanel() {
             <span className="ql-icon">📊</span>
             <span className="ql-text">How does enrollment ambition compare to actuals?</span>
           </button>
-          <button className="ql-btn ql-geo" onClick={() => navigate("/geo")}>
+          <button className="ql-btn ql-geo" onClick={() => launchQuestion("geography")}>
             <span className="ql-icon">🌍</span>
             <span className="ql-text">Where are the site concentrations & gaps?</span>
           </button>

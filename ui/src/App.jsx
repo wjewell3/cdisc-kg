@@ -6,7 +6,6 @@ import QueryPanel from "./QueryPanel";
 import TreeView from "./TreeView";
 import TutorPanel from "./TutorPanel";
 import TrialsPanel from "./TrialsPanel";
-import GeographicIntelligence from "./GeographicIntelligence";
 import "./App.css";
 
 // All graph data is bundled statically — no backend needed for the explorer
@@ -38,7 +37,6 @@ const ROUTE_TO_PANEL = {
   "/browse": "browse",
   "/learn": "learn",
   "/trials": "trials",
-  "/geo": "geo",
 };
 const PANEL_TO_ROUTE = Object.fromEntries(Object.entries(ROUTE_TO_PANEL).map(([k, v]) => [v, k]));
 
@@ -330,12 +328,6 @@ function App() {
           >
             SDTM Training
           </button>
-          <button
-            className={`tab-btn tab-btn-geo ${activePanel === "geo" ? "active" : ""}`}
-            onClick={() => switchPanel("geo")}
-          >
-            Geography 🌍
-          </button>
         </div>
         {stats && (
           <span className="stats-badge">
@@ -346,12 +338,12 @@ function App() {
 
       <div className="main">
         {/* Sidebar overlay for mobile */}
-        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "trials" && activePanel !== "geo" && (
+        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "trials" && (
           <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
         )}
 
         {/* Left sidebar — hidden on Browse tab */}
-        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "trials" || activePanel === "geo" ? " sidebar-hidden" : ""}`}>
+        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "trials" ? " sidebar-hidden" : ""}`}>
           <div className="panel">
             <h3>Search</h3>
             <div className="search-box">
@@ -650,9 +642,6 @@ function App() {
 
         {/* Trials / cross-trial AACT intelligence */}
         {activePanel === "trials" && <TrialsPanel />}
-
-        {/* Geographic Intelligence — country/region/site concentration */}
-        {activePanel === "geo" && <GeographicIntelligence />}
       </div>
     </div>
   );

@@ -116,13 +116,10 @@ function USIntlSplit({ data }) {
   );
 }
 
-export default function GeographicIntelligence() {
+export default function GeographicIntelligence({ filterParams = {} }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [condition, setCondition] = useState("");
-  const [phase, setPhase] = useState("");
-  const [appliedFilters, setAppliedFilters] = useState({});
 
   const fetchData = useCallback((filters = {}) => {
     setLoading(true);
@@ -143,60 +140,10 @@ export default function GeographicIntelligence() {
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const applyFilters = useCallback((e) => {
-    e.preventDefault();
-    const filters = {};
-    if (condition.trim()) filters.condition = condition.trim();
-    if (phase) filters.phase = phase;
-    setAppliedFilters(filters);
-    fetchData(filters);
-  }, [condition, phase, fetchData]);
+  useEffect(() => { fetchData(filterParams); }, [filterParams, fetchData]);
 
   return (
-    <div className="geo-panel">
-      <div className="geo-header">
-        <div className="geo-header-left">
-          <div className="geo-logo">🌍</div>
-          <div>
-            <h1 className="geo-title">Geographic Intelligence</h1>
-            <p className="geo-subtitle">Site activation concentrations, gaps, and regional distribution</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="geo-filters">
-        <form className="geo-filter-form" onSubmit={applyFilters}>
-          <input
-            type="text"
-            className="geo-filter-input"
-            placeholder="Filter by condition (e.g., Breast Cancer)"
-            value={condition}
-            onChange={e => setCondition(e.target.value)}
-          />
-          <select className="geo-filter-select" value={phase} onChange={e => setPhase(e.target.value)}>
-            <option value="">All Phases</option>
-            <option value="EARLY_PHASE1">Early Phase 1</option>
-            <option value="PHASE1">Phase 1</option>
-            <option value="PHASE1/PHASE2">Phase 1/2</option>
-            <option value="PHASE2">Phase 2</option>
-            <option value="PHASE2/PHASE3">Phase 2/3</option>
-            <option value="PHASE3">Phase 3</option>
-            <option value="PHASE4">Phase 4</option>
-          </select>
-          <button type="submit" className="geo-filter-btn">Analyze Geography →</button>
-        </form>
-        {Object.keys(appliedFilters).length > 0 && (
-          <div className="geo-filter-pills">
-            {Object.entries(appliedFilters).map(([k, v]) => (
-              <span key={k} className="geo-pill">{k}: {v}</span>
-            ))}
-            <button className="geo-pill-clear" onClick={() => { setCondition(""); setPhase(""); setAppliedFilters({}); fetchData(); }}>Clear ×</button>
-          </div>
-        )}
-      </div>
-
+    <div className="geo-panel geo-panel-embedded">
       {loading ? (
         <div className="geo-loading">
           <div className="geo-spinner" />

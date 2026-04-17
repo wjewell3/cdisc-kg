@@ -123,11 +123,12 @@
 .okpi-bar-label {
   font-size: 11px;
   color: #8b949e;
-  min-width: 100px;
-  max-width: 160px;
+  width: 160px;
+  flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: right;
 }
 
 .okpi-bar-track {
