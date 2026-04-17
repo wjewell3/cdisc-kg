@@ -1654,3 +1654,32 @@
     font-size: 13px;
   }
 }
+
+/* ── Graph → Filter bridge button ──────────────────────────────── */
+.graph-action-col {
+  width: 70px;
+  text-align: center;
+}
+.graph-filter-btn {
+  padding: 3px 8px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background: transparent;
+  color: #58a6ff;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.graph-filter-btn:hover {
+  background: #21262d;
+  border-color: #58a6ff;
+}
+
+/* ── Insight hint in charts section ────────────────────────────── */
+.tchart-insight-hint {
+  font-size: 11px;
+  color: #6e7681;
+  margin: -4px 0 6px 4px;
+  font-style: italic;
+}

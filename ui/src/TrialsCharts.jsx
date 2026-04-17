@@ -56,7 +56,7 @@ function completionColor(rate) {
   return rate >= 75 ? "#3fb950" : rate >= 50 ? "#d29922" : "#f85149";
 }
 
-function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8, total = null }) {
+function SvgBarChart({ data, title, field, activeValues, onFilter, onEntityInsight, maxItems = 8, total = null }) {
   const displayData = data.slice(0, maxItems);
 
   // Append an "(other sponsors)" bar when total is provided and not all are shown
@@ -101,10 +101,15 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, maxItems = 8,
                   onFilter(field, label);
                 }
               }}
+              onDoubleClick={() => {
+                if (!isOthers && onEntityInsight && (field === "sponsor" || field === "condition" || field === "intervention" || field === "phase" || field === "status")) {
+                  onEntityInsight(field, label);
+                }
+              }}
               style={{ cursor: isOthers ? "default" : "pointer" }}
               role={isOthers ? undefined : "button"}
               aria-pressed={isActive}
-              aria-label={isOthers ? label : `Filter by ${label}: ${count}`}
+              aria-label={isOthers ? label : `Filter by ${label}: ${count}. Double-click for insight.`}
             >
               <rect
                 x={padLeft}
@@ -364,7 +369,7 @@ function StatsBanner({ stats, baseline, hasFilters }) {
 
 export { computeStats };
 
-export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter, stats, baselineStats, hasFilteredStats, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
+export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter, onEntityInsight, stats, baselineStats, hasFilteredStats, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -480,6 +485,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
         )}
       </div>
       <StatsBanner stats={currentStats} baseline={bStats} hasFilters={hasFilteredStats ?? activeFilters.length > 0} />
+      <p className="tchart-insight-hint">Click a bar to filter · double-click for deep entity insight</p>
       <div className="trials-charts-grid">
         {hasData(phaseData) && (
           phaseData.length > 3 ? (
@@ -490,6 +496,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
               displayMap={PHASE_DISPLAY}
               activeValues={getActiveVals("phase")}
               onFilter={onFilter}
+              onEntityInsight={onEntityInsight}
             />
           ) : (
             <SvgDonutChart
@@ -509,6 +516,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
             field="status"
             activeValues={getActiveVals("status")}
             onFilter={onFilter}
+            onEntityInsight={onEntityInsight}
           />
         )}
         {hasEnrollment && (
@@ -535,6 +543,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
               field="sponsor"
               activeValues={getActiveVals("sponsor")}
               onFilter={onFilter}
+              onEntityInsight={onEntityInsight}
               total={sponsorSearch ? null : totalCount}
             />
           </div>
@@ -555,6 +564,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
               field="condition"
               activeValues={getActiveVals("condition")}
               onFilter={onFilter}
+              onEntityInsight={onEntityInsight}
               total={conditionSearch ? null : totalCount}
             />
           </div>
@@ -575,6 +585,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
               field="intervention"
               activeValues={getActiveVals("intervention")}
               onFilter={onFilter}
+              onEntityInsight={onEntityInsight}
               total={interventionSearch ? null : totalCount}
             />
           </div>

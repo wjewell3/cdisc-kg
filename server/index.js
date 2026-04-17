@@ -1627,6 +1627,253 @@ app.post("/api/graph/execute", express.json(), async (req, res) => {
   }
 });
 
+// ── Failure Analysis ─────────────────────────────────────────────────────────
+// Returns termination rate + clustered why_stopped reasons for a filtered cohort.
+// Answers: "What's the real termination rate for Phase 3 oncology trials, and why?"
+app.get("/api/failure-analysis", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const { condition = "", phase = "", sponsor = "", intervention = "", min_enrollment = "", max_enrollment = "" } = req.query;
+  try {
+    const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention, min_enrollment, max_enrollment });
+
+    // Overall counts
+    const counts = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN s.overall_status = 'COMPLETED'  THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+        SUM(CASE WHEN s.overall_status = 'WITHDRAWN'  THEN 1 ELSE 0 END) AS withdrawn,
+        SUM(CASE WHEN s.overall_status = 'SUSPENDED'  THEN 1 ELSE 0 END) AS suspended
+      FROM studies s ${where}
+    `).get(...params);
+
+    const finished = counts.completed + counts.terminated;
+    const termination_rate_pct = finished > 0 ? parseFloat(((counts.terminated / finished) * 100).toFixed(1)) : null;
+
+    // Clustered why_stopped reasons (normalized to lowercase, trimmed)
+    const stopReasons = db.prepare(`
+      SELECT LOWER(TRIM(s.why_stopped)) AS reason, COUNT(*) AS count
+      FROM studies s ${where ? where + ' AND' : 'WHERE'} s.why_stopped IS NOT NULL AND s.why_stopped != ''
+      GROUP BY LOWER(TRIM(s.why_stopped))
+      ORDER BY count DESC
+      LIMIT 20
+    `).all(...params);
+
+    // Termination rate by top conditions (for cross-dimensional insight)
+    const byCondition = db.prepare(`
+      SELECT c.name AS condition_name,
+        COUNT(DISTINCT s.nct_id) AS total,
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+        SUM(CASE WHEN s.overall_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed
+      FROM studies s
+      JOIN conditions c ON c.nct_id = s.nct_id
+      ${where}
+      GROUP BY c.name
+      HAVING total >= 20
+      ORDER BY total DESC
+      LIMIT 25
+    `).all(...params);
+
+    const conditionRates = byCondition.map(r => {
+      const fin = r.completed + r.terminated;
+      return {
+        condition: r.condition_name,
+        total: r.total,
+        terminated: r.terminated,
+        completed: r.completed,
+        termination_rate_pct: fin > 0 ? parseFloat(((r.terminated / fin) * 100).toFixed(1)) : null,
+      };
+    }).sort((a, b) => (b.termination_rate_pct ?? 0) - (a.termination_rate_pct ?? 0));
+
+    // Termination rate by phase
+    const byPhase = db.prepare(`
+      SELECT COALESCE(s.phase, 'Unknown') AS phase,
+        COUNT(*) AS total,
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+        SUM(CASE WHEN s.overall_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed
+      FROM studies s ${where}
+      GROUP BY 1
+      ORDER BY total DESC
+    `).all(...params);
+
+    const phaseRates = byPhase.map(r => {
+      const fin = r.completed + r.terminated;
+      return {
+        phase: r.phase,
+        total: r.total,
+        terminated: r.terminated,
+        termination_rate_pct: fin > 0 ? parseFloat(((r.terminated / fin) * 100).toFixed(1)) : null,
+      };
+    });
+
+    res.json({
+      counts,
+      termination_rate_pct,
+      stop_reasons: stopReasons.map(r => ({ reason: r.reason, count: r.count })),
+      by_condition: conditionRates,
+      by_phase: phaseRates,
+    });
+  } catch (e) {
+    console.error("[failure-analysis]", e.message);
+    res.status(500).json({ error: "Query failed", detail: e.message });
+  }
+});
+
+// ── Sponsor Performance ──────────────────────────────────────────────────────
+// Leaderboard: sponsors ranked by completion rate within a filtered cohort.
+// Answers: "Which sponsors have the best completion rates in my therapeutic area?"
+app.get("/api/sponsor-performance", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const { condition = "", phase = "", intervention = "", min_enrollment = "", max_enrollment = "", min_trials = "10" } = req.query;
+  const minTrials = parseInt(min_trials) || 10;
+  try {
+    const { where, params } = buildSqliteWhere({ condition, phase, intervention, min_enrollment, max_enrollment });
+
+    const rows = db.prepare(`
+      SELECT sp.name AS sponsor,
+        COUNT(DISTINCT s.nct_id) AS total,
+        SUM(CASE WHEN s.overall_status = 'COMPLETED'  THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+        ROUND(AVG(CASE WHEN s.enrollment_type = 'ACTUAL' THEN CAST(s.enrollment AS REAL) END), 0) AS avg_enrollment
+      FROM studies s
+      JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
+      ${where}
+      GROUP BY sp.name
+      HAVING total >= ?
+      ORDER BY total DESC
+    `).all(...params, minTrials);
+
+    const sponsors = rows.map(r => {
+      const fin = r.completed + r.terminated;
+      return {
+        sponsor: r.sponsor,
+        total: r.total,
+        completed: r.completed,
+        terminated: r.terminated,
+        completion_rate_pct: fin > 0 ? parseFloat(((r.completed / fin) * 100).toFixed(1)) : null,
+        avg_enrollment: r.avg_enrollment ? Math.round(r.avg_enrollment) : null,
+      };
+    }).sort((a, b) => (b.completion_rate_pct ?? 0) - (a.completion_rate_pct ?? 0));
+
+    res.json({ sponsors, min_trials: minTrials });
+  } catch (e) {
+    console.error("[sponsor-performance]", e.message);
+    res.status(500).json({ error: "Query failed", detail: e.message });
+  }
+});
+
+// ── Enrollment Benchmark ─────────────────────────────────────────────────────
+// Compares anticipated vs actual enrollment by design type.
+// Answers: "How does enrollment ambition compare to historical actuals for this design type?"
+app.get("/api/enrollment-benchmark", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const { condition = "", phase = "", sponsor = "", intervention = "", allocation = "", masking = "", intervention_model = "" } = req.query;
+  try {
+    const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention });
+
+    // Build extra design-level WHERE clauses
+    const designClauses = [];
+    const designParams = [];
+    if (allocation) { designClauses.push(`d.allocation = ?`); designParams.push(allocation); }
+    if (masking) { designClauses.push(`d.masking = ?`); designParams.push(masking); }
+    if (intervention_model) { designClauses.push(`d.intervention_model = ?`); designParams.push(intervention_model); }
+    const designWhere = designClauses.length ? `AND ${designClauses.join(' AND ')}` : '';
+
+    // Anticipated vs Actual enrollment summary
+    const enrollSummary = db.prepare(`
+      SELECT
+        s.enrollment_type,
+        COUNT(*) AS trial_count,
+        ROUND(AVG(CAST(s.enrollment AS REAL)), 0) AS avg_enrollment,
+        MIN(s.enrollment) AS min_enrollment,
+        MAX(s.enrollment) AS max_enrollment
+      FROM studies s
+      LEFT JOIN designs d ON d.nct_id = s.nct_id
+      ${where ? where + ' AND' : 'WHERE'} s.enrollment IS NOT NULL AND s.enrollment > 0
+      ${designWhere}
+      GROUP BY s.enrollment_type
+    `).all(...params, ...designParams);
+
+    // Enrollment by design characteristics
+    const byAllocation = db.prepare(`
+      SELECT COALESCE(d.allocation, 'Unknown') AS design_val,
+        s.enrollment_type,
+        COUNT(*) AS trial_count,
+        ROUND(AVG(CAST(s.enrollment AS REAL)), 0) AS avg_enrollment
+      FROM studies s
+      JOIN designs d ON d.nct_id = s.nct_id
+      ${where ? where + ' AND' : 'WHERE'} s.enrollment IS NOT NULL AND s.enrollment > 0
+      ${designWhere}
+      GROUP BY d.allocation, s.enrollment_type
+      ORDER BY trial_count DESC
+    `).all(...params, ...designParams);
+
+    const byMasking = db.prepare(`
+      SELECT COALESCE(d.masking, 'Unknown') AS design_val,
+        s.enrollment_type,
+        COUNT(*) AS trial_count,
+        ROUND(AVG(CAST(s.enrollment AS REAL)), 0) AS avg_enrollment
+      FROM studies s
+      JOIN designs d ON d.nct_id = s.nct_id
+      ${where ? where + ' AND' : 'WHERE'} s.enrollment IS NOT NULL AND s.enrollment > 0
+      ${designWhere}
+      GROUP BY d.masking, s.enrollment_type
+      ORDER BY trial_count DESC
+    `).all(...params, ...designParams);
+
+    // Available design options (for UI dropdowns, scoped to current filters)
+    const allocations = db.prepare(`
+      SELECT DISTINCT d.allocation AS val FROM designs d
+      JOIN studies s ON s.nct_id = d.nct_id
+      ${where}
+      ${designWhere}
+      ORDER BY val
+    `).all(...params, ...designParams).map(r => r.val).filter(Boolean);
+
+    const maskings = db.prepare(`
+      SELECT DISTINCT d.masking AS val FROM designs d
+      JOIN studies s ON s.nct_id = d.nct_id
+      ${where}
+      ${designWhere}
+      ORDER BY val
+    `).all(...params, ...designParams).map(r => r.val).filter(Boolean);
+
+    const models = db.prepare(`
+      SELECT DISTINCT d.intervention_model AS val FROM designs d
+      JOIN studies s ON s.nct_id = d.nct_id
+      ${where}
+      ${designWhere}
+      ORDER BY val
+    `).all(...params, ...designParams).map(r => r.val).filter(Boolean);
+
+    res.json({
+      summary: enrollSummary.map(r => ({
+        enrollment_type: r.enrollment_type || 'Unknown',
+        trial_count: r.trial_count,
+        avg_enrollment: r.avg_enrollment ? Math.round(r.avg_enrollment) : null,
+        min_enrollment: r.min_enrollment,
+        max_enrollment: r.max_enrollment,
+      })),
+      by_allocation: byAllocation.map(r => ({
+        design: r.design_val,
+        enrollment_type: r.enrollment_type || 'Unknown',
+        trial_count: r.trial_count,
+        avg_enrollment: r.avg_enrollment ? Math.round(r.avg_enrollment) : null,
+      })),
+      by_masking: byMasking.map(r => ({
+        design: r.design_val,
+        enrollment_type: r.enrollment_type || 'Unknown',
+        trial_count: r.trial_count,
+        avg_enrollment: r.avg_enrollment ? Math.round(r.avg_enrollment) : null,
+      })),
+      design_options: { allocations, maskings, models },
+    });
+  } catch (e) {
+    console.error("[enrollment-benchmark]", e.message);
+    res.status(500).json({ error: "Query failed", detail: e.message });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

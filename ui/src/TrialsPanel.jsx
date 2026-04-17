@@ -4,6 +4,9 @@ import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import { KGContextPanel } from "./GraphIntelligence";
 import GraphViz from "./GraphViz";
+import InsightPanel from "./InsightPanel";
+import OperationalKPIs from "./OperationalKPIs";
+import "./OperationalKPIs.css";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 import "./GraphIntelligence.css";
@@ -63,6 +66,7 @@ export default function TrialsPanel() {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [graphResult, setGraphResult] = useState(null); // { cypher, columns, rows, narrative, loading, error }
   const [graphQueryId, setGraphQueryId] = useState(null); // preset id (g1-g5) for viz shape
+  const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -389,6 +393,55 @@ export default function TrialsPanel() {
     return { conditions: [...conditions], sponsors: [...sponsors] };
   }, [chartFilters, activeResolutions]);
 
+  // Build filter params for operational KPI endpoints (mirrors buildCurrentParams but as plain object)
+  const okpiFilterParams = useMemo(() => {
+    const p = {};
+    for (const r of activeResolutions) {
+      if (r.value && r.param !== "q" && r.param !== "graph") {
+        p[r.param] = p[r.param] ? `${p[r.param]},${r.value}` : r.value;
+      }
+    }
+    for (const f of chartFilters) {
+      if (f.field === "phase" || f.field === "status" || f.field === "sponsor" || f.field === "condition" || f.field === "intervention") {
+        p[f.field] = p[f.field] ? `${p[f.field]},${f.value}` : f.value;
+      }
+    }
+    return p;
+  }, [activeResolutions, chartFilters]);
+
+  // Handle entity insight — clicking a chart bar label opens the InsightPanel
+  const handleEntityInsight = useCallback((type, name) => {
+    setInsightTarget({ type, name });
+  }, []);
+
+  // Graph → chart filter bridge: apply filterable entities from graph results
+  const applyGraphFilters = useCallback((columns, row) => {
+    const newFilters = [];
+    for (const col of columns) {
+      const val = row[col];
+      if (!val || typeof val !== "string") continue;
+      const lc = col.toLowerCase();
+      if (lc.includes("condition") || lc === "expansion_target" || lc === "disease") {
+        newFilters.push({ field: "condition", value: val });
+      } else if (lc.includes("sponsor")) {
+        newFilters.push({ field: "sponsor", value: val });
+      } else if (lc.includes("intervention") || lc === "drug" || lc === "treatment") {
+        newFilters.push({ field: "intervention", value: val });
+      }
+    }
+    if (newFilters.length > 0) {
+      setChartFilters(prev => {
+        const next = [...prev];
+        for (const nf of newFilters) {
+          if (!next.some(f => f.field === nf.field && f.value === nf.value)) next.push(nf);
+        }
+        return next;
+      });
+      setGraphResult(null);
+      setGraphQueryId(null);
+    }
+  }, []);
+
   return (
     <>
     <div className="trials-panel">
@@ -547,6 +600,7 @@ export default function TrialsPanel() {
                             {graphResult.columns.map(col => (
                               <th key={col}>{col}</th>
                             ))}
+                            <th className="graph-action-col">Action</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -561,6 +615,15 @@ export default function TrialsPanel() {
                                       : String(row[col] ?? "")}
                                 </td>
                               ))}
+                              <td>
+                                <button
+                                  className="graph-filter-btn"
+                                  title="Apply this row as chart filters"
+                                  onClick={() => applyGraphFilters(graphResult.columns, row)}
+                                >
+                                  → Filter
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -624,6 +687,7 @@ export default function TrialsPanel() {
                   hasFilteredStats={chartFilters.length > 0}
                   activeFilters={chartFilters}
                   onFilter={handleChartFilter}
+                  onEntityInsight={handleEntityInsight}
                   fetchSponsors={fetchSponsors}
                   fetchConditions={fetchConditions}
                   fetchInterventions={fetchInterventions}
@@ -631,6 +695,9 @@ export default function TrialsPanel() {
                 />
 
                 <KGContextPanel conditions={kgEntities.conditions} sponsors={kgEntities.sponsors} />
+
+                {/* ── Operational KPIs ─────────────────────────────── */}
+                <OperationalKPIs filterParams={okpiFilterParams} />
 
                 {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">
@@ -937,6 +1004,8 @@ export default function TrialsPanel() {
         onClose={() => setRulesOpen(false)}
       />
     )}
+
+    <InsightPanel insightTarget={insightTarget} onClose={() => setInsightTarget(null)} />
 
     </>
   );
