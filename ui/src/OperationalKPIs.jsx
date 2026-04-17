@@ -273,17 +273,19 @@ function EnrollmentBenchmark({ filterParams }) {
   if (error) return <div className="okpi-error">⚠ {error}</div>;
   if (!data) return null;
 
-  const anticipated = data.summary.find(s => s.enrollment_type === "Anticipated");
-  const actual = data.summary.find(s => s.enrollment_type === "Actual");
+  // Normalize enrollment_type across sources (SQLite: Anticipated/Actual, PG: ESTIMATED/ACTUAL)
+  const anticipated = data.summary.find(s => /anticipated|estimated/i.test(s.enrollment_type));
+  const actual = data.summary.find(s => /^actual$/i.test(s.enrollment_type));
   const ambitionDelta = (anticipated?.avg_enrollment && actual?.avg_enrollment)
     ? Math.round(((anticipated.avg_enrollment - actual.avg_enrollment) / actual.avg_enrollment) * 100)
     : null;
 
-  // Pivot by_allocation for comparison chart
+  // Pivot by_allocation for comparison chart (normalize type names)
   const allocationMap = {};
   for (const row of data.by_allocation) {
     if (!allocationMap[row.design]) allocationMap[row.design] = {};
-    allocationMap[row.design][row.enrollment_type] = row.avg_enrollment;
+    const normType = /anticipated|estimated/i.test(row.enrollment_type) ? "Anticipated" : /^actual$/i.test(row.enrollment_type) ? "Actual" : row.enrollment_type;
+    allocationMap[row.design][normType] = row.avg_enrollment;
   }
 
   return (

@@ -427,6 +427,10 @@ export default function TrialsPanel() {
       // "How does enrollment ambition compare to historical actuals for this design type?"
       setOkpiView("enrollment");
       setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+    } else if (key === "geography") {
+      // "Where are the geographic concentrations and gaps in site activation?"
+      setOkpiView("geography");
+      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
     }
     setStep("results");
   }, []);

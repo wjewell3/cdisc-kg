@@ -103,7 +103,7 @@ Together, these layers provide both the operational data semantics (Neo4j trials
 | Eligibility complexity | Trial risk score factor |
 | Site/facility count | Trial risk score factor |
 | Countries | Trial Intelligence briefing |
-| Site portfolio & profile | Site Intelligence tab (search + deep site dossier) |
+| Geographic concentrations & gaps | Operational KPIs → Geography tab (country/region distribution, US vs intl, top sites) |
 | Entity insight (any dimension) | InsightPanel (double-click chart bar → portfolio analytics + GPT-4.1 briefing) |
 
 ### Dimensions Ingested but NOT Yet Surfaced — Roadmap
@@ -114,10 +114,9 @@ Together, these layers provide both the operational data semantics (Neo4j trials
 | **Age range / demographics** | `calculated_values.minimum_age_num`, `maximum_age_num` | Chart facet — filter by pediatric/adult/geriatric |
 | **SAE subject counts** | `calculated_values.number_of_sae_subjects`, `number_of_nsae_subjects` | Safety signal dimension — high SAE sponsors/conditions |
 | **Outcome count** | `calculated_values.number_of_primary/secondary_outcomes_to_measure` | Complexity signal — trials measuring many endpoints |
-| **US vs international** | `calculated_values.has_us_facility` | Geographic filter toggle |
+| **US vs international** | `calculated_values.has_us_facility` | Surfaced in Geography KPI tab (US vs intl split bar) |
 | **Single vs multi-site** | `calculated_values.has_single_facility` | Operational complexity filter |
 | **Results reporting lag** | `calculated_values.months_to_report_results` | Compliance KPI — which sponsors/phases report fastest |
-| **Geographic site density** | `facilities` lat/lng | Map visualization — site concentration by region |
 | **Dropout rate by reason** | `drop_withdrawals` aggregated | Operational KPI — which reasons dominate by phase/condition |
 
 ### AACT Tables Not Yet Ingested — Future Expansion
@@ -139,22 +138,22 @@ Together, these layers provide both the operational data semantics (Neo4j trials
 cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
-│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph (+ embedded Q&A), Data Catalog, SDTM Training, Geography
+│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph (+ embedded Q&A), Data Catalog, SDTM Training
 │       ├── TrialsPanel.jsx    # Main search + Question Launcher + cross-filter charts + KPI panels + KG Q&A + entity insight + graph→filter bridge
 │       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner (double-click bar → entity insight)
-│       ├── OperationalKPIs.jsx # 3-tab panel: Failure Analysis, Sponsor Performance, Enrollment Benchmark
+│       ├── OperationalKPIs.jsx # 4-tab panel: Failure Analysis, Sponsor Performance, Enrollment Benchmark, Geography
 │       ├── GraphViz.jsx       # Cytoscape.js trial-graph visualization (Neo4j → browser)
 │       ├── RulesManager.jsx   # DQ rules: grouping normalization, enrollment bounds
 │       ├── TreeView.jsx       # SDTM standards data catalog (Browse tab)
 │       ├── QueryPanel.jsx     # NL → standards graph Q&A (embedded in Standards Graph sidebar)
 │       ├── TutorPanel.jsx     # SDTM training module
 │       ├── InsightPanel.jsx   # Entity-level operational insight (wired to TrialsPanel via chart double-click)
-│       ├── GeographicIntelligence.jsx # Country/region/site concentration & gaps (top-level tab)
+│       ├── GeographicIntelligence.jsx # Country/region/site concentration & gaps (embedded in OperationalKPIs Geography tab)
 │       └── trialsEngine.js    # API client (fetch wrappers for all modes)
 ├── api/                       # Vercel serverless functions (HTTPS proxy → OKE, 10 functions for Hobby plan)
 │   ├── trials.js              # /api/trials → OKE server
 │   ├── intelligence.js        # /api/intelligence → trial-intelligence
-│   ├── analytics.js           # /api/analytics?mode=failure-analysis|sponsor-performance|enrollment-benchmark → OKE
+│   ├── analytics.js           # /api/analytics?mode=failure-analysis|sponsor-performance|enrollment-benchmark|geographic → OKE
 │   ├── entity.js              # /api/entity?mode=insight|intelligence → OKE entity endpoints
 │   ├── site.js                # /api/site?mode=search|profile → OKE site endpoints
 │   ├── trial-risk.js          # /api/trial-risk → OKE
@@ -241,7 +240,7 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 
 - **OKE**: Single ARM64 node (`VM.Standard.A1.Flex`, 4 OCPU / 24 GB), namespace `cdisc-kg`, LB IP `129.80.137.184`
 - **Neo4j 5.26**: Graph database on OKE — 580k Trial + 512k Intervention + 129k Condition + 50k Sponsor + 225 Country nodes. ClusterIP service, Cypher endpoint for graph queries
-- **SQLite snapshot**: 11 tables on a 50 GB PVC (`/data/aact.db`), refreshed nightly at 2AM UTC (5h timeout). Server falls back to live AACT PostgreSQL if snapshot missing
+- **SQLite snapshot**: 11 tables on a 50 GB PVC (`/data/aact.db`), refreshed nightly at 2AM UTC (5h timeout). Server falls back to live AACT PostgreSQL if snapshot missing or tables not yet built
 - **CI**: `ubuntu-24.04-arm` GitHub Actions runner — native ARM64 build, ~2.5 min. Auto-triggers on push to `server/**`
 - **Vercel**: Serverless proxy layer + static UI hosting. Deploy with `vercel --prod` from project root
 - **LLM**: GPT-4.1 via GitHub Copilot API (`https://api.githubcopilot.com/chat/completions`)
