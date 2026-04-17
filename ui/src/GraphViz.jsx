@@ -27,18 +27,7 @@ const EDGES = [
 const NODE_MAP = Object.fromEntries(NODES.map(n => [n.id, n]));
 
 const VW = 590, VH = 278;
-// Per-type split offsets when a type appears 2x.
-// Trial: spread wide horizontally (it's the hub, edges flow left↔right)
-// Condition: spread vertically (stacked at top-right, room above/below)
-// Intervention: spread vertically
-// Sponsor/Country: diagonal
-const SPLIT_BY_TYPE = {
-  Trial:        [[-50, 0],  [50, 0]],
-  Condition:    [[0, -24],  [0, 24]],
-  Intervention: [[0, -28],  [0, 28]],
-  Sponsor:      [[-18, -14],[18, 14]],
-  Country:      [[-12, -10],[12, 10]],
-};
+const CX = VW / 2, CY = VH / 2;  // center of SVG
 
 // ── Per-preset query traversal path definitions ──────────────────────────────
 const QUERY_PATHS = {
@@ -109,10 +98,10 @@ const QUERY_PATHS = {
   },
 };
 
-// Build instances: one per schema type, but active types that appear 2x in the
-// path get a clone that starts overlapping and splits apart.  Unused types stay
-// at their schema position and grey out.  Active types stay at schema pos (or
-// offset slightly if split).  The graph structure is always visible.
+// Build instances with MIRROR layout.
+// The middle step of the path goes to SVG center.  Steps fan out symmetrically
+// left (earlier steps) and right (later steps).  Unused types stay at their
+// schema position and grey out.  Y gets a gentle zigzag so it's not a flat line.
 function buildInstances(path) {
   if (!path) {
     return NODES.map(n => ({
@@ -126,9 +115,23 @@ function buildInstances(path) {
   }
 
   const steps = path.steps.filter(s => s.type === "node");
+  const N = steps.length;
+  const mid = Math.floor(N / 2);      // pivot index (center of mirror)
+  const hSpacing = N <= 2 ? 120 : N <= 3 ? 100 : 80;
+  const yAmp = 25;                      // gentle zigzag amplitude
+
+  // Compute target x,y for each step index
+  const stepPos = steps.map((s, i) => {
+    const offset = i - mid;             // negative = left, positive = right, 0 = center
+    const x = Math.round(CX + offset * hSpacing);
+    const y = Math.round(CY + (i % 2 === 0 ? -yAmp : yAmp) * (N > 2 ? 1 : 0));
+    return { ...s, stepIdx: i, x, y };
+  });
+
+  // Group by type
   const occ = {};
-  steps.forEach((s, idx) => {
-    (occ[s.id] ??= []).push({ idx, label: s.label, note: s.note });
+  stepPos.forEach(sp => {
+    (occ[sp.id] ??= []).push(sp);
   });
 
   const out = [];
@@ -146,16 +149,14 @@ function buildInstances(path) {
       return;
     }
     const split = hits.length > 1;
-    const offsets = SPLIT_BY_TYPE[n.id] || [[0, 0], [0, 0]];
     hits.forEach((h, j) => {
-      const [dx, dy] = split ? (offsets[j] || [0, 0]) : [0, 0];
       out.push({
         key: j === 0 ? n.id : `${n.id}-${j}`,
         typeId: n.id,
         homeX: n.x, homeY: n.y,
-        targetX: n.x + dx, targetY: n.y + dy,
+        targetX: h.x, targetY: h.y,
         r: n.r, color: n.color,
-        state: "active", step: h.idx + 1, note: h.note,
+        state: "active", step: h.stepIdx + 1, note: h.note,
         pathLabel: h.label, isSplit: split,
       });
     });
@@ -167,12 +168,6 @@ function buildInstances(path) {
 export default function GraphViz({ queryId }) {
   const path = QUERY_PATHS[queryId] ?? null;
   const active = !!path;
-
-  // Which edge labels does this query traverse?
-  const activeEdges = useMemo(() => {
-    if (!path) return new Set();
-    return new Set(path.steps.filter(s => s.type === "edge").map(s => s.label));
-  }, [path]);
 
   const instances = useMemo(() => buildInstances(path), [path]);
 
@@ -188,6 +183,42 @@ export default function GraphViz({ queryId }) {
   }, [queryId]);
 
   const moved = active && spread;
+
+  // Build a position lookup for edge drawing — maps each instance key to its
+  // current (target or home) position
+  const instPos = useMemo(() => {
+    const m = {};
+    instances.forEach(inst => {
+      m[inst.key] = {
+        homeX: inst.homeX, homeY: inst.homeY,
+        targetX: inst.targetX, targetY: inst.targetY,
+        r: inst.r,
+      };
+    });
+    return m;
+  }, [instances]);
+
+  // Build path-step edge pairs: consecutive node steps with the edge between them
+  const pathEdges = useMemo(() => {
+    if (!path) return [];
+    const nodeSteps = path.steps.filter(s => s.type === "node");
+    const edgeSteps = path.steps.filter(s => s.type === "edge");
+    const pairs = [];
+    // Map each step index → the instance key
+    const typeCounter = {};
+    const stepKeys = nodeSteps.map(s => {
+      const c = (typeCounter[s.id] = (typeCounter[s.id] || 0));
+      typeCounter[s.id]++;
+      return c === 0 ? s.id : `${s.id}-${c}`;
+    });
+    for (let i = 0; i < nodeSteps.length - 1; i++) {
+      pairs.push({
+        fromKey: stepKeys[i], toKey: stepKeys[i + 1],
+        edge: edgeSteps[i],
+      });
+    }
+    return pairs;
+  }, [path]);
 
   return (
     <div className="graph-viz-wrap">
@@ -208,36 +239,53 @@ export default function GraphViz({ queryId }) {
           </marker>
         </defs>
 
-        {/* ── Edges — always visible; highlighted or dimmed based on traversal ── */}
-        {EDGES.map(e => {
-          const from = NODE_MAP[e.from], to = NODE_MAP[e.to];
-          const dx = to.x - from.x, dy = to.y - from.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
+        {/* ── Schema edges — fade out when query active ── */}
+        <g style={{ opacity: active ? 0.15 : 1, transition: "opacity 0.4s" }}>
+          {EDGES.map(e => {
+            const from = NODE_MAP[e.from], to = NODE_MAP[e.to];
+            const dx = to.x - from.x, dy = to.y - from.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const ux = dx / dist, uy = dy / dist;
+            const x1 = from.x + ux * (from.r + 2), y1 = from.y + uy * (from.r + 2);
+            const x2 = to.x - ux * (to.r + 4),     y2 = to.y - uy * (to.r + 4);
+            const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+            return (
+              <g key={e.label}>
+                <line x1={x1} y1={y1} x2={x2} y2={y2}
+                  stroke="#475569" strokeWidth="1.5" markerEnd="url(#gv-arrow)" />
+                <text x={mx} y={my - 7} textAnchor="middle"
+                  fontSize="9" fontWeight="600" fill="#64748b" letterSpacing="0.04">{e.label}</text>
+                <text x={mx} y={my + 7} textAnchor="middle"
+                  fontSize="8" fill="#475569">{e.count}</text>
+              </g>
+            );
+          })}
+        </g>
+
+        {/* ── Path edges — draw between actual moved instance positions ── */}
+        {pathEdges.map((pe, i) => {
+          const fp = instPos[pe.fromKey], tp = instPos[pe.toKey];
+          if (!fp || !tp) return null;
+          const fx = moved ? fp.targetX : fp.homeX;
+          const fy = moved ? fp.targetY : fp.homeY;
+          const tx = moved ? tp.targetX : tp.homeX;
+          const ty = moved ? tp.targetY : tp.homeY;
+          const dx = tx - fx, dy = ty - fy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
           const ux = dx / dist, uy = dy / dist;
-          const x1 = from.x + ux * (from.r + 2), y1 = from.y + uy * (from.r + 2);
-          const x2 = to.x - ux * (to.r + 4),     y2 = to.y - uy * (to.r + 4);
+          const x1 = fx + ux * (fp.r + 3), y1 = fy + uy * (fp.r + 3);
+          const x2 = tx - ux * (tp.r + 5), y2 = ty - uy * (tp.r + 5);
           const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-
-          const hi  = active && activeEdges.has(e.label);
-          const dim = active && !hi;
-
-          const edgeStroke = hi ? "#38bdf8" : dim ? "#334155" : "#475569";
-          const labelFill  = hi ? "#7dd3fc" : dim ? "#334155" : "#64748b";
-          const countFill  = hi ? "#38bdf8" : dim ? "#334155" : "#475569";
-          const marker = hi ? "url(#gv-arrow-hi)" : dim ? "url(#gv-arrow-dim)" : "url(#gv-arrow)";
-          const sw = hi ? 2 : 1.5;
-
           return (
-            <g key={e.label}>
+            <g key={`pe-${i}`}
+              style={{ opacity: moved ? 1 : 0, transition: "opacity 0.25s 0.5s" }}>
               <line x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={edgeStroke} strokeWidth={sw} markerEnd={marker}
-                style={{ transition: "stroke 0.4s" }} />
-              <text x={mx} y={my - 7} textAnchor="middle"
-                fontSize="9" fontWeight="600" fill={labelFill} letterSpacing="0.04"
-                style={{ transition: "fill 0.4s" }}>{e.label}</text>
-              <text x={mx} y={my + 7} textAnchor="middle"
-                fontSize="8" fill={countFill}
-                style={{ transition: "fill 0.4s" }}>{e.count}</text>
+                stroke="#38bdf8" strokeWidth="2" markerEnd="url(#gv-arrow-hi)"
+                className="gv-edge-pulse" />
+              <text x={mx} y={my - 10} textAnchor="middle"
+                fontSize="8" fontWeight="700" fill="#7dd3fc" letterSpacing="0.04">
+                {pe.edge?.dir} {pe.edge?.label}
+              </text>
             </g>
           );
         })}
