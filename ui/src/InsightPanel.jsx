@@ -64,7 +64,7 @@ export default function InsightPanel({ insightTarget, onClose }) {
     if (!insightTarget) { setData(null); return; }
     setData(null); setError(null); setAiText(null); setAiError(null); setLoading(true);
     const base = trialsApiBase();
-    const url = `${base}/api/entity-insight?type=${encodeURIComponent(insightTarget.type)}&name=${encodeURIComponent(insightTarget.name)}`;
+    const url = `${base}/api/entity?mode=insight&type=${encodeURIComponent(insightTarget.type)}&name=${encodeURIComponent(insightTarget.name)}`;
     fetch(url)
       .then(r => r.json().then(d => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
@@ -86,7 +86,7 @@ export default function InsightPanel({ insightTarget, onClose }) {
     setAiLoading(true); setAiText(null); setAiError(null);
     try {
       const base = trialsApiBase();
-      const url = `${base}/api/entity-intelligence?type=${encodeURIComponent(insightTarget.type)}&name=${encodeURIComponent(insightTarget.name)}`;
+      const url = `${base}/api/entity?mode=intelligence&type=${encodeURIComponent(insightTarget.type)}&name=${encodeURIComponent(insightTarget.name)}`;
       const r = await fetch(url);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Analysis failed");

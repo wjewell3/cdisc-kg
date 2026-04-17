@@ -41,7 +41,7 @@ export default function SiteIntelligence({ onSelectTrial }) {
     setSearchResults(null);
     try {
       const base = trialsApiBase();
-      const url = base ? `${base}/api/site-search?q=${encodeURIComponent(query)}` : `/api/site-search?q=${encodeURIComponent(query)}`;
+      const url = base ? `${base}/api/site?mode=search&q=${encodeURIComponent(query)}` : `/api/site?mode=search&q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -63,7 +63,7 @@ export default function SiteIntelligence({ onSelectTrial }) {
       if (site.city) params.set("city", site.city);
       if (site.state) params.set("state", site.state);
       if (site.country) params.set("country", site.country);
-      const url = base ? `${base}/api/site-profile?${params}` : `/api/site-profile?${params}`;
+      const url = base ? `${base}/api/site-profile?${params}` : `/api/site?mode=profile&${params}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       const data = await res.json();
