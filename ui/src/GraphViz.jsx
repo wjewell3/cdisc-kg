@@ -7,12 +7,13 @@
 import { useMemo } from "react";
 
 // ── Schema layout — fixed positions for clean diagram ────────────────────────
+// Radii are sqrt-proportional to node counts (Trial 580k ≈ Intervention 512k >> Condition 129k >> Sponsor 50k >> Country 225)
 const NODES = [
-  { id: "Sponsor",      label: "Sponsor",      count: "49.9k",  x: 80,  y: 90,  color: "#818cf8", r: 32 },
-  { id: "Trial",        label: "Trial",         count: "580k",   x: 280, y: 90,  color: "#38bdf8", r: 42 },
-  { id: "Condition",    label: "Condition",     count: "129k",   x: 490, y: 40,  color: "#34d399", r: 36 },
-  { id: "Intervention", label: "Intervention",  count: "512k",   x: 490, y: 145, color: "#fbbf24", r: 36 },
-  { id: "Country",      label: "Country",       count: "225",    x: 280, y: 210, color: "#f472b6", r: 22 },
+  { id: "Sponsor",      label: "Sponsor",      count: "49.9k",  x: 82,  y: 118, color: "#818cf8", r: 16 },
+  { id: "Trial",        label: "Trial",         count: "580k",   x: 285, y: 118, color: "#38bdf8", r: 44 },
+  { id: "Condition",    label: "Condition",     count: "129k",   x: 500, y: 58,  color: "#34d399", r: 22 },
+  { id: "Intervention", label: "Intervention",  count: "512k",   x: 500, y: 168, color: "#fbbf24", r: 41 },
+  { id: "Country",      label: "Country",       count: "225",    x: 285, y: 232, color: "#f472b6", r: 8  },
 ];
 
 const EDGES = [
@@ -200,7 +201,7 @@ export default function GraphViz({ queryId }) {
   return (
     <div className="graph-viz-wrap">
       {/* SVG Schema Diagram */}
-      <svg viewBox="0 0 580 250" className="graph-viz-svg" role="img"
+      <svg viewBox="0 0 590 278" className="graph-viz-svg" role="img"
         aria-label="Knowledge Graph schema: Sponsor, Trial, Condition, Intervention, Country">
         <defs>
           <marker id="gv-arrow" viewBox="0 0 10 7" refX="10" refY="3.5"
@@ -251,6 +252,7 @@ export default function GraphViz({ queryId }) {
         {NODES.map(n => {
           const lit = path ? highlightSet.has(n.id) : false;
           const dim = path ? !lit : false;
+          const small = n.r < 30; // label goes outside circle for small nodes
           return (
             <g key={n.id} opacity={dim ? 0.18 : 1}>
               {lit && (
@@ -261,14 +263,30 @@ export default function GraphViz({ queryId }) {
               <circle cx={n.x} cy={n.y} r={n.r}
                 fill={dim ? n.color + "40" : n.color + (lit ? "ee" : "cc")}
                 stroke={lit ? "#fff" : n.color} strokeWidth={lit ? 1.5 : 1} />
-              <text x={n.x} y={n.y - 5} textAnchor="middle"
-                className="gv-node-label" fill="#fff" fontWeight="600">
-                {n.label}
-              </text>
-              <text x={n.x} y={n.y + 11} textAnchor="middle"
-                className="gv-node-count" fill="rgba(255,255,255,0.7)">
-                {n.count}
-              </text>
+              {small ? (
+                <>
+                  {/* count inside (only if circle is big enough) */}
+                  {n.r >= 12 && (
+                    <text x={n.x} y={n.y + 4} textAnchor="middle"
+                      fontSize="8" fontWeight="700" fill="rgba(255,255,255,0.9)">{n.count}</text>
+                  )}
+                  {/* label + count below circle */}
+                  <text x={n.x} y={n.y + n.r + 13} textAnchor="middle"
+                    fontSize="10" fontWeight="600" fill={lit ? "#fff" : n.color}>{n.label}</text>
+                  {n.r < 12 && (
+                    <text x={n.x} y={n.y + n.r + 24} textAnchor="middle"
+                      fontSize="9" fill="rgba(255,255,255,0.55)">{n.count}</text>
+                  )}
+                </>
+              ) : (
+                <>
+                  <text x={n.x} y={n.y - 5} textAnchor="middle"
+                    fontSize={n.id === "Intervention" ? "9" : "11"}
+                    fontWeight="600" fill="#fff">{n.label}</text>
+                  <text x={n.x} y={n.y + 12} textAnchor="middle"
+                    fontSize="10" fill="rgba(255,255,255,0.7)">{n.count}</text>
+                </>
+              )}
             </g>
           );
         })}
