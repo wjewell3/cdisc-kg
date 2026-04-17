@@ -27,8 +27,18 @@ const EDGES = [
 const NODE_MAP = Object.fromEntries(NODES.map(n => [n.id, n]));
 
 const VW = 590, VH = 278;
-// Split offsets when a type appears 2x — slight diagonal spread from schema pos
-const SPLIT = [[-22, -15], [22, 15]];
+// Per-type split offsets when a type appears 2x.
+// Trial: spread wide horizontally (it's the hub, edges flow left↔right)
+// Condition: spread vertically (stacked at top-right, room above/below)
+// Intervention: spread vertically
+// Sponsor/Country: diagonal
+const SPLIT_BY_TYPE = {
+  Trial:        [[-50, 0],  [50, 0]],
+  Condition:    [[0, -24],  [0, 24]],
+  Intervention: [[0, -28],  [0, 28]],
+  Sponsor:      [[-18, -14],[18, 14]],
+  Country:      [[-12, -10],[12, 10]],
+};
 
 // ── Per-preset query traversal path definitions ──────────────────────────────
 const QUERY_PATHS = {
@@ -136,8 +146,9 @@ function buildInstances(path) {
       return;
     }
     const split = hits.length > 1;
+    const offsets = SPLIT_BY_TYPE[n.id] || [[0, 0], [0, 0]];
     hits.forEach((h, j) => {
-      const [dx, dy] = split ? (SPLIT[j] || [0, 0]) : [0, 0];
+      const [dx, dy] = split ? (offsets[j] || [0, 0]) : [0, 0];
       out.push({
         key: j === 0 ? n.id : `${n.id}-${j}`,
         typeId: n.id,
