@@ -1877,6 +1877,104 @@ app.get("/api/enrollment-benchmark", (req, res) => {
   }
 });
 
+// ── Geographic Intelligence ──────────────────────────────────────────────
+app.get("/api/geographic-intelligence", (req, res) => {
+  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+  const hasCountries = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='countries'").get();
+  const hasFacilities = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facilities'").get();
+  if (!hasCountries || !hasFacilities) return res.status(503).json({ error: "Snapshot missing countries/facilities tables — awaiting nightly refresh" });
+
+  const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+  try {
+    const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention });
+
+    // 1. Trial counts by country
+    const byCountry = db.prepare(`
+      SELECT ctry.name AS country, COUNT(DISTINCT ctry.nct_id) AS trial_count
+      FROM countries ctry
+      JOIN studies s ON s.nct_id = ctry.nct_id
+      ${where}
+      GROUP BY ctry.name
+      ORDER BY trial_count DESC
+    `).all(...params);
+
+    // 2. US vs International split
+    const usInternational = db.prepare(`
+      SELECT
+        SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END) AS us_trials,
+        SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END) AS intl_trials,
+        COUNT(DISTINCT ctry.nct_id) AS total_trials
+      FROM countries ctry
+      JOIN studies s ON s.nct_id = ctry.nct_id
+      ${where}
+    `).get(...params);
+
+    // 3. Active vs Completed by top countries (site activation gaps)
+    const countryStatus = db.prepare(`
+      SELECT ctry.name AS country, s.overall_status AS status, COUNT(DISTINCT ctry.nct_id) AS count
+      FROM countries ctry
+      JOIN studies s ON s.nct_id = ctry.nct_id
+      ${where}
+      GROUP BY ctry.name, s.overall_status
+      ORDER BY count DESC
+    `).all(...params);
+
+    // Pivot into per-country status breakdown (top 25 countries)
+    const topCountries = byCountry.slice(0, 25).map(c => c.country);
+    const statusByCountry = {};
+    for (const row of countryStatus) {
+      if (!topCountries.includes(row.country)) continue;
+      if (!statusByCountry[row.country]) statusByCountry[row.country] = {};
+      statusByCountry[row.country][row.status] = row.count;
+    }
+
+    // 4. Top sites by trial count (requires facilities table)
+    const topSites = db.prepare(`
+      SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id) AS trial_count,
+             f.latitude AS lat, f.longitude AS lng
+      FROM facilities f
+      JOIN studies s ON s.nct_id = f.nct_id
+      ${where}
+      WHERE f.name IS NOT NULL AND f.name <> ''
+      GROUP BY f.name, f.city, f.country
+      ORDER BY trial_count DESC
+      LIMIT 30
+    `).all(...params);
+
+    // 5. Geographic gaps — conditions with trials but few/no sites in major regions
+    const regionCounts = db.prepare(`
+      SELECT
+        CASE
+          WHEN ctry.name IN ('United States','Canada') THEN 'North America'
+          WHEN ctry.name IN ('United Kingdom','Germany','France','Italy','Spain','Netherlands','Belgium','Switzerland','Austria','Sweden','Denmark','Norway','Finland','Poland','Czech Republic','Ireland') THEN 'Europe'
+          WHEN ctry.name IN ('China','Japan','South Korea','India','Taiwan','Australia','Thailand','Malaysia','Singapore','Hong Kong','New Zealand') THEN 'Asia-Pacific'
+          WHEN ctry.name IN ('Brazil','Argentina','Mexico','Colombia','Chile','Peru') THEN 'Latin America'
+          WHEN ctry.name IN ('Israel','Turkey','Saudi Arabia','Egypt','South Africa','Iran') THEN 'Middle East & Africa'
+          ELSE 'Other'
+        END AS region,
+        COUNT(DISTINCT ctry.nct_id) AS trial_count,
+        SUM(CASE WHEN s.overall_status IN ('RECRUITING','ACTIVE_NOT_RECRUITING','ENROLLING_BY_INVITATION','NOT_YET_RECRUITING') THEN 1 ELSE 0 END) AS active_count
+      FROM countries ctry
+      JOIN studies s ON s.nct_id = ctry.nct_id
+      ${where}
+      GROUP BY region
+      ORDER BY trial_count DESC
+    `).all(...params);
+
+    res.json({
+      by_country: byCountry.slice(0, 50),
+      us_international: usInternational,
+      status_by_country: Object.entries(statusByCountry).map(([country, statuses]) => ({ country, ...statuses })),
+      top_sites: topSites,
+      by_region: regionCounts,
+      total_countries: byCountry.length,
+    });
+  } catch (e) {
+    console.error("[geographic-intelligence]", e.message);
+    res.status(500).json({ error: "Query failed", detail: e.message });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

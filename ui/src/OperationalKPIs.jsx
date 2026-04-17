@@ -366,8 +366,13 @@ const VIEWS = [
   { key: "enrollment", label: "Enrollment Benchmark", icon: "📊", question: "How does enrollment ambition compare to actuals?" },
 ];
 
-export default function OperationalKPIs({ filterParams }) {
-  const [activeView, setActiveView] = useState("failure");
+export default function OperationalKPIs({ filterParams, initialView }) {
+  const [activeView, setActiveView] = useState(initialView || "failure");
+
+  // Sync with external initialView prop changes
+  useEffect(() => {
+    if (initialView) setActiveView(initialView);
+  }, [initialView]);
 
   return (
     <div className="okpi-container">

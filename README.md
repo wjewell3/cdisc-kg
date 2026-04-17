@@ -139,8 +139,8 @@ Together, these layers provide both the operational data semantics (Neo4j trials
 cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
-│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph, Data Catalog, Standards Q&A, SDTM Training, Site Intelligence, Demo
-│       ├── TrialsPanel.jsx    # Main search + cross-filter charts + operational KPIs + entity insight + graph→filter bridge
+│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph, Data Catalog, Standards Q&A, SDTM Training, Site Intelligence, Geography, Demo
+│       ├── TrialsPanel.jsx    # Main search + Question Launcher + cross-filter charts + KPI panels + KG Q&A + entity insight + graph→filter bridge
 │       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner (double-click bar → entity insight)
 │       ├── OperationalKPIs.jsx # 3-tab panel: Failure Analysis, Sponsor Performance, Enrollment Benchmark
 │       ├── GraphViz.jsx       # Cytoscape.js trial-graph visualization (Neo4j → browser)
@@ -150,6 +150,7 @@ cdisc-kg/
 │       ├── TutorPanel.jsx     # SDTM training module
 │       ├── InsightPanel.jsx   # Entity-level operational insight (wired to TrialsPanel via chart double-click)
 │       ├── SiteIntelligence.jsx # Site search + deep profile (top-level tab)
+│       ├── GeographicIntelligence.jsx # Country/region/site concentration & gaps (top-level tab)
 │       └── trialsEngine.js    # API client (fetch wrappers for all modes)
 ├── api/                       # Vercel serverless functions (HTTPS proxy → OKE, 10 functions for Hobby plan)
 │   ├── trials.js              # /api/trials → OKE server
@@ -201,6 +202,7 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 | `GET /api/failure-analysis?condition=&phase=&sponsor=&intervention=&min_enrollment=&max_enrollment=` | Termination rate, stop reasons, breakdowns by condition and phase for the filtered cohort |
 | `GET /api/sponsor-performance?condition=&phase=&min_trials=` | Sponsor completion-rate leaderboard sorted by % completed, filtered by therapeutic area |
 | `GET /api/enrollment-benchmark?condition=&phase=&allocation=&masking=&intervention_model=` | Enrollment ambition vs actuals by design type; summary stats + breakdowns by allocation/masking |
+| `GET /api/geographic-intelligence?condition=&phase=&sponsor=&intervention=` | Country/region trial distribution, US vs international split, top sites by volume, regional gap analysis |
 
 ### Site Intelligence
 

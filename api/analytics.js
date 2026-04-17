@@ -2,9 +2,10 @@
  * Vercel Serverless Function — /api/analytics
  * Unified proxy for operational KPI endpoints on OKE.
  *
- * mode=failure-analysis    → /api/failure-analysis
- * mode=sponsor-performance → /api/sponsor-performance
+ * mode=failure-analysis     → /api/failure-analysis
+ * mode=sponsor-performance  → /api/sponsor-performance
  * mode=enrollment-benchmark → /api/enrollment-benchmark
+ * mode=geographic           → /api/geographic-intelligence
  */
 const OKE_BASE = (process.env.TRIALS_API_BASE || "").replace(/\/$/, "");
 
@@ -12,6 +13,7 @@ const MODE_MAP = {
   "failure-analysis": "/api/failure-analysis",
   "sponsor-performance": "/api/sponsor-performance",
   "enrollment-benchmark": "/api/enrollment-benchmark",
+  "geographic": "/api/geographic-intelligence",
 };
 
 export default async function handler(req, res) {
@@ -31,7 +33,8 @@ export default async function handler(req, res) {
     for (const [k, v] of Object.entries(rest)) {
       url.searchParams.set(k, v);
     }
-    const upstream = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) });
+    const timeout = mode === "geographic" ? 30000 : 15000;
+    const upstream = await fetch(url.toString(), { signal: AbortSignal.timeout(timeout) });
     const body = await upstream.json();
     return res.status(upstream.status).json(body);
   } catch (e) {

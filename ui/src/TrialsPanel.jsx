@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, Fragment } from "react";
 import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, executeGraphQuery, isGraphQuestion, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
@@ -67,6 +67,9 @@ export default function TrialsPanel() {
   const [graphResult, setGraphResult] = useState(null); // { cypher, columns, rows, narrative, loading, error }
   const [graphQueryId, setGraphQueryId] = useState(null); // preset id (g1-g5) for viz shape
   const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
+  const [okpiView, setOkpiView] = useState(null); // controlled by Question Launcher → OperationalKPIs
+  const [kgQuestion, setKgQuestion] = useState(""); // open-ended KG question input
+  const okpiRef = useRef(null);
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -409,6 +412,31 @@ export default function TrialsPanel() {
     return p;
   }, [activeResolutions, chartFilters]);
 
+  // ── Question Launcher ─────────────────────────────────────────────
+  const launchQuestion = useCallback((key) => {
+    if (key === "failure") {
+      // "What's the real termination rate for Phase 3 oncology trials, and why do they fail?"
+      setChartFilters([{ field: "condition", value: "Cancer" }, { field: "phase", value: "PHASE3" }]);
+      setOkpiView("failure");
+      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+    } else if (key === "sponsors") {
+      // "Which sponsors have the best completion rates for trials in my therapeutic area?"
+      setOkpiView("sponsors");
+      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+    } else if (key === "enrollment") {
+      // "How does enrollment ambition compare to historical actuals for this design type?"
+      setOkpiView("enrollment");
+      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+    }
+    setStep("results");
+  }, []);
+
+  // ── Open-ended KG question ────────────────────────────────────────
+  const askKG = useCallback((e) => {
+    e.preventDefault();
+    if (kgQuestion.trim()) runQuery(kgQuestion);
+  }, [kgQuestion, runQuery]);
+
   // Handle entity insight — clicking a chart bar label opens the InsightPanel
   const handleEntityInsight = useCallback((type, name) => {
     setInsightTarget({ type, name });
@@ -462,6 +490,41 @@ export default function TrialsPanel() {
           <span className="aact-badge">AACT Snapshot</span>
           <span className="sdtm-badge">580k studies</span>
         </div>
+      </div>
+
+      {/* ── Question Launcher — strategic questions in one click ───── */}
+      <div className="question-launcher">
+        <div className="ql-label">Start with a strategic question</div>
+        <div className="ql-buttons">
+          <button className="ql-btn ql-failure" onClick={() => launchQuestion("failure")}>
+            <span className="ql-icon">⚠</span>
+            <span className="ql-text">Why do Phase 3 oncology trials fail?</span>
+          </button>
+          <button className="ql-btn ql-sponsors" onClick={() => launchQuestion("sponsors")}>
+            <span className="ql-icon">🏆</span>
+            <span className="ql-text">Which sponsors lead in my therapeutic area?</span>
+          </button>
+          <button className="ql-btn ql-enrollment" onClick={() => launchQuestion("enrollment")}>
+            <span className="ql-icon">📊</span>
+            <span className="ql-text">How does enrollment ambition compare to actuals?</span>
+          </button>
+          <button className="ql-btn ql-geo" onClick={() => { window.history.pushState({}, "", "/geo"); window.dispatchEvent(new PopStateEvent("popstate")); }}>
+            <span className="ql-icon">🌍</span>
+            <span className="ql-text">Where are the site concentrations & gaps?</span>
+          </button>
+        </div>
+        {/* ── Ask the Knowledge Graph — open-ended NL → Cypher ──── */}
+        <form className="ql-kg-form" onSubmit={askKG}>
+          <span className="ql-kg-icon">⬡</span>
+          <input
+            className="ql-kg-input"
+            type="text"
+            value={kgQuestion}
+            onChange={e => setKgQuestion(e.target.value)}
+            placeholder="Ask the Knowledge Graph anything — e.g., &quot;What conditions are adjacent to Breast Cancer?&quot;"
+          />
+          <button type="submit" className="ql-kg-submit" disabled={!kgQuestion.trim()}>Ask KG →</button>
+        </form>
       </div>
 
       <div className="trials-body">
@@ -697,7 +760,9 @@ export default function TrialsPanel() {
                 <KGContextPanel conditions={kgEntities.conditions} sponsors={kgEntities.sponsors} />
 
                 {/* ── Operational KPIs ─────────────────────────────── */}
-                <OperationalKPIs filterParams={okpiFilterParams} />
+                <div ref={okpiRef}>
+                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
+                </div>
 
                 {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">

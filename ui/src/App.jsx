@@ -8,6 +8,7 @@ import TutorPanel from "./TutorPanel";
 import DemoPanel from "./DemoPanel";
 import TrialsPanel from "./TrialsPanel";
 import SiteIntelligence from "./SiteIntelligence";
+import GeographicIntelligence from "./GeographicIntelligence";
 import "./App.css";
 
 // All graph data is bundled statically — no backend needed for the explorer
@@ -42,6 +43,7 @@ const ROUTE_TO_PANEL = {
   "/demo": "demo",
   "/trials": "trials",
   "/sites": "sites",
+  "/geo": "geo",
 };
 const PANEL_TO_ROUTE = Object.fromEntries(Object.entries(ROUTE_TO_PANEL).map(([k, v]) => [v, k]));
 
@@ -351,6 +353,12 @@ function App() {
           >
             Site Intelligence
           </button>
+          <button
+            className={`tab-btn tab-btn-geo ${activePanel === "geo" ? "active" : ""}`}
+            onClick={() => switchPanel("geo")}
+          >
+            Geography 🌍
+          </button>
         </div>
         {stats && (
           <span className="stats-badge">
@@ -361,12 +369,12 @@ function App() {
 
       <div className="main">
         {/* Sidebar overlay for mobile */}
-        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "demo" && activePanel !== "trials" && activePanel !== "sites" && (
+        {sidebarOpen && activePanel !== "browse" && activePanel !== "learn" && activePanel !== "demo" && activePanel !== "trials" && activePanel !== "sites" && activePanel !== "geo" && (
           <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
         )}
 
         {/* Left sidebar — hidden on Browse tab */}
-        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "demo" || activePanel === "trials" || activePanel === "sites" ? " sidebar-hidden" : ""}`}>
+        <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${activePanel === "browse" || activePanel === "learn" || activePanel === "demo" || activePanel === "trials" || activePanel === "sites" || activePanel === "geo" ? " sidebar-hidden" : ""}`}>
           <div className="panel">
             <h3>Search</h3>
             <div className="search-box">
@@ -673,6 +681,9 @@ function App() {
 
         {/* Site Intelligence — search and profile clinical trial sites */}
         {activePanel === "sites" && <SiteIntelligence />}
+
+        {/* Geographic Intelligence — country/region/site concentration */}
+        {activePanel === "geo" && <GeographicIntelligence />}
       </div>
     </div>
   );
