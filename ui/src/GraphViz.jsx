@@ -99,82 +99,72 @@ const QUERY_PATHS = {
   },
 };
 
-// Compute horizontal path positions for a set of node steps.
-function buildPathNodes(nodeSteps) {
-  const nodes = [];
-  let cursor = 0;
-  for (let i = 0; i < nodeSteps.length; i++) {
-    const s = nodeSteps[i];
+// ── Organic path layout — alternating y for natural feel ──────────────────────
+function computePathLayout(nodeSteps) {
+  const N = nodeSteps.length;
+  if (N === 0) return [];
+  const scale = N <= 2 ? 0.85 : N <= 3 ? 0.75 : 0.65;
+  const xPad = 80;
+  const centerY = VH / 2;
+  const yAmp = N <= 2 ? 20 : N <= 3 ? 30 : 38;
+
+  return nodeSteps.map((s, i) => {
     const def = NODE_MAP[s.id];
-    const r = def?.r ?? 24;
-    const color = def?.color ?? "#94a3b8";
-    cursor = i === 0 ? r : nodes[i - 1].pathX + nodes[i - 1].r + GAP + r;
-    nodes.push({ ...s, r, color, pathX: cursor });
-  }
-  const totalW = nodes.length
-    ? nodes[nodes.length - 1].pathX + nodes[nodes.length - 1].r
-    : 0;
-  const shift = Math.max(0, (VW - totalW) / 2);
-  nodes.forEach(n => { n.pathX += shift; });
-  return nodes;
+    const r = Math.round((def?.r ?? 24) * scale);
+    const x = N === 1 ? VW / 2
+            : Math.round(xPad + i * (VW - 2 * xPad) / (N - 1));
+    const y = Math.round(centerY + (i % 2 === 0 ? -yAmp : yAmp));
+    return { ...s, r, color: def?.color ?? "#94a3b8", pathX: x, pathY: y };
+  });
 }
 
-// Build the unified instance list.
-// Each instance has a "home" position (type's schema pos) and a "path" position.
-// When idle: all instances for a type stack at the same schema x,y (look like one bubble).
-// When a query runs: instances spread to their path spots; unused types shrink away.
-function buildInstances(path) {
-  if (!path) {
-    // Idle: one instance per schema node type
-    return NODES.map(n => ({
-      key: n.id,
-      typeId: n.id,
-      r: n.r,
-      color: n.color,
-      homeX: n.x, homeY: n.y,
-      pathX: n.x, pathY: n.y, // no movement when idle
-      label: n.label,
-      sublabel: n.count,
-      note: "schema",
-      used: true,
-    }));
-  }
-
-  const nodeSteps = path.steps.filter(s => s.type === "node");
-  const pathPositioned = buildPathNodes(nodeSteps);
-  const usedTypes = new Set(nodeSteps.map(s => s.id));
-
-  // One instance per path step (they start at their type's schema position)
-  const instances = pathPositioned.map((pn, i) => {
-    const def = NODE_MAP[pn.id];
-    return {
-      key: `p-${i}`,
-      typeId: pn.id,
-      r: pn.r,
-      color: pn.color,
-      homeX: def.x, homeY: def.y,
-      pathX: pn.pathX, pathY: PATH_CY,
-      label: pn.id,
-      sublabel: pn.label,
-      note: pn.note,
-      used: true,
-    };
+// Build one stable primary instance per schema type (key = typeId, so
+// React reuses the same DOM node) + clone instances for types that
+// appear more than once in the path.  Clones mount overlapping the
+// primary at the schema position, then CSS-transition apart → visible split.
+function buildInstances(path, pathLayout) {
+  const typeOcc = {};
+  pathLayout.forEach(pn => {
+    if (!typeOcc[pn.id]) typeOcc[pn.id] = [];
+    typeOcc[pn.id].push(pn);
   });
 
-  // Add greyed-out instances for unused types — stay at schema pos, visible but desaturated
+  const instances = [];
+
+  // Primary: one per schema type — always in the DOM
   NODES.forEach(n => {
-    if (!usedTypes.has(n.id)) {
+    const first = typeOcc[n.id]?.[0] ?? null;
+    const inPath = !!first;
+    instances.push({
+      key: n.id,        // stable key → React reuses the DOM element
+      typeId: n.id,
+      homeX: n.x, homeY: n.y, homeR: n.r,
+      pathX: first?.pathX ?? n.x,
+      pathY: first?.pathY ?? n.y,
+      pathR: first?.r ?? n.r,
+      color: n.color,
+      label: n.label, count: n.count,
+      pathLabel: first?.label ?? "",
+      note: inPath ? (first.note || "mid") : (path ? "unused" : "schema"),
+      clone: false,
+    });
+  });
+
+  // Clones: 2nd+ occurrence of a type in the path
+  Object.entries(typeOcc).forEach(([typeId, occs]) => {
+    const def = NODE_MAP[typeId];
+    for (let j = 1; j < occs.length; j++) {
+      const pn = occs[j];
       instances.push({
-        key: `dim-${n.id}`,
-        typeId: n.id,
-        r: n.r,
-        color: n.color,
-        homeX: n.x, homeY: n.y,
-        pathX: n.x, pathY: n.y, // stay put
-        label: n.label,
-        sublabel: n.count,
-        note: "unused",
-        used: false,
+        key: `${typeId}-${j}`,
+        typeId,
+        homeX: def.x, homeY: def.y, homeR: def.r,
+        pathX: pn.pathX, pathY: pn.pathY, pathR: pn.r,
+        color: def.color,
+        label: def.label, count: def.count,
+        pathLabel: pn.label,
+        note: pn.note || "mid",
+        clone: true,
       });
     }
   });
@@ -185,18 +175,22 @@ function buildInstances(path) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function GraphViz({ queryId }) {
   const path = QUERY_PATHS[queryId] ?? null;
+  const active = !!path;
 
   const edgeSteps = useMemo(
     () => (path?.steps ?? []).filter(s => s.type === "edge"),
     [path]
   );
-  const instances = useMemo(() => buildInstances(path), [path]);
-  const pathNodes = useMemo(
-    () => instances.filter(inst => inst.used && inst.note !== "schema"),
-    [instances]
+  const pathLayout = useMemo(() => {
+    if (!path) return [];
+    return computePathLayout(path.steps.filter(s => s.type === "node"));
+  }, [path]);
+  const instances = useMemo(
+    () => buildInstances(path, pathLayout),
+    [path, pathLayout]
   );
 
-  // Animation: start at home → then transition to path
+  // Two-frame delay: mount clones at home position → paint → transition apart
   const [spread, setSpread] = useState(false);
   useEffect(() => {
     if (!queryId) { setSpread(false); return; }
@@ -207,7 +201,6 @@ export default function GraphViz({ queryId }) {
     return () => cancelAnimationFrame(raf);
   }, [queryId]);
 
-  const active = !!path;
   const moved = active && spread;
 
   return (
@@ -225,7 +218,7 @@ export default function GraphViz({ queryId }) {
           </marker>
         </defs>
 
-        {/* ── Schema relationship arrows — fade out on query ── */}
+        {/* ── Schema relationship arrows — visible when idle ── */}
         <g style={{ opacity: active ? 0 : 1, transition: "opacity 0.3s" }}>
           {EDGES.map(e => {
             const from = NODE_MAP[e.from], to = NODE_MAP[e.to];
@@ -248,19 +241,24 @@ export default function GraphViz({ queryId }) {
           })}
         </g>
 
-        {/* ── Path traversal arrows — appear after spread ── */}
-        {pathNodes.length > 1 && pathNodes.slice(0, -1).map((from, i) => {
-          const to = pathNodes[i + 1];
+        {/* ── Path traversal arrows — angled between organic positions ── */}
+        {pathLayout.length > 1 && pathLayout.slice(0, -1).map((from, i) => {
+          const to = pathLayout[i + 1];
           const edge = edgeSteps[i];
-          const x1 = from.pathX + from.r + 2;
-          const x2 = to.pathX - to.r - 3;
-          const mx = (x1 + x2) / 2;
+          const dx = to.pathX - from.pathX, dy = to.pathY - from.pathY;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const ux = dx / dist, uy = dy / dist;
+          const x1 = from.pathX + ux * (from.r + 3);
+          const y1 = from.pathY + uy * (from.r + 3);
+          const x2 = to.pathX - ux * (to.r + 4);
+          const y2 = to.pathY - uy * (to.r + 4);
+          const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
           return (
             <g key={`pe-${i}`}
-              style={{ opacity: moved ? 1 : 0, transition: "opacity 0.25s 0.45s" }}>
-              <line x1={x1} y1={PATH_CY} x2={x2} y2={PATH_CY}
+              style={{ opacity: moved ? 1 : 0, transition: "opacity 0.25s 0.5s" }}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2}
                 stroke="#38bdf8" strokeWidth="1.5" markerEnd="url(#pd-arrow)" />
-              <text x={mx} y={PATH_CY - 9} textAnchor="middle"
+              <text x={mx} y={my - 10} textAnchor="middle"
                 fontSize="8" fontWeight="700" fill="#7dd3fc" letterSpacing="0.04">
                 {edge?.dir} {edge?.label}
               </text>
@@ -268,105 +266,110 @@ export default function GraphViz({ queryId }) {
           );
         })}
 
-        {/* ── THE BUBBLES — one unified set that morphs between layouts ── */}
+        {/* ── Bubbles: primaries split + rearrange, clones emerge, unused grey ── */}
         {instances.map(inst => {
-          const x = moved ? inst.pathX : inst.homeX;
-          const y = moved ? inst.pathY : inst.homeY;
           const isUnused = inst.note === "unused";
           const isSchema = inst.note === "schema";
           const isResult = inst.note === "result";
           const isStart  = inst.note === "start";
+          const grey = active && isUnused;
 
-          // Radius: always keep proportional (unused = greyed out, not shrunk)
-          const r = inst.r;
+          const x = moved ? inst.pathX : inst.homeX;
+          const y = moved ? inst.pathY : inst.homeY;
+          const r = moved ? inst.pathR : inst.homeR;
 
-          // When active and unused: grey out; otherwise use type color
-          const fill = (active && isUnused) ? "#1e293b"
-                     : isSchema             ? inst.color + "cc"
-                     : isResult             ? inst.color + "cc"
-                     : isStart              ? inst.color + "55"
-                     :                        "#1e293b";
-          const stroke = (active && isUnused) ? "#334155"
-                       : isSchema             ? inst.color
-                       : isResult             ? "#fff"
-                       : isStart              ? inst.color
-                       :                        "#475569";
+          // Colors
+          const fill = grey    ? "#1e293b"
+                     : isSchema ? inst.color + "cc"
+                     : isResult ? inst.color + "cc"
+                     : isStart  ? inst.color + "55"
+                     :            inst.color + "44";
+          const stroke = grey    ? "#334155"
+                       : isSchema ? inst.color
+                       : isResult ? "#fff"
+                       : isStart  ? inst.color
+                       :            "#475569";
           const sw = isResult ? 2 : 1;
+          const opacity = grey ? 0.25 : 1;
 
-          // Text colors
-          const labelFill = (active && isUnused) ? "#334155"
-                          : isSchema             ? "#fff"
-                          : isResult             ? "#fff"
-                          : isStart              ? inst.color
-                          :                        "#94a3b8";
-          const subFill = (active && isUnused) ? "#334155"
-                        : isSchema             ? "rgba(255,255,255,0.7)"
-                        : isResult             ? "#fff"
-                        : isStart              ? inst.color
-                        :                        "#cbd5e1";
+          const labelFill = grey    ? "#334155"
+                          : isSchema ? "#fff"
+                          : isResult ? "#fff"
+                          : isStart  ? inst.color
+                          :            "#94a3b8";
+          const subFill = grey    ? "#334155"
+                        : isSchema ? "rgba(255,255,255,0.7)"
+                        : isResult ? "#fff"
+                        : isStart  ? inst.color
+                        :            "#cbd5e1";
 
-          const big = r >= 28;
+          // What text to show
+          const showLabel = (moved && !isSchema && !isUnused)
+            ? inst.typeId : inst.label;
+          const showSub = (moved && !isSchema && !isUnused)
+            ? inst.pathLabel : inst.count;
+
+          const big = r >= 26;
 
           return (
             <g key={inst.key} style={{
               transform: `translate(${x}px, ${y}px)`,
-              transition: "transform 0.5s ease, opacity 0.4s",
-              opacity: (active && isUnused) ? 0.25 : 1,
+              transition: "transform 0.6s ease, opacity 0.4s",
+              opacity,
             }}>
-              {isResult && (
+              {isResult && moved && (
                 <circle r={r + 6} fill="none"
                   stroke={inst.color} strokeWidth="1.5"
                   opacity="0.4" className="gv-node-glow" />
               )}
-              <circle r={r} fill={fill} stroke={stroke} strokeWidth={sw}
-                style={{ transition: "r 0.5s ease" }} />
+              <circle r={r} fill={fill} stroke={stroke} strokeWidth={sw} />
 
-              {/* Top label: type name for path, label for schema */}
               {big ? (
                 <>
-                  <text y={isSchema ? -4 : -r - 7} textAnchor="middle"
-                    fontSize={isSchema ? (inst.typeId === "Intervention" ? "9" : "11") : "8"}
-                    fontWeight={isSchema ? "600" : "700"} fill={labelFill}
-                    letterSpacing={isSchema ? "0" : "0.05"}>
-                    {inst.label}
+                  <text y={-4} textAnchor="middle"
+                    fontSize={inst.typeId === "Intervention" ? "9" : "11"}
+                    fontWeight="600" fill={labelFill}>
+                    {showLabel}
                   </text>
-                  <text y={isSchema ? 12 : 5} textAnchor="middle"
-                    fontSize="10" fontWeight={isSchema ? "400" : "600"} fill={subFill}>
-                    {inst.sublabel}
+                  <text y={12} textAnchor="middle"
+                    fontSize="10" fill={subFill}>
+                    {showSub}
                   </text>
                 </>
-              ) : (
+              ) : r >= 12 ? (
                 <>
-                  {r >= 12 && (
-                    <text y={4} textAnchor="middle"
-                      fontSize="8" fontWeight="700" fill="rgba(255,255,255,0.9)">
-                      {isSchema ? inst.sublabel : ""}
-                    </text>
-                  )}
-                  {/* Label below circle */}
-                  <text y={r + 13} textAnchor="middle"
-                    fontSize={isSchema ? "10" : "8"} fontWeight={isSchema ? "600" : "700"}
-                    fill={isSchema ? inst.color : labelFill}
-                    letterSpacing={isSchema ? "0" : "0.05"}>
-                    {inst.label}
+                  <text y={4} textAnchor="middle"
+                    fontSize="8" fontWeight="700" fill="rgba(255,255,255,0.9)">
+                    {isSchema ? inst.count : ""}
                   </text>
-                  {!isSchema && (
+                  <text y={r + 13} textAnchor="middle"
+                    fontSize="10" fontWeight="600"
+                    fill={grey ? "#334155" : inst.color}>
+                    {showLabel}
+                  </text>
+                  {moved && !isSchema && !isUnused && (
                     <text y={r + 24} textAnchor="middle"
                       fontSize="9" fontWeight="600" fill={subFill}>
-                      {inst.sublabel}
+                      {showSub}
                     </text>
                   )}
                 </>
+              ) : (
+                <text y={r + 12} textAnchor="middle"
+                  fontSize="9" fontWeight="600"
+                  fill={grey ? "#334155" : inst.color}>
+                  {showLabel}
+                </text>
               )}
             </g>
           );
         })}
       </svg>
 
-      {/* Description row */}
+      {/* Description */}
       {path ? (
         <div className="qpe-wrap"
-          style={{ opacity: moved ? 1 : 0, transition: "opacity 0.3s 0.5s" }}>
+          style={{ opacity: moved ? 1 : 0, transition: "opacity 0.3s 0.6s" }}>
           <span className="qpe-title">{path.title}</span>
           <span className="qpe-desc">{path.description}</span>
         </div>
