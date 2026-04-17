@@ -43,6 +43,18 @@
 }
 .trials-map-collapse:hover { color: #e6edf3; border-color: #58a6ff; }
 
+.trials-map-back {
+  background: none;
+  border: 1px solid #30363d;
+  color: #58a6ff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.trials-map-back:hover { border-color: #58a6ff; background: #161b22; }
+
 .trials-map-collapsed {
   background: #161b22;
   border: 1px solid #30363d;

@@ -1,9 +1,11 @@
 /**
  * TrialsMap — Choropleth world map showing trial density by country.
- * Reacts to TrialsPanel filterParams. Click a country to add it as a filter.
+ * Click a country to drill in: zooms to that country, shows city-level site bubbles,
+ * and filters the rest of the dashboard. Click "← World" to zoom back out.
  */
 import { useState, useEffect, useCallback, useMemo, memo } from "react";
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker } from "react-simple-maps";
+import { geoCentroid } from "d3-geo";
 import "./TrialsMap.css";
 
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
@@ -17,6 +19,10 @@ const NAME_MAP = {
   "Russia": "Russia",
   "Hong Kong": "Hong Kong",
 };
+
+// Reverse: topo name → AACT name
+const REVERSE_NAME_MAP = {};
+for (const [aact, topo] of Object.entries(NAME_MAP)) REVERSE_NAME_MAP[topo] = aact;
 
 const SCALE = [
   { min: 0, max: 0, color: "#161b22" },
@@ -44,17 +50,23 @@ function fmt(n) {
   return String(n);
 }
 
-const MemoGeo = memo(function MemoGeo({ geo, fill, stroke, onMouseEnter, onMouseLeave, onClick }) {
+// Bubble radius scaled by trial count (for city markers)
+function bubbleRadius(count, maxCount) {
+  if (!count || !maxCount) return 3;
+  return 3 + 12 * Math.sqrt(count / maxCount);
+}
+
+const MemoGeo = memo(function MemoGeo({ geo, fill, stroke, strokeWidth, onMouseEnter, onMouseLeave, onClick, style }) {
   return (
     <Geography
       geography={geo}
       fill={fill}
       stroke={stroke}
-      strokeWidth={0.4}
+      strokeWidth={strokeWidth || 0.4}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={onClick}
-      style={{
+      style={style || {
         default: { outline: "none" },
         hover: { outline: "none", fill: "#58a6ff", cursor: "pointer" },
         pressed: { outline: "none" },
@@ -63,12 +75,16 @@ const MemoGeo = memo(function MemoGeo({ geo, fill, stroke, onMouseEnter, onMouse
   );
 });
 
-export default function TrialsMap({ filterParams = {}, onCountryFilter }) {
+export default function TrialsMap({ filterParams = {}, onCountryFilter, onCountryClear }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tooltip, setTooltip] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  // Drill-in state
+  const [drilledCountry, setDrilledCountry] = useState(null); // { name, aactName, center, zoom }
+  const [geoFeatures, setGeoFeatures] = useState(null); // cached geo features for centroid calc
 
   const fetchData = useCallback((filters = {}) => {
     setLoading(true);
@@ -97,20 +113,40 @@ export default function TrialsMap({ filterParams = {}, onCountryFilter }) {
     const m = {};
     for (const c of data.by_country) {
       m[c.country] = c.trial_count;
-      // Also map the alternate name
       if (NAME_MAP[c.country]) m[NAME_MAP[c.country]] = c.trial_count;
     }
     return m;
   }, [data]);
 
-  // Reverse lookup: topo name → AACT country name (for filtering)
-  const reverseMap = useMemo(() => {
-    const rm = {};
-    for (const [aact, topo] of Object.entries(NAME_MAP)) {
-      rm[topo] = aact;
-    }
-    return rm;
-  }, []);
+  // City data for drill-in view
+  const cityData = data?.by_city || [];
+  const maxCityCount = cityData.length ? Math.max(...cityData.map(c => c.trial_count)) : 0;
+
+  // Handle country click — drill in
+  const handleCountryClick = useCallback((geo) => {
+    const topoName = geo.properties.name;
+    const aactName = REVERSE_NAME_MAP[topoName] || topoName;
+    const center = geoCentroid(geo);
+
+    // Choose zoom level based on country size
+    let zoom = 4;
+    const largeCountries = ["United States of America", "Russia", "China", "Canada", "Brazil", "Australia"];
+    const mediumCountries = ["India", "Argentina", "Mexico", "Indonesia", "Saudi Arabia"];
+    if (largeCountries.includes(topoName)) zoom = 3;
+    else if (mediumCountries.includes(topoName)) zoom = 3.5;
+
+    setDrilledCountry({ name: topoName, aactName, center, zoom });
+    setTooltip(null);
+
+    if (onCountryFilter) onCountryFilter(aactName);
+  }, [onCountryFilter]);
+
+  // Zoom out to world view
+  const zoomOut = useCallback(() => {
+    setDrilledCountry(null);
+    setTooltip(null);
+    if (onCountryClear) onCountryClear();
+  }, [onCountryClear]);
 
   if (collapsed) {
     return (
@@ -120,12 +156,22 @@ export default function TrialsMap({ filterParams = {}, onCountryFilter }) {
     );
   }
 
+  const isDrilled = !!drilledCountry;
+
   return (
     <div className="trials-map-container">
       <div className="trials-map-header">
-        <span className="trials-map-title">🌍 Trial Geography</span>
+        {isDrilled ? (
+          <>
+            <button className="trials-map-back" onClick={zoomOut} title="Back to world view">← World</button>
+            <span className="trials-map-title">{drilledCountry.aactName}</span>
+          </>
+        ) : (
+          <span className="trials-map-title">🌍 Trial Geography</span>
+        )}
         {data && (
           <span className="trials-map-stats">
+            {isDrilled && cityData.length ? `${cityData.length} cities · ` : ""}
             {data.total_countries} countries · {data.us_international?.total_trials?.toLocaleString() || "—"} trials
           </span>
         )}
@@ -139,38 +185,72 @@ export default function TrialsMap({ filterParams = {}, onCountryFilter }) {
       ) : (
         <div className="trials-map-body">
           <ComposableMap
-            projectionConfig={{ rotate: [-10, 0, 0], scale: 140 }}
+            projectionConfig={{
+              rotate: isDrilled ? [-drilledCountry.center[0], 0, 0] : [-10, 0, 0],
+              center: isDrilled ? [0, drilledCountry.center[1]] : [0, 0],
+              scale: isDrilled ? 140 * drilledCountry.zoom : 140,
+            }}
             width={800}
-            height={380}
+            height={isDrilled ? 450 : 380}
             style={{ width: "100%", height: "auto", background: "#0d1117" }}
           >
-            <ZoomableGroup>
-              <Geographies geography={GEO_URL}>
-                {({ geographies }) =>
-                  geographies.map(geo => {
-                    const name = geo.properties.name;
-                    const count = countryMap[name] || 0;
-                    return (
-                      <MemoGeo
-                        key={geo.rsmKey}
-                        geo={geo}
-                        fill={countryColor(count)}
-                        stroke="#30363d"
-                        onMouseEnter={() => setTooltip({ name, count })}
-                        onMouseLeave={() => setTooltip(null)}
-                        onClick={() => {
-                          if (onCountryFilter) {
-                            // Map topo name back to AACT name
-                            const aactName = reverseMap[name] || name;
-                            onCountryFilter(aactName);
-                          }
-                        }}
-                      />
-                    );
-                  })
-                }
-              </Geographies>
-            </ZoomableGroup>
+            <Geographies geography={GEO_URL}>
+              {({ geographies }) =>
+                geographies.map(geo => {
+                  const name = geo.properties.name;
+                  const count = countryMap[name] || 0;
+                  const isTarget = isDrilled && name === drilledCountry.name;
+                  return (
+                    <MemoGeo
+                      key={geo.rsmKey}
+                      geo={geo}
+                      fill={isTarget ? "#58a6ff" : isDrilled ? (count ? "#21262d" : "#161b22") : countryColor(count)}
+                      stroke={isTarget ? "#79c0ff" : "#30363d"}
+                      strokeWidth={isTarget ? 1.2 : 0.4}
+                      onMouseEnter={() => setTooltip({ name, count })}
+                      onMouseLeave={() => setTooltip(null)}
+                      onClick={() => {
+                        if (isDrilled && !isTarget) {
+                          // Click a different country while drilled — switch drill
+                          handleCountryClick(geo);
+                        } else if (!isDrilled) {
+                          handleCountryClick(geo);
+                        }
+                      }}
+                      style={isTarget ? {
+                        default: { outline: "none" },
+                        hover: { outline: "none", fill: "#58a6ff", cursor: "default" },
+                        pressed: { outline: "none" },
+                      } : {
+                        default: { outline: "none" },
+                        hover: { outline: "none", fill: "#58a6ff", cursor: "pointer" },
+                        pressed: { outline: "none" },
+                      }}
+                    />
+                  );
+                })
+              }
+            </Geographies>
+
+            {/* City bubbles when drilled in */}
+            {isDrilled && cityData.map((city, i) => {
+              if (!city.lat || !city.lng) return null;
+              const r = bubbleRadius(city.trial_count, maxCityCount);
+              return (
+                <Marker key={`${city.city}-${city.state}-${i}`} coordinates={[Number(city.lng), Number(city.lat)]}>
+                  <circle
+                    r={r}
+                    fill="#39d353"
+                    fillOpacity={0.7}
+                    stroke="#26a641"
+                    strokeWidth={0.5}
+                    onMouseEnter={() => setTooltip({ name: `${city.city}${city.state ? `, ${city.state}` : ""}`, count: city.trial_count })}
+                    onMouseLeave={() => setTooltip(null)}
+                    style={{ cursor: "default" }}
+                  />
+                </Marker>
+              );
+            })}
           </ComposableMap>
 
           {tooltip && (
@@ -179,15 +259,29 @@ export default function TrialsMap({ filterParams = {}, onCountryFilter }) {
             </div>
           )}
 
-          {/* Legend */}
-          <div className="trials-map-legend">
-            {SCALE.slice(1).map((s, i) => (
-              <div key={i} className="trials-map-legend-item">
-                <div className="trials-map-legend-swatch" style={{ background: s.color }} />
-                <span>{s.max === Infinity ? `${fmt(s.min)}+` : `${fmt(s.min)}–${fmt(s.max)}`}</span>
+          {/* Legend — show city legend when drilled, country legend otherwise */}
+          {isDrilled && cityData.length > 0 ? (
+            <div className="trials-map-legend">
+              <div className="trials-map-legend-item">
+                <div className="trials-map-legend-swatch" style={{ background: "#39d353", borderRadius: "50%", width: 8, height: 8 }} />
+                <span>City bubble = trial count</span>
               </div>
-            ))}
-          </div>
+              <div className="trials-map-legend-item">
+                <span style={{ color: "#8b949e" }}>
+                  Top city: {cityData[0]?.city} ({cityData[0]?.trial_count?.toLocaleString()})
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="trials-map-legend">
+              {SCALE.slice(1).map((s, i) => (
+                <div key={i} className="trials-map-legend-item">
+                  <div className="trials-map-legend-swatch" style={{ background: s.color }} />
+                  <span>{s.max === Infinity ? `${fmt(s.min)}+` : `${fmt(s.min)}–${fmt(s.max)}`}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -420,7 +420,7 @@ export default function TrialsPanel() {
       }
     }
     for (const f of chartFilters) {
-      if (f.field === "phase" || f.field === "status" || f.field === "sponsor" || f.field === "condition" || f.field === "intervention") {
+      if (f.field === "phase" || f.field === "status" || f.field === "sponsor" || f.field === "condition" || f.field === "intervention" || f.field === "country") {
         p[f.field] = p[f.field] ? `${p[f.field]},${f.value}` : f.value;
       }
     }
@@ -784,10 +784,13 @@ export default function TrialsPanel() {
                   filterParams={okpiFilterParams}
                   onCountryFilter={(country) => {
                     setChartFilters(prev => {
-                      // Don't add duplicate country filter
-                      if (prev.some(f => f.field === "country" && f.value === country)) return prev;
-                      return [...prev, { field: "country", value: country }];
+                      // Remove any existing country filter, then add the new one
+                      const without = prev.filter(f => f.field !== "country");
+                      return [...without, { field: "country", value: country }];
                     });
+                  }}
+                  onCountryClear={() => {
+                    setChartFilters(prev => prev.filter(f => f.field !== "country"));
                   }}
                 />
 
