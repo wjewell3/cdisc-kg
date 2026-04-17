@@ -26,7 +26,7 @@ For enrollment range bounds:
 {"ruleType":"bounds","min":<integer or null>,"max":<integer or null>}`;
 
   try {
-    const response = await fetch("https://api.githubcopilot.com/chat/completions", {
+    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

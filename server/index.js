@@ -894,7 +894,7 @@ Write a 3–5 paragraph operational risk briefing covering:
 3. Enrollment risks vs. comparable performance
 4. Key watch-out signals and recommended mitigations`;
 
-      const response = await fetch("https://api.githubcopilot.com/chat/completions", {
+      const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`,
@@ -971,7 +971,7 @@ For grouping rules (merging synonymous values into one canonical label):
 For enrollment range bounds:
 {"ruleType":"bounds","min":<integer or null>,"max":<integer or null>}`;
 
-    const response = await fetch("https://api.githubcopilot.com/chat/completions", {
+    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`,
@@ -1157,7 +1157,7 @@ ${topSiteList ? `Top sites: ${topSiteList}` : ""}
 Write 3 paragraphs: (1) portfolio overview and key characteristics, (2) operational performance patterns and what they indicate, (3) strategic insights or risks a clinical operations manager should know.`;
 
   try {
-    const response = await fetch("https://api.githubcopilot.com/chat/completions", {
+    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
       method: "POST",
       headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({
