@@ -1,13 +1,14 @@
 /**
- * GraphViz — SVG schema diagram + query traversal path explainer.
+ * GraphViz — unified SVG that transitions between schema and traversal views.
  *
- * Default: Clean SVG showing 5 node types and their relationships.
- * On query: Highlights the traversal path with step-by-step flow and counts.
+ * Idle:  5 proportional bubbles at schema positions with relationship arrows.
+ * Query: the same bubbles animate to a horizontal traversal path.
+ *        The Condition/Trial bubbles "split" — same color/size appears twice.
+ *        Unused types (Sponsor, Country) fade to near-invisible.
  */
-import { } from "react";
+import { useState, useEffect, useMemo } from "react";
 
-// ── Schema layout — fixed positions for clean diagram ────────────────────────
-// Radii are sqrt-proportional to node counts (Trial 580k ≈ Intervention 512k >> Condition 129k >> Sponsor 50k >> Country 225)
+// ── Schema layout — radii √-proportional to node counts ──────────────────────
 const NODES = [
   { id: "Sponsor",      label: "Sponsor",      count: "49.9k",  x: 82,  y: 118, color: "#818cf8", r: 16 },
   { id: "Trial",        label: "Trial",         count: "580k",   x: 285, y: 118, color: "#38bdf8", r: 44 },
@@ -25,6 +26,10 @@ const EDGES = [
 
 const NODE_MAP = Object.fromEntries(NODES.map(n => [n.id, n]));
 
+const VW = 590, VH = 278;
+const PATH_CY = 148;  // vertical center for path layout
+const GAP = 50;       // px gap between circle edges in path
+
 // ── Per-preset query traversal path definitions ──────────────────────────────
 const QUERY_PATHS = {
   g1: {
@@ -40,8 +45,6 @@ const QUERY_PATHS = {
       { type: "edge", label: "TREATS",    dir: "→" },
       { type: "node", id: "Condition",    label: "adjacent conditions", note: "result" },
     ],
-    highlight: ["Condition", "Trial", "Intervention"],
-    highlightEdges: ["TREATS", "USES"],
     description: "Start at Breast Cancer → traverse shared interventions → discover therapeutically adjacent conditions.",
   },
   g2: {
@@ -57,8 +60,6 @@ const QUERY_PATHS = {
       { type: "edge", label: "TREATS", dir: "→" },
       { type: "node", id: "Condition", label: "missing conditions", note: "result" },
     ],
-    highlight: ["Sponsor", "Trial", "Condition"],
-    highlightEdges: ["RUNS", "TREATS"],
     description: "Map Pfizer's portfolio → find conditions 1 hop away where Pfizer has zero trials.",
   },
   g3: {
@@ -66,247 +67,243 @@ const QUERY_PATHS = {
     steps: [
       { type: "node", id: "Sponsor",   label: "all sponsors",        note: "result" },
       { type: "edge", label: "RUNS",   dir: "→" },
-      { type: "node", id: "Trial",     label: "Phase 3 trials",      note: "filter" },
+      { type: "node", id: "Trial",     label: "Phase 3 trials",      note: "" },
       { type: "edge", label: "TREATS", dir: "→" },
-      { type: "node", id: "Condition", label: "oncology conditions", note: "filter" },
+      { type: "node", id: "Condition", label: "oncology conditions", note: "" },
     ],
-    highlight: ["Sponsor", "Trial", "Condition"],
-    highlightEdges: ["RUNS", "TREATS"],
     description: "Filter Phase 3 oncology trials → aggregate sponsors by trial count.",
   },
   g4: {
     title: "Drug Repurposing Signals",
     steps: [
-      { type: "node", id: "Condition",    label: "Alzheimer",      note: "start" },
+      { type: "node", id: "Condition",    label: "Alzheimer",    note: "start" },
       { type: "edge", label: "TREATS",    dir: "←" },
-      { type: "node", id: "Trial",        label: "Alz trials",     note: "" },
+      { type: "node", id: "Trial",        label: "Alz trials",   note: "" },
       { type: "edge", label: "USES",      dir: "→" },
-      { type: "node", id: "Intervention", label: "shared drugs",   note: "result" },
+      { type: "node", id: "Intervention", label: "shared drugs", note: "result" },
       { type: "edge", label: "USES",      dir: "←" },
-      { type: "node", id: "Trial",        label: "Park trials",    note: "" },
+      { type: "node", id: "Trial",        label: "Park trials",  note: "" },
       { type: "edge", label: "TREATS",    dir: "→" },
-      { type: "node", id: "Condition",    label: "Parkinson",      note: "start" },
+      { type: "node", id: "Condition",    label: "Parkinson",    note: "start" },
     ],
-    highlight: ["Condition", "Trial", "Intervention"],
-    highlightEdges: ["TREATS", "USES"],
     description: "Find drugs used in both Alzheimer and Parkinson trials — repurposing candidates bridging two CNS conditions.",
   },
   g5: {
     title: "Termination Risk Analysis",
     steps: [
-      { type: "node", id: "Condition",  label: "all conditions", note: "result" },
-      { type: "edge", label: "TREATS",  dir: "←" },
-      { type: "node", id: "Trial",      label: "all trials",     note: "aggregate" },
+      { type: "node", id: "Condition", label: "all conditions", note: "result" },
+      { type: "edge", label: "TREATS", dir: "←" },
+      { type: "node", id: "Trial",     label: "all trials",     note: "" },
     ],
-    highlight: ["Condition", "Trial"],
-    highlightEdges: ["TREATS"],
     description: "For each condition (≥100 trials), compute terminated ÷ total — surfaces high-risk therapeutic areas.",
   },
 };
 
-// ── Traversal path diagram — main viz when a query is active ─────────────────
-// Uses the same node radii as the schema so sizes stay consistent.
-function PathDiagram({ steps }) {
-  const nodeSteps = steps.filter(s => s.type === "node");
-  const edgeSteps = steps.filter(s => s.type === "edge");
-  if (nodeSteps.length === 0) return null;
-
-  const count = nodeSteps.length;
-  const gap = 52;  // px between circle edges
-
-  // Each node gets its real schema radius
-  const positioned = nodeSteps.map((s, i) => ({
-    ...s,
-    r: NODE_MAP[s.id]?.r ?? 24,
-    color: NODE_MAP[s.id]?.color ?? "#94a3b8",
-  }));
-
-  // Compute x positions: each center = prev center + prev.r + gap + cur.r
-  let cx = 0;
-  positioned.forEach((n, i) => {
-    if (i === 0) { cx = n.r; }
-    else { cx = positioned[i - 1].cx + positioned[i - 1].r + gap + n.r; }
-    n.cx = cx;
+// Compute horizontal path positions for a set of node steps.
+function buildPathNodes(nodeSteps) {
+  let cursor = 0;
+  const nodes = nodeSteps.map((s, i) => {
+    const def = NODE_MAP[s.id];
+    const r = def?.r ?? 24;
+    const color = def?.color ?? "#94a3b8";
+    if (i === 0) cursor = r;
+    else cursor = nodes[i - 1].pathX + nodes[i - 1].r + GAP + r;
+    return { ...s, r, color, pathX: cursor };
   });
-
-  const maxR = Math.max(...positioned.map(n => n.r));
-  const H = maxR * 2 + 60;  // nodes centered, room for labels above/below
-  const cy = H / 2 + 10;
-  const W = cx + maxR + 10;
-
-  const connections = edgeSteps.slice(0, count - 1).map((e, i) => ({
-    edge: e,
-    from: positioned[i],
-    to: positioned[i + 1],
-  }));
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="gv-path-svg"
-      role="img" aria-label="Query traversal path">
-      <defs>
-        <marker id="pd-arrow" viewBox="0 0 10 7" refX="9" refY="3.5"
-          markerWidth="7" markerHeight="5" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7dd3fc" />
-        </marker>
-      </defs>
-
-      {/* Edges */}
-      {connections.map((conn, i) => {
-        const x1 = conn.from.cx + conn.from.r + 2;
-        const x2 = conn.to.cx - conn.to.r - 3;
-        const mx = (x1 + x2) / 2;
-        return (
-          <g key={i}>
-            <line x1={x1} y1={cy} x2={x2} y2={cy}
-              stroke="#38bdf8" strokeWidth="1.5"
-              markerEnd="url(#pd-arrow)" />
-            <text x={mx} y={cy - 8} textAnchor="middle"
-              fontSize="8" fontWeight="700" fill="#7dd3fc" letterSpacing="0.04">
-              {conn.edge.dir} {conn.edge.label}
-            </text>
-          </g>
-        );
-      })}
-
-      {/* Nodes */}
-      {positioned.map((n, i) => {
-        const isResult = n.note === "result";
-        const isStart  = n.note === "start";
-        // result = fully bright; start = semi-lit; intermediate = dim grey
-        const fill   = isResult ? n.color + "cc"
-                     : isStart  ? n.color + "55"
-                     :            "#1e293b";
-        const stroke = isResult ? "#fff"
-                     : isStart  ? n.color
-                     :            "#475569";
-        const sw     = isResult ? 2 : 1.5;
-        const labelColor = isResult ? "#fff" : isStart ? n.color : "#94a3b8";
-        const small  = n.r < 20;
-
-        return (
-          <g key={i}>
-            {isResult && (
-              <circle cx={n.cx} cy={cy} r={n.r + 7}
-                fill="none" stroke={n.color} strokeWidth="1.5"
-                opacity="0.4" className="gv-node-glow" />
-            )}
-            <circle cx={n.cx} cy={cy} r={n.r}
-              fill={fill} stroke={stroke} strokeWidth={sw} />
-            {/* type label above */}
-            <text x={n.cx} y={cy - n.r - 6} textAnchor="middle"
-              fontSize="8" fontWeight="700" fill={labelColor}
-              letterSpacing="0.05" textDecoration="none">
-              {n.id}
-            </text>
-            {/* instance label inside (large) or below (small) */}
-            {small ? (
-              <text x={n.cx} y={cy + n.r + 13} textAnchor="middle"
-                fontSize="9" fontWeight="600" fill={labelColor}>
-                {n.label}
-              </text>
-            ) : (
-              <text x={n.cx} y={cy + 5} textAnchor="middle"
-                fontSize="10" fontWeight="600" fill={isResult ? "#fff" : "#cbd5e1"}>
-                {n.label}
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </svg>
-  );
+  // Centre inside viewbox
+  const totalW = nodes.length
+    ? nodes[nodes.length - 1].pathX + nodes[nodes.length - 1].r
+    : 0;
+  const shift = Math.max(0, (VW - totalW) / 2);
+  nodes.forEach(n => { n.pathX += shift; });
+  return nodes;
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 export default function GraphViz({ queryId }) {
-  const path = QUERY_PATHS[queryId] || null;
+  const path = QUERY_PATHS[queryId] ?? null;
+
+  const nodeSteps = useMemo(
+    () => (path?.steps ?? []).filter(s => s.type === "node"),
+    [path]
+  );
+  const edgeSteps = useMemo(
+    () => (path?.steps ?? []).filter(s => s.type === "edge"),
+    [path]
+  );
+  const pathNodes = useMemo(() => buildPathNodes(nodeSteps), [nodeSteps]);
+  const typesInPath = useMemo(() => new Set(nodeSteps.map(s => s.id)), [nodeSteps]);
+
+  // Two-step animation: render instances at schema pos → then transition to path pos
+  const [spread, setSpread] = useState(false);
+  useEffect(() => {
+    if (!queryId) { setSpread(false); return; }
+    setSpread(false);
+    const id1 = requestAnimationFrame(() => {
+      const id2 = requestAnimationFrame(() => setSpread(true));
+      return () => cancelAnimationFrame(id2);
+    });
+    return () => cancelAnimationFrame(id1);
+  }, [queryId]);
 
   return (
     <div className="graph-viz-wrap">
+      <svg viewBox={`0 0 ${VW} ${VH}`} className="graph-viz-svg" role="img"
+        aria-label="Knowledge Graph">
+        <defs>
+          <marker id="gv-arrow" viewBox="0 0 10 7" refX="10" refY="3.5"
+            markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#475569" />
+          </marker>
+          <marker id="pd-arrow" viewBox="0 0 10 7" refX="9" refY="3.5"
+            markerWidth="7" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7dd3fc" />
+          </marker>
+        </defs>
 
+        {/* ── Schema relationship arrows — fade out when active ── */}
+        <g style={{ opacity: path ? 0 : 1, transition: "opacity 0.35s", pointerEvents: "none" }}>
+          {EDGES.map(e => {
+            const from = NODE_MAP[e.from], to = NODE_MAP[e.to];
+            const dx = to.x - from.x, dy = to.y - from.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const ux = dx / dist, uy = dy / dist;
+            const x1 = from.x + ux * (from.r + 2), y1 = from.y + uy * (from.r + 2);
+            const x2 = to.x - ux * (to.r + 4),     y2 = to.y - uy * (to.r + 4);
+            const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+            return (
+              <g key={e.label}>
+                <line x1={x1} y1={y1} x2={x2} y2={y2}
+                  stroke="#475569" strokeWidth="1.5" markerEnd="url(#gv-arrow)" />
+                <text x={mx} y={my - 7} textAnchor="middle"
+                  fontSize="9" fontWeight="600" fill="#64748b" letterSpacing="0.04">{e.label}</text>
+                <text x={mx} y={my + 7} textAnchor="middle"
+                  fontSize="8" fill="#475569">{e.count}</text>
+              </g>
+            );
+          })}
+        </g>
+
+        {/* ── Path traversal arrows — fade in after nodes have spread ── */}
+        {pathNodes.length > 1 && pathNodes.slice(0, -1).map((from, i) => {
+          const to = pathNodes[i + 1];
+          const edge = edgeSteps[i];
+          const x1 = from.pathX + from.r + 2;
+          const x2 = to.pathX - to.r - 3;
+          const mx = (x1 + x2) / 2;
+          return (
+            <g key={`pe-${i}`}
+              style={{ opacity: spread ? 1 : 0, transition: "opacity 0.3s 0.3s" }}>
+              <line x1={x1} y1={PATH_CY} x2={x2} y2={PATH_CY}
+                stroke="#38bdf8" strokeWidth="1.5" markerEnd="url(#pd-arrow)" />
+              <text x={mx} y={PATH_CY - 9} textAnchor="middle"
+                fontSize="8" fontWeight="700" fill="#7dd3fc" letterSpacing="0.04">
+                {edge?.dir} {edge?.label}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* ── Schema type nodes — present always; fade when query active ── */}
+        {NODES.map(n => {
+          const inPath = typesInPath.has(n.id);
+          // Nodes in path get replaced visually by instances → dim them more
+          const opacity = path ? (inPath ? 0.07 : 0.05) : 1;
+          const small = n.r < 30;
+          return (
+            <g key={n.id} style={{ opacity, transition: "opacity 0.35s" }}>
+              <circle cx={n.x} cy={n.y} r={n.r}
+                fill={n.color + "cc"} stroke={n.color} strokeWidth="1" />
+              {!small && (
+                <>
+                  <text x={n.x} y={n.y - 4} textAnchor="middle"
+                    fontSize="11" fontWeight="600" fill="#fff">{n.label}</text>
+                  <text x={n.x} y={n.y + 12} textAnchor="middle"
+                    fontSize="10" fill="rgba(255,255,255,0.7)">{n.count}</text>
+                </>
+              )}
+              {small && n.r >= 12 && (
+                <>
+                  <text x={n.x} y={n.y + 4} textAnchor="middle"
+                    fontSize="8" fontWeight="700" fill="rgba(255,255,255,0.9)">{n.count}</text>
+                  <text x={n.x} y={n.y + n.r + 13} textAnchor="middle"
+                    fontSize="10" fontWeight="600" fill={n.color}>{n.label}</text>
+                </>
+              )}
+              {small && n.r < 12 && (
+                <text x={n.x} y={n.y + n.r + 12} textAnchor="middle"
+                  fontSize="9" fontWeight="600" fill={n.color}>{n.label}</text>
+              )}
+            </g>
+          );
+        })}
+
+        {/* ── Path instance nodes ──────────────────────────────────────
+            Always in the DOM. When idle: at their type's schema position, invisible.
+            When active: animate from schema position → path position.
+            Effect: the schema bubbles appear to "split and rearrange".           ── */}
+        {pathNodes.map((inst, i) => {
+          const schemaDef = NODE_MAP[inst.id];
+          // Start position = schema node's position; end = computed path position
+          const x = spread ? inst.pathX  : schemaDef.x;
+          const y = spread ? PATH_CY     : schemaDef.y;
+
+          const isResult = inst.note === "result";
+          const isStart  = inst.note === "start";
+          const fill   = isResult ? inst.color + "cc"
+                       : isStart  ? inst.color + "55"
+                       :            "#1e293b";
+          const stroke = isResult ? "#fff" : isStart ? inst.color : "#475569";
+          const sw     = isResult ? 2 : 1.5;
+          const textColor = isResult ? "#fff" : isStart ? inst.color : "#94a3b8";
+          const small  = inst.r < 28;
+
+          return (
+            <g key={`inst-${i}`} style={{
+              transform: `translate(${x}px, ${y}px)`,
+              transition: "transform 0.5s ease",
+              opacity: path ? 1 : 0,
+            }}>
+              {isResult && (
+                <circle r={inst.r + 6} fill="none"
+                  stroke={inst.color} strokeWidth="1.5"
+                  opacity="0.4" className="gv-node-glow" />
+              )}
+              <circle r={inst.r} fill={fill} stroke={stroke} strokeWidth={sw} />
+              {/* type badge above */}
+              <text y={-inst.r - 7} textAnchor="middle"
+                fontSize="8" fontWeight="700" fill={textColor} letterSpacing="0.05">
+                {inst.id}
+              </text>
+              {/* instance label: inside if large, below if small */}
+              {small ? (
+                <text y={inst.r + 14} textAnchor="middle"
+                  fontSize="9" fontWeight="600" fill={textColor}>
+                  {inst.label}
+                </text>
+              ) : (
+                <text y={5} textAnchor="middle"
+                  fontSize="10" fontWeight="600"
+                  fill={isResult ? "#fff" : "#cbd5e1"}>
+                  {inst.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Description row */}
       {path ? (
-        /* ── Active query: show traversal path as main viz ── */
-        <div className="qpe-wrap">
-          <div className="qpe-header">
-            <span className="qpe-title">{path.title}</span>
-            <span className="qpe-desc">{path.description}</span>
-          </div>
-          <PathDiagram steps={path.steps} />
+        <div className="qpe-wrap"
+          style={{ opacity: spread ? 1 : 0, transition: "opacity 0.3s 0.4s" }}>
+          <span className="qpe-title">{path.title}</span>
+          <span className="qpe-desc">{path.description}</span>
         </div>
       ) : (
-        /* ── Idle: show schema SVG ── */
-        <>
-          <svg viewBox="0 0 590 278" className="graph-viz-svg" role="img"
-            aria-label="Knowledge Graph schema: Sponsor, Trial, Condition, Intervention, Country">
-            <defs>
-              <marker id="gv-arrow" viewBox="0 0 10 7" refX="10" refY="3.5"
-                markerWidth="8" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#475569" />
-              </marker>
-            </defs>
-
-            {/* Edges */}
-            {EDGES.map(e => {
-              const from = NODE_MAP[e.from];
-              const to = NODE_MAP[e.to];
-              const dx = to.x - from.x, dy = to.y - from.y;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              const ux = dx / dist, uy = dy / dist;
-              const x1 = from.x + ux * (from.r + 2);
-              const y1 = from.y + uy * (from.r + 2);
-              const x2 = to.x - ux * (to.r + 4);
-              const y2 = to.y - uy * (to.r + 4);
-              const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-              return (
-                <g key={e.label}>
-                  <line x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke="#475569" strokeWidth="1.5"
-                    markerEnd="url(#gv-arrow)" />
-                  <text x={mx} y={my - 7} textAnchor="middle"
-                    className="gv-edge-label" fill="#64748b">{e.label}</text>
-                  <text x={mx} y={my + 7} textAnchor="middle"
-                    className="gv-edge-count" fill="#475569">{e.count}</text>
-                </g>
-              );
-            })}
-
-            {/* Nodes */}
-            {NODES.map(n => {
-              const small = n.r < 30;
-              return (
-                <g key={n.id}>
-                  <circle cx={n.x} cy={n.y} r={n.r}
-                    fill={n.color + "cc"} stroke={n.color} strokeWidth="1" />
-                  {small ? (
-                    <>
-                      {n.r >= 12 && (
-                        <text x={n.x} y={n.y + 4} textAnchor="middle"
-                          fontSize="8" fontWeight="700" fill="rgba(255,255,255,0.9)">{n.count}</text>
-                      )}
-                      <text x={n.x} y={n.y + n.r + 13} textAnchor="middle"
-                        fontSize="10" fontWeight="600" fill={n.color}>{n.label}</text>
-                      {n.r < 12 && (
-                        <text x={n.x} y={n.y + n.r + 24} textAnchor="middle"
-                          fontSize="9" fill="rgba(255,255,255,0.55)">{n.count}</text>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <text x={n.x} y={n.y - 5} textAnchor="middle"
-                        fontSize={n.id === "Intervention" ? "9" : "11"}
-                        fontWeight="600" fill="#fff">{n.label}</text>
-                      <text x={n.x} y={n.y + 12} textAnchor="middle"
-                        fontSize="10" fill="rgba(255,255,255,0.7)">{n.count}</text>
-                    </>
-                  )}
-                </g>
-              );
-            })}
-          </svg>
-          <div className="qpe-idle-hint">
-            Run a graph query above to see how it traverses the knowledge graph
-          </div>
-        </>
+        <div className="qpe-idle-hint">
+          Run a graph query above to see how it traverses the knowledge graph
+        </div>
       )}
 
       {/* Legend */}
@@ -320,3 +317,5 @@ export default function GraphViz({ queryId }) {
     </div>
   );
 }
+
+
