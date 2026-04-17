@@ -63,7 +63,8 @@ function FailureAnalysis({ filterParams }) {
     setLoading(true);
     setError(null);
     const base = trialsApiBase();
-    const url = new URL(base ? `${base}/api/failure-analysis` : `/api/failure-analysis`, window.location.origin);
+    const url = new URL(base ? `${base}/api/failure-analysis` : `/api/analytics`, window.location.origin);
+    if (!base) url.searchParams.set("mode", "failure-analysis");
     for (const [k, v] of Object.entries(filterParams)) {
       if (v) url.searchParams.set(k, v);
     }
@@ -158,7 +159,8 @@ function SponsorPerformance({ filterParams }) {
     setLoading(true);
     setError(null);
     const base = trialsApiBase();
-    const url = new URL(base ? `${base}/api/sponsor-performance` : `/api/sponsor-performance`, window.location.origin);
+    const url = new URL(base ? `${base}/api/sponsor-performance` : `/api/analytics`, window.location.origin);
+    if (!base) url.searchParams.set("mode", "sponsor-performance");
     for (const [k, v] of Object.entries(filterParams)) {
       if (v) url.searchParams.set(k, v);
     }
@@ -240,7 +242,8 @@ function EnrollmentBenchmark({ filterParams }) {
     setLoading(true);
     setError(null);
     const base = trialsApiBase();
-    const url = new URL(base ? `${base}/api/enrollment-benchmark` : `/api/enrollment-benchmark`, window.location.origin);
+    const url = new URL(base ? `${base}/api/enrollment-benchmark` : `/api/analytics`, window.location.origin);
+    if (!base) url.searchParams.set("mode", "enrollment-benchmark");
     for (const [k, v] of Object.entries({ ...filterParams, ...extraParams })) {
       if (v) url.searchParams.set(k, v);
     }

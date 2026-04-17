@@ -1,8 +1,18 @@
 /**
- * Vercel Serverless Function — /api/failure-analysis
- * Proxies to OKE server /api/failure-analysis
+ * Vercel Serverless Function — /api/analytics
+ * Unified proxy for operational KPI endpoints on OKE.
+ *
+ * mode=failure-analysis    → /api/failure-analysis
+ * mode=sponsor-performance → /api/sponsor-performance
+ * mode=enrollment-benchmark → /api/enrollment-benchmark
  */
 const OKE_BASE = (process.env.TRIALS_API_BASE || "").replace(/\/$/, "");
+
+const MODE_MAP = {
+  "failure-analysis": "/api/failure-analysis",
+  "sponsor-performance": "/api/sponsor-performance",
+  "enrollment-benchmark": "/api/enrollment-benchmark",
+};
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -12,9 +22,13 @@ export default async function handler(req, res) {
 
   if (!OKE_BASE) return res.status(503).json({ error: "TRIALS_API_BASE not configured" });
 
+  const { mode, ...rest } = req.query;
+  const path = MODE_MAP[mode];
+  if (!path) return res.status(400).json({ error: `Unknown mode: ${mode}. Valid: ${Object.keys(MODE_MAP).join(", ")}` });
+
   try {
-    const url = new URL(`${OKE_BASE}/api/failure-analysis`);
-    for (const [k, v] of Object.entries(req.query)) {
+    const url = new URL(`${OKE_BASE}${path}`);
+    for (const [k, v] of Object.entries(rest)) {
       url.searchParams.set(k, v);
     }
     const upstream = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) });
