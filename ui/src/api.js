@@ -56,7 +56,7 @@ export async function fetchNLQuery(question) {
 export async function streamLLMQuery(question, { onChunk, onStructured, onDone, onError } = {}) {
   try {
     const res = await fetch(
-      `${API}/api/query/stream?q=${encodeURIComponent(question)}`
+      `/api/query?q=${encodeURIComponent(question)}`
     );
     if (!res.ok) {
       onError?.(`HTTP ${res.status}`);

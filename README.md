@@ -27,6 +27,44 @@ This project demonstrates competencies for a **Data Domain Manager, Trial Data**
 | **Clinical Domain Expertise** | Trial risk scoring benchmarked against condition+phase comparables; dropout analysis; design complexity signals; operational KPIs (completion rate, duration, enrollment ambition) |
 | **Data Storytelling & Influence** | Interactive cross-filter charts with reactive stats banner; GPT-4.1 strategic briefings that translate data patterns into plain-English operational narratives |
 | **Stakeholder Engagement** | Self-service UI — no SQL required. Click any chart bar to slice the entire dataset; click any trial to get a risk briefing |
+| **Data Lineage & Traceability** | End-to-end pipeline from AACT PostgreSQL → K8s CronJob → SQLite snapshot → FTS/aggregation engine → Neo4j knowledge graph → Cytoscape.js visualization → GPT-4.1 briefings. Every query result is traceable back through the chain |
+| **Innovation & AI Readiness** | NL→Cypher graph queries, GPT-4.1 strategic briefings, NL→structured DQ rule parser, real-time risk scoring. Platform designed as an AI-ready semantic layer — structured for LLM consumption and agent orchestration |
+
+## Data Lineage
+
+The platform implements full end-to-end data lineage — every insight is traceable from raw source through transformation to consumption:
+
+```
+AACT PostgreSQL (ClinicalTrials.gov)     ← Authoritative source
+  │
+  ▼  K8s CronJob (2AM UTC, nightly)
+ SQLite Snapshot (11 tables, 50 GB PVC)   ← Operational store
+  │
+  ├─▶ FTS5 full-text index               ← Search layer
+  ├─▶ Faceted aggregation engine          ← Analytics layer
+  ├─▶ DQ rules engine                     ← Governance layer
+  │
+  ▼  Graph ETL (580k trials)
+ Neo4j 5.26 Knowledge Graph               ← Semantic layer
+  │  Trial(580k) + Intervention(512k) + Condition(129k)
+  │  + Sponsor(50k) + Country(225)
+  │
+  ├─▶ Cytoscape.js graph visualization    ← Exploration
+  ├─▶ NL → Cypher query translation       ← Self-service access
+  └─▶ GPT-4.1 strategic briefings         ← AI consumption
+```
+
+## Semantic Layer & Metadata Catalog
+
+The **Neo4j knowledge graph** serves as the semantic layer — encoding clinical and operational relationships (trial→sponsor, trial→condition, trial→intervention, trial→country) as first-class graph edges rather than foreign-key joins. This makes the data self-describing: every entity carries its operational context (completion rates, enrollment patterns, risk profiles) and is connected to every related entity.
+
+The **CDISC SDTM IG v3.4 standards graph** provides the regulatory metadata layer — encoding domains, variables, codelists, value-level metadata, and their relationships. The platform surfaces this as:
+
+- **Data Catalog** (Browse tab) — searchable catalog of SDTM domains with variable definitions, core status, codelists, and business descriptions
+- **Standards Q&A** — natural-language queries against the standards graph
+- **SDTM Training** — interactive tutorial for SDTM domain structure and naming conventions
+
+Together, these layers provide both the operational data semantics (Neo4j trials graph) and the regulatory metadata semantics (CDISC standards graph) that a Data Domain Manager needs to own.
 
 ## Data Domain: What's in the KG
 
@@ -98,9 +136,14 @@ This project demonstrates competencies for a **Data Domain Manager, Trial Data**
 cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
+│       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph, Data Catalog, Standards Q&A, SDTM Training, Demo
 │       ├── TrialsPanel.jsx    # Main search + cross-filter chart UI
 │       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner
+│       ├── GraphViz.jsx       # Cytoscape.js trial-graph visualization (Neo4j → browser)
 │       ├── RulesManager.jsx   # DQ rules: grouping normalization, enrollment bounds
+│       ├── TreeView.jsx       # SDTM standards data catalog (Browse tab)
+│       ├── QueryPanel.jsx     # NL → standards graph Q&A
+│       ├── TutorPanel.jsx     # SDTM training module
 │       ├── InsightPanel.jsx   # Entity-level operational insight (available, not wired)
 │       ├── SiteIntelligence.jsx # Site search + deep profile (available, not wired)
 │       └── trialsEngine.js    # API client (fetch wrappers for all modes)
@@ -112,6 +155,8 @@ cdisc-kg/
 │   ├── site-search.js         # /api/site-search → OKE (PG fallback)
 │   ├── site-profile.js        # /api/site-profile → OKE (PG fallback)
 │   ├── trial-risk.js          # /api/trial-risk → OKE
+│   ├── graph.js               # /api/graph → Neo4j graph endpoints (GET proxy)
+│   ├── graph-query.js         # /api/graph-query → NL→Cypher pipeline (POST)
 │   └── dq.js                  # /api/dq/parse-rule → LLM rule parser
 ├── server/                    # Express API on OKE (ARM64)
 │   ├── index.js               # All endpoints (see API section)
@@ -163,6 +208,21 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 |---|---|
 | `POST /api/dq/parse-rule` | Natural-language → structured DQ rule via LLM (grouping rules or enrollment bounds) |
 
+### Knowledge Graph (Neo4j)
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/graph/stats` | Graph DB stats — node/relationship counts by label |
+| `GET /api/graph/sponsor-overlap?sponsor=...` | Sponsors sharing conditions/interventions with the given sponsor |
+| `GET /api/graph/strategic-gaps?sponsor=...` | Therapeutic areas where a sponsor has no trials but competitors do |
+| `GET /api/graph/condition-landscape?condition=...` | All sponsors and interventions for a condition |
+| `GET /api/graph/therapeutic-adjacency?condition=...` | Conditions that share interventions (potential repurposing signals) |
+| `GET /api/graph/repurposing-path?from=...&to=...` | Shortest graph path between two conditions or interventions |
+| `GET /api/graph/sponsor-network?sponsor=...` | Sponsor relationship network via shared conditions/interventions |
+| `GET /api/graph/site-risk?...` | Site-level risk metrics |
+| `GET /api/graph/site-expertise?...` | Site expertise by therapeutic area |
+| `POST /api/graph-query` | NL → Cypher: takes `{ question }`, generates Cypher via LLM, executes against Neo4j, narrates results |
+
 ### System
 
 | Endpoint | Description |
@@ -172,6 +232,7 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 ## Infrastructure
 
 - **OKE**: Single ARM64 node (`VM.Standard.A1.Flex`, 4 OCPU / 24 GB), namespace `cdisc-kg`, LB IP `129.80.137.184`
+- **Neo4j 5.26**: Graph database on OKE — 580k Trial + 512k Intervention + 129k Condition + 50k Sponsor + 225 Country nodes. ClusterIP service, Cypher endpoint for graph queries
 - **SQLite snapshot**: 11 tables on a 50 GB PVC (`/data/aact.db`), refreshed nightly at 2AM UTC (5h timeout). Server falls back to live AACT PostgreSQL if snapshot missing
 - **CI**: `ubuntu-24.04-arm` GitHub Actions runner — native ARM64 build, ~2.5 min. Auto-triggers on push to `server/**`
 - **Vercel**: Serverless proxy layer + static UI hosting. Deploy with `vercel --prod` from project root
@@ -209,3 +270,7 @@ kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/sqlite-debug-pod.yaml
 kubectl exec -it sqlite-debug -n cdisc-kg -- sqlite3 /data/aact.db
 ```
+
+Questions for opus:
+
+would it make sense for the visual insights to update based on kg queries or nah?

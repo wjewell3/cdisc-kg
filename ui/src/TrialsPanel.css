@@ -1506,13 +1506,13 @@
   padding-bottom: 32px;
 }
 
-/* SVG Schema diagram */
-.graph-viz-svg {
+/* Cytoscape graph container */
+.graph-viz-cy {
   display: block;
   width: 100%;
   max-width: 580px;
+  height: 310px;
   margin: 0 auto;
-  height: auto;
 }
 .gv-edge-label {
   font-size: 9px;

@@ -4,7 +4,8 @@
   "functions": {
     "api/intelligence.js": { "maxDuration": 60 },
     "api/dq.js": { "maxDuration": 30 },
-    "api/graph-query.js": { "maxDuration": 45 }
+    "api/graph-query.js": { "maxDuration": 45 },
+    "api/query.js": { "maxDuration": 45 }
   },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },

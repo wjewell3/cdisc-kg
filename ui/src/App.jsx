@@ -33,7 +33,8 @@ for (const dom of Object.values(DOMAINS_MAP)) {
 const NODE_MAP = Object.fromEntries(ALL_NODES.map((n) => [n.id, n]));
 
 const ROUTE_TO_PANEL = {
-  "/": "graph",
+  "/": "trials",
+  "/standards": "graph",
   "/query": "query",
   "/browse": "browse",
   "/learn": "learn",
@@ -303,44 +304,44 @@ function App() {
         <button className="hamburger" onClick={() => setSidebarOpen((o) => !o)} aria-label="Toggle sidebar">
           ☰
         </button>
-        <h1>CDISC Knowledge Graph</h1>
-        <span className="subtitle">SDTM IG v3.4</span>
+        <h1>Clinical Trials Knowledge Graph</h1>
+        <span className="subtitle">580 k Trials · SDTM IG v3.4 · Neo4j + GPT-4.1</span>
         <div className="tab-bar">
+          <button
+            className={`tab-btn tab-btn-trials ${activePanel === "trials" ? "active" : ""}`}
+            onClick={() => switchPanel("trials")}
+          >
+            Trial Intelligence ✦
+          </button>
           <button
             className={`tab-btn ${activePanel === "graph" ? "active" : ""}`}
             onClick={() => switchPanel("graph")}
           >
-            Graph
+            Standards Graph
           </button>
           <button
             className={`tab-btn ${activePanel === "query" ? "active" : ""}`}
             onClick={() => switchPanel("query")}
           >
-            NL Query
+            Standards Q&amp;A
           </button>
           <button
             className={`tab-btn ${activePanel === "browse" ? "active" : ""}`}
             onClick={() => switchPanel("browse")}
           >
-            Browse
+            Data Catalog
           </button>
           <button
             className={`tab-btn ${activePanel === "learn" ? "active" : ""}`}
             onClick={() => switchPanel("learn")}
           >
-            Learn
+            SDTM Training
           </button>
           <button
             className={`tab-btn ${activePanel === "demo" ? "active" : ""}`}
             onClick={() => switchPanel("demo")}
           >
             Demo
-          </button>
-          <button
-            className={`tab-btn tab-btn-trials ${activePanel === "trials" ? "active" : ""}`}
-            onClick={() => switchPanel("trials")}
-          >
-            Trials ✦
           </button>
         </div>
         {stats && (
