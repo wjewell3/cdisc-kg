@@ -101,15 +101,17 @@ const QUERY_PATHS = {
 
 // Compute horizontal path positions for a set of node steps.
 function buildPathNodes(nodeSteps) {
+  // Build imperatively — avoid referencing `nodes` inside the same map() that creates it (TDZ bug)
+  const nodes = [];
   let cursor = 0;
-  const nodes = nodeSteps.map((s, i) => {
+  for (let i = 0; i < nodeSteps.length; i++) {
+    const s = nodeSteps[i];
     const def = NODE_MAP[s.id];
     const r = def?.r ?? 24;
     const color = def?.color ?? "#94a3b8";
-    if (i === 0) cursor = r;
-    else cursor = nodes[i - 1].pathX + nodes[i - 1].r + GAP + r;
-    return { ...s, r, color, pathX: cursor };
-  });
+    cursor = i === 0 ? r : nodes[i - 1].pathX + nodes[i - 1].r + GAP + r;
+    nodes.push({ ...s, r, color, pathX: cursor });
+  }
   // Centre inside viewbox
   const totalW = nodes.length
     ? nodes[nodes.length - 1].pathX + nodes[nodes.length - 1].r
