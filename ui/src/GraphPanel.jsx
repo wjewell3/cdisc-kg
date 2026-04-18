@@ -16,18 +16,22 @@ export default function GraphPanel() {
   const [question, setQuestion] = useState("");
   const [graphResult, setGraphResult] = useState(null);
   const [graphQueryId, setGraphQueryId] = useState(null);
+  const [displayQueryId, setDisplayQueryId] = useState(null);
   const [inputFocused, setInputFocused] = useState(false);
 
   const runGraphQuery = useCallback(async (text) => {
     setQuestion(text);
     const preset = GRAPH_PRESETS.find(q => q.text === text);
-    setGraphQueryId(preset?.id ?? null);
+    const presetId = preset?.id ?? null;
+    setGraphQueryId(presetId);
     setGraphResult({ loading: true, error: null, cypher: null, columns: [], rows: [], narrative: null });
     try {
       const data = await executeGraphQuery(text);
       setGraphResult({ loading: false, error: null, ...data });
+      setDisplayQueryId((data.rows?.length ?? 0) > 0 ? presetId : null);
     } catch (err) {
       setGraphResult({ loading: false, error: err.message, cypher: null, columns: [], rows: [], narrative: null });
+      setDisplayQueryId(null);
     }
   }, []);
 
@@ -53,7 +57,7 @@ export default function GraphPanel() {
       {/* KG visualisation */}
       <div className="graph-panel-viz">
         <GraphViz
-          queryId={graphResult && !graphResult.loading && !graphResult.error && graphResult.rows?.length > 0 ? graphQueryId : null}
+          queryId={displayQueryId}
         />
       </div>
 
