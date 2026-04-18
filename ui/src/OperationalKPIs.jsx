@@ -348,7 +348,7 @@ function EnrollmentBenchmark({ filterParams }) {
                     </div>
                   )}
                   {vals.Actual && (
-                    <div className="okpi-compare-bar" style={{ background: "#3fb950" }}>
+                    <div className="okpi-compare-bar" style={{ background: "#1f6feb" }}>
                       <span>{Math.round(vals.Actual).toLocaleString()}</span>
                       <span className="okpi-compare-type">Actual</span>
                     </div>
