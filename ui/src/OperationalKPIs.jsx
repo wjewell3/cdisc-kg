@@ -363,12 +363,96 @@ function EnrollmentBenchmark({ filterParams }) {
   );
 }
 
+// ── Graph Centrality View ────────────────────────────────────────────────────
+function GraphCentralityView() {
+  const [entityType, setEntityType] = useState("condition");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async (type) => {
+    setLoading(true); setError(null); setData(null);
+    try {
+      const base = trialsApiBase();
+      const url = base
+        ? `${base}/api/graph/centrality?type=${type}&limit=20`
+        : `/api/graph?path=centrality&type=${type}&limit=20`;
+      const r = await fetch(url);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Failed");
+      setData(d);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(entityType); }, [entityType, load]);
+
+  const maxScore = useMemo(() => data?.items ? Math.max(...data.items.map(i => i.connectivity_score)) : 1, [data]);
+
+  return (
+    <div style={{ padding: "16px" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>Graph Centrality</span>
+        <span style={{ fontSize: 11, color: "#8b949e", flex: 1 }}>Entities with the most connections — hubs of the clinical trial network</span>
+        <div className="okpi-toggle-group">
+          {["condition", "sponsor"].map(t => (
+            <button
+              key={t}
+              className={`okpi-toggle-btn${entityType === t ? " okpi-toggle-active" : ""}`}
+              onClick={() => setEntityType(t)}
+            >
+              {t === "condition" ? "🧬 Conditions" : "🏢 Sponsors"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading && <div className="okpi-loading"><div className="loading-spinner" /><span>Loading from knowledge graph…</span></div>}
+      {error && <div className="okpi-error">⚠ {error}</div>}
+
+      {data?.items && !loading && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 100px 90px 90px", gap: 6, padding: "4px 0", borderBottom: "1px solid #30363d", marginBottom: 4 }}>
+            {["#","Entity","Trials","↔ Sponsors","↔ Drugs"].map(h => (
+              <span key={h} style={{ fontSize: 10, color: "#8b949e", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h}</span>
+            ))}
+          </div>
+          {data.items.map((item, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "28px 1fr 100px 90px 90px", gap: 6, padding: "5px 0", borderBottom: "1px solid #21262d", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "#8b949e", textAlign: "right" }}>{i + 1}</span>
+              <div>
+                <div style={{ fontSize: 11, color: "#c9d1d9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {item.entity.length > 32 ? item.entity.slice(0, 30) + "…" : item.entity}
+                </div>
+                <div style={{ height: 4, background: "#21262d", borderRadius: 2, marginTop: 2, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.max((item.connectivity_score / maxScore) * 100, 2)}%`, background: "#a371f7", transition: "width 0.4s" }} />
+                </div>
+              </div>
+              <span style={{ fontSize: 11, color: "#58a6ff", textAlign: "right" }}>{item.trials.toLocaleString()}</span>
+              <span style={{ fontSize: 11, color: "#8b949e", textAlign: "right" }}>
+                {entityType === "condition" ? item.unique_sponsors?.toLocaleString() : item.unique_conditions?.toLocaleString()}
+              </span>
+              <span style={{ fontSize: 11, color: "#8b949e", textAlign: "right" }}>
+                {item.unique_interventions?.toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Operational KPIs Component ────────────────────────────────
 const VIEWS = [
   { key: "failure", label: "Failure Analysis", icon: "⚠", question: "What's the real termination rate, and why do trials fail?" },
   { key: "sponsors", label: "Sponsor Performance", icon: "🏆", question: "Which sponsors have the best completion rates?" },
   { key: "enrollment", label: "Enrollment Benchmark", icon: "📊", question: "How does enrollment ambition compare to actuals?" },
   { key: "geography", label: "Geography", icon: "🌍", question: "Where are the geographic concentrations and gaps in site activation?" },
+  { key: "graph", label: "Graph Analytics", icon: "🕸", question: "Which entities are most connected in the knowledge graph?" },
 ];
 
 export default function OperationalKPIs({ filterParams, initialView }) {
@@ -401,6 +485,7 @@ export default function OperationalKPIs({ filterParams, initialView }) {
       {activeView === "sponsors" && <SponsorPerformance filterParams={filterParams} />}
       {activeView === "enrollment" && <EnrollmentBenchmark filterParams={filterParams} />}
       {activeView === "geography" && <GeographicIntelligence filterParams={filterParams} />}
+      {activeView === "graph" && <GraphCentralityView />}
     </div>
   );
 }

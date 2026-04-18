@@ -310,3 +310,31 @@
 .okpi-view {
   min-height: 100px;
 }
+
+/* ── Toggle buttons for Graph Analytics ───────────────────────── */
+.okpi-toggle-group {
+  display: flex;
+  gap: 4px;
+}
+
+.okpi-toggle-btn {
+  padding: 4px 10px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #8b949e;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.okpi-toggle-btn:hover {
+  border-color: #a371f7;
+  color: #c9d1d9;
+}
+
+.okpi-toggle-active {
+  border-color: #a371f7;
+  background: #a371f715;
+  color: #e6edf3;
+}

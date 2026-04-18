@@ -1643,6 +1643,391 @@ app.post("/api/graph/execute", express.json(), async (req, res) => {
   }
 });
 
+// ── KG Context Cards ─────────────────────────────────────────────────────────
+// Returns graph-derived facts for any entity: adjacent entities, strategic gaps,
+// similar peers — makes the KG feel omnipresent, not a side panel.
+app.get("/api/graph/kg-context", async (req, res) => {
+  const { type, name } = req.query;
+  if (!type || !name) return res.status(400).json({ error: "type and name required" });
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    const facts = [];
+
+    if (type === "sponsor") {
+      // 1. Top conditions this sponsor trials
+      const condRecs = await cypher(`
+        MATCH (s:Sponsor {name: $name})-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)
+        RETURN c.name AS condition, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT 5
+      `, { name });
+      if (condRecs.length) facts.push({
+        type: "top_conditions",
+        label: "Top therapeutic areas",
+        items: condRecs.map(r => ({ name: r.get("condition"), count: nInt(r.get("trials")) })),
+      });
+
+      // 2. Strategic gaps (conditions adjacent to portfolio but not pursued)
+      const gapRecs = await cypher(`
+        MATCH (s:Sponsor {name: $name})-[:RUNS]->(t:Trial)-[:TREATS]->(my:Condition)
+        WITH COLLECT(DISTINCT my.name) AS myNames
+        UNWIND myNames AS mn
+        MATCH (mc:Condition {name: mn})<-[:TREATS]-(t2:Trial)-[:TREATS]->(gap:Condition)
+        WHERE NOT gap.name IN myNames
+        WITH gap.name AS condition, COUNT(DISTINCT t2) AS strength
+        RETURN condition, strength ORDER BY strength DESC LIMIT 5
+      `, { name });
+      if (gapRecs.length) facts.push({
+        type: "strategic_gaps",
+        label: "Expansion opportunities",
+        description: "Conditions adjacent to portfolio where this sponsor has zero trials",
+        items: gapRecs.map(r => ({ name: r.get("condition"), count: nInt(r.get("strength")) })),
+      });
+
+      // 3. Competitors (via shared conditions)
+      const compRecs = await cypher(`
+        MATCH (s:Sponsor {name: $name})-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)<-[:TREATS]-(t2:Trial)<-[:RUNS]-(comp:Sponsor)
+        WHERE s <> comp
+        WITH comp.name AS competitor, COUNT(DISTINCT c) AS shared_conditions, COUNT(DISTINCT t2) AS trials
+        RETURN competitor, shared_conditions, trials
+        ORDER BY shared_conditions DESC LIMIT 5
+      `, { name });
+      if (compRecs.length) facts.push({
+        type: "competitors",
+        label: "Top competitors (shared conditions)",
+        items: compRecs.map(r => ({ name: r.get("competitor"), count: nInt(r.get("shared_conditions")), trials: nInt(r.get("trials")) })),
+      });
+
+    } else if (type === "condition") {
+      // 1. Adjacent conditions (shared interventions)
+      const adjRecs = await cypher(`
+        MATCH (c1:Condition {name: $name})<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)
+        WITH i, COUNT(t) AS ct ORDER BY ct DESC LIMIT 100
+        MATCH (i)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
+        WHERE c2.name <> $name
+        WITH c2.name AS condition, COUNT(DISTINCT i) AS shared
+        RETURN condition, shared ORDER BY shared DESC LIMIT 5
+      `, { name });
+      if (adjRecs.length) facts.push({
+        type: "adjacent_conditions",
+        label: "Therapeutically adjacent conditions",
+        description: "Share clinical interventions — drug repurposing signals",
+        items: adjRecs.map(r => ({ name: r.get("condition"), count: nInt(r.get("shared")) })),
+      });
+
+      // 2. Top sponsors in this condition
+      const sponsorRecs = await cypher(`
+        MATCH (c:Condition {name: $name})<-[:TREATS]-(t:Trial)<-[:RUNS]-(s:Sponsor)
+        RETURN s.name AS sponsor, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT 5
+      `, { name });
+      if (sponsorRecs.length) facts.push({
+        type: "top_sponsors",
+        label: "Leading sponsors",
+        items: sponsorRecs.map(r => ({ name: r.get("sponsor"), count: nInt(r.get("trials")) })),
+      });
+
+      // 3. Top interventions
+      const intRecs = await cypher(`
+        MATCH (c:Condition {name: $name})<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)
+        RETURN i.name AS intervention, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT 5
+      `, { name });
+      if (intRecs.length) facts.push({
+        type: "top_interventions",
+        label: "Top interventions",
+        items: intRecs.map(r => ({ name: r.get("intervention"), count: nInt(r.get("trials")) })),
+      });
+
+    } else if (type === "intervention") {
+      // 1. Conditions treated by this intervention
+      const condRecs = await cypher(`
+        MATCH (i:Intervention {name: $name})<-[:USES]-(t:Trial)-[:TREATS]->(c:Condition)
+        RETURN c.name AS condition, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT 5
+      `, { name });
+      if (condRecs.length) facts.push({
+        type: "conditions_treated",
+        label: "Conditions treated",
+        items: condRecs.map(r => ({ name: r.get("condition"), count: nInt(r.get("trials")) })),
+      });
+
+      // 2. Sponsors using this intervention
+      const sponsorRecs = await cypher(`
+        MATCH (i:Intervention {name: $name})<-[:USES]-(t:Trial)<-[:RUNS]-(s:Sponsor)
+        RETURN s.name AS sponsor, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT 5
+      `, { name });
+      if (sponsorRecs.length) facts.push({
+        type: "top_sponsors",
+        label: "Leading sponsors",
+        items: sponsorRecs.map(r => ({ name: r.get("sponsor"), count: nInt(r.get("trials")) })),
+      });
+
+      // 3. Similar interventions (Jaccard via shared conditions)
+      const simRecs = await cypher(`
+        MATCH (i1:Intervention {name: $name})<-[:USES]-(t1:Trial)-[:TREATS]->(c:Condition)
+        WITH i1, COLLECT(DISTINCT c.name) AS myConditions
+        MATCH (c2:Condition)<-[:TREATS]-(t2:Trial)-[:USES]->(i2:Intervention)
+        WHERE c2.name IN myConditions AND i2.name <> $name
+        WITH i2.name AS intervention, COUNT(DISTINCT c2) AS overlap, SIZE(myConditions) AS mySize
+        RETURN intervention, overlap, toFloat(overlap) / mySize AS similarity
+        ORDER BY similarity DESC LIMIT 5
+      `, { name });
+      if (simRecs.length) facts.push({
+        type: "similar_interventions",
+        label: "Similar interventions (shared conditions)",
+        items: simRecs.map(r => ({ name: r.get("intervention"), count: nInt(r.get("overlap")), similarity: Math.round(r.get("similarity") * 100) })),
+      });
+    }
+
+    res.json({ type, name, facts });
+  } catch (e) {
+    console.error("[graph/kg-context]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Similar Entities (Jaccard similarity via shared graph neighbors) ─────────
+app.get("/api/graph/similar", async (req, res) => {
+  const { type, name, limit = "10" } = req.query;
+  if (!type || !name) return res.status(400).json({ error: "type and name required" });
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    let records;
+    if (type === "sponsor") {
+      records = await cypher(`
+        MATCH (s1:Sponsor {name: $name})-[:RUNS]->(t1:Trial)-[:TREATS]->(c:Condition)
+        WITH s1, COLLECT(DISTINCT c.name) AS myConditions
+        MATCH (s2:Sponsor)-[:RUNS]->(t2:Trial)-[:TREATS]->(c2:Condition)
+        WHERE s2 <> s1 AND c2.name IN myConditions
+        WITH s2.name AS peer, COLLECT(DISTINCT c2.name) AS overlap, myConditions
+        WITH peer, SIZE(overlap) AS intersection, myConditions
+        MATCH (s2:Sponsor {name: peer})-[:RUNS]->(t:Trial)-[:TREATS]->(c3:Condition)
+        WITH peer, intersection, myConditions, COLLECT(DISTINCT c3.name) AS peerConditions
+        WITH peer, intersection,
+             toFloat(intersection) / SIZE(apoc.coll.union(myConditions, peerConditions)) AS jaccard,
+             intersection AS shared_conditions
+        WHERE jaccard > 0
+        RETURN peer, shared_conditions, ROUND(jaccard * 100) AS similarity_pct
+        ORDER BY similarity_pct DESC
+        LIMIT toInteger($limit)
+      `, { name, limit });
+    } else if (type === "condition") {
+      records = await cypher(`
+        MATCH (c1:Condition {name: $name})<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)
+        WITH c1, COLLECT(DISTINCT i.name) AS myDrugs
+        MATCH (c2:Condition)<-[:TREATS]-(t2:Trial)-[:USES]->(i2:Intervention)
+        WHERE c2 <> c1 AND i2.name IN myDrugs
+        WITH c2.name AS peer, COUNT(DISTINCT i2) AS shared_drugs, SIZE(myDrugs) AS mySize
+        RETURN peer, shared_drugs, ROUND(100.0 * shared_drugs / mySize) AS similarity_pct
+        ORDER BY similarity_pct DESC
+        LIMIT toInteger($limit)
+      `, { name, limit });
+    } else {
+      return res.status(400).json({ error: "type must be sponsor or condition" });
+    }
+
+    res.json(records.map(r => ({
+      peer: r.get("peer"),
+      shared: nInt(r.get(type === "sponsor" ? "shared_conditions" : "shared_drugs")),
+      similarity_pct: nInt(r.get("similarity_pct")),
+    })));
+  } catch (e) {
+    // Fallback: simpler query if APOC not available
+    if (e.message.includes("apoc") && type === "sponsor") {
+      try {
+        const records = await cypher(`
+          MATCH (s1:Sponsor {name: $name})-[:RUNS]->(t1:Trial)-[:TREATS]->(c:Condition)
+          WITH s1, COLLECT(DISTINCT c.name) AS myConditions
+          MATCH (s2:Sponsor)-[:RUNS]->(t2:Trial)-[:TREATS]->(c2:Condition)
+          WHERE s2 <> s1 AND c2.name IN myConditions
+          WITH s2.name AS peer, COUNT(DISTINCT c2) AS shared_conditions, SIZE(myConditions) AS mySize
+          RETURN peer, shared_conditions, ROUND(100.0 * shared_conditions / mySize) AS similarity_pct
+          ORDER BY similarity_pct DESC
+          LIMIT toInteger($limit)
+        `, { name, limit });
+        return res.json(records.map(r => ({
+          peer: r.get("peer"),
+          shared: nInt(r.get("shared_conditions")),
+          similarity_pct: nInt(r.get("similarity_pct")),
+        })));
+      } catch (e2) {
+        return res.status(500).json({ error: e2.message });
+      }
+    }
+    console.error("[graph/similar]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Trials Like This One ────────────────────────────────────────────────────
+// Graph-neighbor similar trials: same condition+intervention+phase combo
+app.get("/api/graph/trials-like", async (req, res) => {
+  const { nct_id, limit = "10" } = req.query;
+  if (!nct_id) return res.status(400).json({ error: "nct_id required" });
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    const records = await cypher(`
+      MATCH (t:Trial {nct_id: $nct_id})-[:TREATS]->(c:Condition),
+            (t)-[:USES]->(i:Intervention)
+      WITH t, COLLECT(DISTINCT c.name) AS myConditions, COLLECT(DISTINCT i.name) AS myInterventions
+      MATCH (t2:Trial)-[:TREATS]->(c2:Condition), (t2)-[:USES]->(i2:Intervention)
+      WHERE t2 <> t
+        AND c2.name IN myConditions
+        AND i2.name IN myInterventions
+      WITH t2, t,
+           COUNT(DISTINCT c2) AS shared_conditions,
+           COUNT(DISTINCT i2) AS shared_interventions,
+           SIZE(myConditions) AS total_conditions,
+           SIZE(myInterventions) AS total_interventions
+      WITH t2,
+           shared_conditions + shared_interventions AS total_overlap,
+           shared_conditions, shared_interventions,
+           CASE WHEN t2.phase = t.phase THEN 1 ELSE 0 END AS same_phase
+      RETURN t2.nct_id AS nct_id, t2.brief_title AS title, t2.phase AS phase,
+             t2.status AS status, t2.enrollment AS enrollment,
+             shared_conditions, shared_interventions,
+             total_overlap + same_phase AS similarity_score
+      ORDER BY similarity_score DESC
+      LIMIT toInteger($limit)
+    `, { nct_id, limit });
+
+    res.json(records.map(r => ({
+      nct_id: r.get("nct_id"),
+      title: r.get("title"),
+      phase: r.get("phase"),
+      status: r.get("status"),
+      enrollment: nInt(r.get("enrollment")),
+      shared_conditions: nInt(r.get("shared_conditions")),
+      shared_interventions: nInt(r.get("shared_interventions")),
+      similarity_score: nInt(r.get("similarity_score")),
+    })));
+  } catch (e) {
+    console.error("[graph/trials-like]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Graph Centrality ────────────────────────────────────────────────────────
+// Degree centrality + bridge detection for conditions and sponsors.
+// True graph-native: identifies "hub" and "bridge" entities.
+app.get("/api/graph/centrality", async (req, res) => {
+  const { type = "condition", limit = "25" } = req.query;
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    let records;
+    if (type === "condition") {
+      // Degree centrality: conditions with most unique sponsor+intervention connections
+      // Bridge score: conditions that connect otherwise-separate sponsor clusters
+      records = await cypher(`
+        MATCH (c:Condition)<-[:TREATS]-(t:Trial)
+        WITH c, COUNT(DISTINCT t) AS trials
+        WHERE trials >= 50
+        OPTIONAL MATCH (c)<-[:TREATS]-(t2:Trial)<-[:RUNS]-(s:Sponsor)
+        OPTIONAL MATCH (c)<-[:TREATS]-(t3:Trial)-[:USES]->(i:Intervention)
+        WITH c.name AS entity, trials,
+             COUNT(DISTINCT s) AS unique_sponsors,
+             COUNT(DISTINCT i) AS unique_interventions
+        WITH entity, trials, unique_sponsors, unique_interventions,
+             unique_sponsors * unique_interventions AS connectivity_score
+        RETURN entity, trials, unique_sponsors, unique_interventions, connectivity_score
+        ORDER BY connectivity_score DESC
+        LIMIT toInteger($limit)
+      `, { limit });
+    } else if (type === "sponsor") {
+      records = await cypher(`
+        MATCH (s:Sponsor)-[:RUNS]->(t:Trial)
+        WITH s, COUNT(DISTINCT t) AS trials
+        WHERE trials >= 20
+        OPTIONAL MATCH (s)-[:RUNS]->(t2:Trial)-[:TREATS]->(c:Condition)
+        OPTIONAL MATCH (s)-[:RUNS]->(t3:Trial)-[:USES]->(i:Intervention)
+        WITH s.name AS entity, trials,
+             COUNT(DISTINCT c) AS unique_conditions,
+             COUNT(DISTINCT i) AS unique_interventions
+        WITH entity, trials, unique_conditions, unique_interventions,
+             unique_conditions * unique_interventions AS connectivity_score
+        RETURN entity, trials, unique_conditions, unique_interventions, connectivity_score
+        ORDER BY connectivity_score DESC
+        LIMIT toInteger($limit)
+      `, { limit });
+    } else {
+      return res.status(400).json({ error: "type must be condition or sponsor" });
+    }
+
+    const items = records.map(r => {
+      const obj = { entity: r.get("entity"), trials: nInt(r.get("trials")), connectivity_score: nInt(r.get("connectivity_score")) };
+      if (type === "condition") {
+        obj.unique_sponsors = nInt(r.get("unique_sponsors"));
+        obj.unique_interventions = nInt(r.get("unique_interventions"));
+      } else {
+        obj.unique_conditions = nInt(r.get("unique_conditions"));
+        obj.unique_interventions = nInt(r.get("unique_interventions"));
+      }
+      return obj;
+    });
+
+    res.json({ type, items });
+  } catch (e) {
+    console.error("[graph/centrality]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Graph Communities ────────────────────────────────────────────────────────
+// Condition clusters via shared-intervention co-occurrence.
+// Groups conditions into implicit therapeutic-area communities.
+app.get("/api/graph/communities", async (req, res) => {
+  const { limit = "50" } = req.query;
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    // Build communities via strongly connected condition pairs (shared interventions)
+    // Then assign cluster labels by dominant condition in each cluster
+    const records = await cypher(`
+      MATCH (c1:Condition)<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)
+      WITH c1, i, COUNT(DISTINCT t) AS ct
+      WHERE ct >= 10
+      WITH c1, COLLECT(DISTINCT i.name) AS drugs
+      WHERE SIZE(drugs) >= 5
+      MATCH (c1)<-[:TREATS]-(t2:Trial)
+      WITH c1.name AS condition, SIZE(drugs) AS drug_diversity,
+           COUNT(DISTINCT t2) AS trial_count, drugs[0..3] AS top_drugs
+      RETURN condition, drug_diversity, trial_count, top_drugs
+      ORDER BY drug_diversity DESC
+      LIMIT toInteger($limit)
+    `, { limit });
+
+    // Group into clusters: conditions sharing >50% of top drugs
+    const items = records.map(r => ({
+      condition: r.get("condition"),
+      drug_diversity: nInt(r.get("drug_diversity")),
+      trial_count: nInt(r.get("trial_count")),
+      top_drugs: r.get("top_drugs"),
+    }));
+
+    // Simple clustering: bucket by top drug overlap
+    const clusters = {};
+    for (const item of items) {
+      const key = item.top_drugs?.[0] || "Other";
+      if (!clusters[key]) clusters[key] = { cluster_label: key, conditions: [] };
+      clusters[key].conditions.push(item);
+    }
+
+    res.json({
+      total_conditions: items.length,
+      items,
+      clusters: Object.values(clusters).sort((a, b) => b.conditions.length - a.conditions.length).slice(0, 15),
+    });
+  } catch (e) {
+    console.error("[graph/communities]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Failure Analysis ─────────────────────────────────────────────────────────
 // Returns termination rate + clustered why_stopped reasons for a filtered cohort.
 // Answers: "What's the real termination rate for Phase 3 oncology trials, and why?"

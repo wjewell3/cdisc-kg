@@ -4,9 +4,11 @@ import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import InsightPanel from "./InsightPanel";
 import OperationalKPIs from "./OperationalKPIs";
+import StrategicKGQuestions from "./StrategicKGQuestions";
 import TrialsMap from "./TrialsMap";
 import AskBar from "./AskBar";
 import "./OperationalKPIs.css";
+import "./StrategicKGQuestions.css";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
 import "./GraphIntelligence.css";
@@ -42,6 +44,74 @@ const PHASE_CLASS = {
   "Phase 2/Phase 3": "phase-23",
   "N/A": "phase-na",
 };
+
+// ── Trials Like This — graph-neighbor similar trials ────────────────────────
+function TrialsLikeThis({ nctId }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = async () => {
+    if (loading || data) return;
+    setLoading(true); setError(null);
+    try {
+      const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+      const url = base
+        ? `${base}/api/graph/trials-like?nct_id=${encodeURIComponent(nctId)}&limit=8`
+        : `/api/graph?path=trials-like&nct_id=${encodeURIComponent(nctId)}&limit=8`;
+      const r = await fetch(url);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Failed");
+      setData(d);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggle = () => {
+    setOpen(!open);
+    if (!open && !data && !loading) load();
+  };
+
+  return (
+    <div className="trials-like-section">
+      <button className="trials-like-toggle" onClick={toggle}>
+        <span className="tl-kg-badge">KG</span>
+        {open ? "▾" : "▸"} Similar Trials via Knowledge Graph
+        {data ? <span className="tl-count"> ({data.length})</span> : null}
+      </button>
+
+      {open && (
+        <div className="trials-like-body">
+          {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Querying graph…</span></div>}
+          {error && <div className="tl-error">⚠ {error}</div>}
+          {data && data.length === 0 && <div className="tl-empty">No similar trials found in the knowledge graph.</div>}
+          {data && data.map((t, i) => (
+            <div key={t.nct_id} className="tl-row">
+              <div className="tl-row-top">
+                <a href={`https://clinicaltrials.gov/study/${t.nct_id}`} target="_blank" rel="noreferrer" className="tl-nct-link">
+                  {t.nct_id} ↗
+                </a>
+                <span className="tl-match-score">
+                  {t.shared_conditions}c + {t.shared_interventions}i match
+                </span>
+              </div>
+              <div className="tl-title">{t.title?.length > 80 ? t.title.slice(0, 78) + "…" : t.title}</div>
+              <div className="tl-meta">
+                {t.phase && <span className="tl-tag">{t.phase}</span>}
+                {t.status && <span className="tl-tag">{t.status.replace(/_/g, " ")}</span>}
+                {t.enrollment && <span className="tl-tag">{t.enrollment.toLocaleString()} enrolled</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function TrialsPanel() {
   const [query, setQuery] = useState("");
@@ -577,6 +647,9 @@ export default function TrialsPanel() {
                   <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
                 </div>
 
+                {/* ── Strategic KG Questions ──────────────────────── */}
+                <StrategicKGQuestions />
+
                 {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">
                 <div className="results-list">
@@ -857,6 +930,9 @@ export default function TrialsPanel() {
                         </div>
                       );
                     })()}
+
+                    {/* Trials Like This — graph-based similarity */}
+                    <TrialsLikeThis nctId={selectedTrial.nct_id} />
                   </div>
                 )}
                 </div>{/* closes results-and-detail */}

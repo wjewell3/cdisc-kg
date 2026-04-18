@@ -50,6 +50,53 @@ const TYPE_LABEL = {
   enrollment_range: "Enrollment Range",
 };
 
+function KGFactCard({ fact }) {
+  return (
+    <div className="ip-kg-fact">
+      <div className="ip-kg-fact-label">{fact.label}</div>
+      {fact.description && <div className="ip-kg-fact-desc">{fact.description}</div>}
+      <div className="ip-kg-fact-items">
+        {fact.items.map((item, i) => (
+          <div key={i} className="ip-kg-fact-row">
+            <span className="ip-kg-fact-name" title={item.name}>
+              {item.name.length > 30 ? item.name.slice(0, 28) + "…" : item.name}
+            </span>
+            <span className="ip-kg-fact-val">
+              {item.count?.toLocaleString()}
+              {item.similarity !== undefined && <span className="ip-kg-sim"> ({item.similarity}%)</span>}
+              {item.trials !== undefined && item.count !== item.trials && <span className="ip-kg-sim"> · {item.trials} trials</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SimilarEntities({ items, type }) {
+  if (!items || !items.length) return null;
+  const maxSim = Math.max(...items.map(i => i.similarity_pct));
+  return (
+    <div className="ip-similar">
+      <div className="ip-chart-title">Similar {type === "sponsor" ? "Sponsors" : "Conditions"} (graph similarity)</div>
+      {items.slice(0, 6).map((item, i) => (
+        <div key={i} className="ip-bar-row">
+          <span className="ip-bar-label" title={item.peer}>
+            {item.peer.length > 26 ? item.peer.slice(0, 24) + "…" : item.peer}
+          </span>
+          <div className="ip-bar-track">
+            <div
+              className="ip-bar-fill"
+              style={{ width: `${Math.max((item.similarity_pct / maxSim) * 100, 3)}%`, background: "#a371f7" }}
+            />
+          </div>
+          <span className="ip-bar-count">{item.similarity_pct}%</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function InsightPanel({ insightTarget, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -57,12 +104,15 @@ export default function InsightPanel({ insightTarget, onClose }) {
   const [aiText, setAiText] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [kgContext, setKgContext] = useState(null);
+  const [similarEntities, setSimilarEntities] = useState(null);
   const panelRef = useRef(null);
 
   // Auto-load entity insight data when target changes
   useEffect(() => {
-    if (!insightTarget) { setData(null); return; }
+    if (!insightTarget) { setData(null); setKgContext(null); setSimilarEntities(null); return; }
     setData(null); setError(null); setAiText(null); setAiError(null); setLoading(true);
+    setKgContext(null); setSimilarEntities(null);
     const base = trialsApiBase();
     const url = base
       ? `${base}/api/entity-insight?type=${encodeURIComponent(insightTarget.type)}&name=${encodeURIComponent(insightTarget.name)}`
@@ -74,6 +124,32 @@ export default function InsightPanel({ insightTarget, onClose }) {
         setData(d); setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
+  }, [insightTarget?.type, insightTarget?.name]); // eslint-disable-line
+
+  // Fetch KG context + similar entities (graph enrichment)
+  useEffect(() => {
+    if (!insightTarget) return;
+    const { type, name } = insightTarget;
+    if (!["sponsor", "condition", "intervention"].includes(type)) return;
+    const base = trialsApiBase();
+
+    // KG context
+    const kgUrl = base
+      ? `${base}/api/graph/kg-context?type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`
+      : `/api/graph?path=kg-context&type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`;
+    fetch(kgUrl).then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.facts?.length) setKgContext(d.facts);
+    }).catch(() => {});
+
+    // Similar entities (sponsor / condition only)
+    if (type === "sponsor" || type === "condition") {
+      const simUrl = base
+        ? `${base}/api/graph/similar?type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}&limit=6`
+        : `/api/graph?path=similar&type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}&limit=6`;
+      fetch(simUrl).then(r => r.ok ? r.json() : null).then(d => {
+        if (Array.isArray(d) && d.length) setSimilarEntities(d);
+      }).catch(() => {});
+    }
   }, [insightTarget?.type, insightTarget?.name]); // eslint-disable-line
 
   // Close on Escape key
@@ -180,6 +256,21 @@ export default function InsightPanel({ insightTarget, onClose }) {
                     <MiniBar data={data.sites} title="Top Sites" />
                   )}
                 </div>
+
+                {/* KG Context Cards — graph-derived intelligence */}
+                {kgContext && kgContext.length > 0 && (
+                  <div className="ip-kg-section">
+                    <div className="ip-kg-header">
+                      <span className="ip-kg-badge">KG</span> Knowledge Graph Insights
+                    </div>
+                    {kgContext.map((fact, i) => <KGFactCard key={i} fact={fact} />)}
+                  </div>
+                )}
+
+                {/* Similar Entities */}
+                {similarEntities && (
+                  <SimilarEntities items={similarEntities} type={insightTarget.type} />
+                )}
 
                 {/* AI Analysis section */}
                 {!aiText && !aiLoading && (
