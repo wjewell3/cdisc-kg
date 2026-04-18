@@ -1968,24 +1968,49 @@ app.get("/api/geographic-intelligence", async (req, res) => {
       countryParams.push(country);
     }
 
-    const byCountry = db.prepare(`
-      SELECT ctry.name AS country, COUNT(DISTINCT ctry.nct_id) AS trial_count
-      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${countryWhere}
-      GROUP BY ctry.name ORDER BY trial_count DESC
-    `).all(...countryParams);
+    // ── Fast path: country-only filter with no other filters ──────────────
+    // Avoid expensive studies JOINs by querying countries table directly.
+    let byCountry, usInternational, countryStatus;
+    if (country && !where) {
+      byCountry = db.prepare(`
+        SELECT c2.name AS country, COUNT(DISTINCT c2.nct_id) AS trial_count
+        FROM countries c2
+        WHERE c2.nct_id IN (SELECT nct_id FROM countries WHERE name = ?)
+        GROUP BY c2.name ORDER BY trial_count DESC
+      `).all(country);
 
-    const usInternational = db.prepare(`
-      SELECT SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END) AS us_trials,
-             SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END) AS intl_trials,
-             COUNT(DISTINCT ctry.nct_id) AS total_trials
-      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${countryWhere}
-    `).get(...countryParams);
+      const usCount = db.prepare(
+        `SELECT COUNT(DISTINCT nct_id) AS c FROM countries WHERE name = 'United States'`
+      ).get();
+      const inCountry = db.prepare(
+        `SELECT COUNT(DISTINCT nct_id) AS c FROM countries WHERE name = ?`
+      ).get(country);
+      usInternational = {
+        us_trials: usCount?.c || 0,
+        intl_trials: Math.max(0, (inCountry?.c || 0) - (usCount?.c || 0)),
+        total_trials: inCountry?.c || 0,
+      };
+      countryStatus = []; // skipped — too expensive without index on status+country
+    } else {
+      byCountry = db.prepare(`
+        SELECT ctry.name AS country, COUNT(DISTINCT ctry.nct_id) AS trial_count
+        FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${countryWhere}
+        GROUP BY ctry.name ORDER BY trial_count DESC
+      `).all(...countryParams);
 
-    const countryStatus = db.prepare(`
-      SELECT ctry.name AS country, s.overall_status AS status, COUNT(DISTINCT ctry.nct_id) AS count
-      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${countryWhere}
-      GROUP BY ctry.name, s.overall_status ORDER BY count DESC
-    `).all(...countryParams);
+      usInternational = db.prepare(`
+        SELECT SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END) AS us_trials,
+               SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END) AS intl_trials,
+               COUNT(DISTINCT ctry.nct_id) AS total_trials
+        FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${countryWhere}
+      `).get(...countryParams);
+
+      countryStatus = db.prepare(`
+        SELECT ctry.name AS country, s.overall_status AS status, COUNT(DISTINCT ctry.nct_id) AS count
+        FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${countryWhere}
+        GROUP BY ctry.name, s.overall_status ORDER BY count DESC
+      `).all(...countryParams);
+    }
 
     const topCountries = byCountry.slice(0, 25).map(c => c.country);
     const statusByCountry = {};
@@ -2038,7 +2063,7 @@ app.get("/api/geographic-intelligence", async (req, res) => {
       }
     }
 
-    const regionCounts = db.prepare(`
+    const regionCounts = (country && !where) ? [] : db.prepare(`
       SELECT ${REGION_CASE} AS region,
         COUNT(DISTINCT ctry.nct_id) AS trial_count,
         SUM(CASE WHEN s.overall_status IN ('RECRUITING','ACTIVE_NOT_RECRUITING','ENROLLING_BY_INVITATION','NOT_YET_RECRUITING') THEN 1 ELSE 0 END) AS active_count
