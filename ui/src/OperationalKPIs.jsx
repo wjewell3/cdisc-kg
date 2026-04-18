@@ -41,7 +41,7 @@ function MiniBar({ data, title, maxItems = 10, valueLabel = "", highlightFn, sor
               className="okpi-bar-fill"
               style={{
                 width: `${Math.max((d.value / maxVal) * 100, 3)}%`,
-                background: highlightFn ? highlightFn(d) : PALETTE[i % PALETTE.length],
+                background: highlightFn ? highlightFn(d) : "#58a6ff",
               }}
             />
           </div>
