@@ -371,6 +371,13 @@ export default function TrialsPanel() {
     return p;
   }, [activeResolutions, chartFilters]);
 
+  // Geo filter params — subset safe for the geographic-intelligence endpoint
+  // (intervention + status cause heavy multi-table JOINs → timeouts)
+  const geoFilterParams = useMemo(() => {
+    const { condition, phase, sponsor, country } = okpiFilterParams;
+    return { condition, phase, sponsor, country };
+  }, [okpiFilterParams]);
+
   // Handle entity insight — clicking a chart bar label opens the InsightPanel
   const handleEntityInsight = useCallback((type, name) => {
     setInsightTarget({ type, name });
@@ -552,12 +559,7 @@ export default function TrialsPanel() {
 
                 {/* ── Geography Map ─────────────────────────────── */}
                 <TrialsMap
-                  filterParams={useMemo(() => {
-                    // Only pass params the geo endpoint can use efficiently.
-                    // intervention + status cause heavy SQLite JOINs → timeouts.
-                    const { condition, phase, sponsor, country } = okpiFilterParams;
-                    return { condition, phase, sponsor, country };
-                  }, [okpiFilterParams])}
+                  filterParams={geoFilterParams}
                   onCountryFilter={(country) => {
                     setChartFilters(prev => {
                       // Remove any existing country filter, then add the new one
