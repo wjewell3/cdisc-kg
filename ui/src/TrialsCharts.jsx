@@ -53,7 +53,7 @@ function trialsApiBase() {
 
 function completionColor(rate) {
   if (rate == null) return undefined;
-  return rate >= 75 ? "#58a6ff" : rate >= 50 ? "#d29922" : "#f85149";
+  return rate >= 50 ? "#58a6ff" : "#d29922";
 }
 
 function SvgBarChart({ data, title, field, activeValues, onFilter, onEntityInsight, maxItems = 8, total = null }) {
@@ -91,7 +91,7 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, onEntityInsig
           const barW = Math.max((count / maxVal) * maxBarW, 3);
           const isActive = activeValues?.has(label);
           const hasAny = activeValues?.size > 0;
-          const color = isOthers ? "#444c56" : "#58a6ff";
+          const color = isOthers ? "#444c56" : "#30363d";
           const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
           return (
             <g
@@ -257,7 +257,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
           const barW = Math.max((b.count / maxVal) * maxBarW, 3);
           const isActive = activeEnrollRanges?.has(b.label);
           const hasAny = activeEnrollRanges?.size > 0;
-          const color = "#58a6ff";
+          const color = "#30363d";
           const pct = total > 0 ? ((b.count / total) * 100).toFixed(1) : "0.0";
           return (
             <g

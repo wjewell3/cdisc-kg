@@ -19,7 +19,7 @@ function trialsApiBase() {
 
 function rateColor(rate) {
   if (rate == null) return "#8b949e";
-  return rate >= 75 ? "#58a6ff" : rate >= 50 ? "#d29922" : "#f85149";
+  return rate >= 50 ? "#58a6ff" : "#d29922";
 }
 
 // ── Mini bar component (reused) ────────────────────────────────────
@@ -41,7 +41,7 @@ function MiniBar({ data, title, maxItems = 10, valueLabel = "", highlightFn, sor
               className="okpi-bar-fill"
               style={{
                 width: `${Math.max((d.value / maxVal) * 100, 3)}%`,
-                background: highlightFn ? highlightFn(d) : "#58a6ff",
+                background: highlightFn ? highlightFn(d) : "#30363d",
               }}
             />
           </div>
@@ -101,7 +101,7 @@ function FailureAnalysis({ filterParams }) {
           <div className="okpi-kpi-label">Termination Rate</div>
         </div>
         <div className="okpi-kpi">
-          <div className="okpi-kpi-value">{counts.terminated.toLocaleString()}</div>
+          <div className="okpi-kpi-value" style={{ color: "#d29922" }}>{counts.terminated.toLocaleString()}</div>
           <div className="okpi-kpi-label">Terminated</div>
         </div>
         <div className="okpi-kpi">
@@ -216,7 +216,7 @@ function SponsorPerformance({ filterParams }) {
                 </td>
                 <td>{s.total.toLocaleString()}</td>
                 <td style={{ color: "#58a6ff" }}>{s.completed.toLocaleString()}</td>
-                <td style={{ color: "#f85149" }}>{s.terminated.toLocaleString()}</td>
+                <td style={{ color: "#d29922" }}>{s.terminated.toLocaleString()}</td>
                 <td>
                   <span className="okpi-rate-badge" style={{ background: rateColor(s.completion_rate_pct), color: "#fff" }}>
                     {s.completion_rate_pct != null ? `${s.completion_rate_pct}%` : "—"}
@@ -305,7 +305,7 @@ function EnrollmentBenchmark({ filterParams }) {
         </div>
         {ambitionDelta != null && (
           <div className="okpi-kpi">
-            <div className="okpi-kpi-value" style={{ color: ambitionDelta > 20 ? "#f85149" : ambitionDelta > 0 ? "#d29922" : "#58a6ff" }}>
+            <div className="okpi-kpi-value" style={{ color: ambitionDelta > 0 ? "#d29922" : "#58a6ff" }}>
               {ambitionDelta > 0 ? "+" : ""}{ambitionDelta}%
             </div>
             <div className="okpi-kpi-label">Ambition Gap</div>
@@ -342,13 +342,13 @@ function EnrollmentBenchmark({ filterParams }) {
                 <span className="okpi-compare-label">{design}</span>
                 <div className="okpi-compare-bars">
                   {vals.Anticipated && (
-                    <div className="okpi-compare-bar" style={{ background: "#58a6ff" }}>
+                    <div className="okpi-compare-bar" style={{ background: "#30363d" }}>
                       <span>{Math.round(vals.Anticipated).toLocaleString()}</span>
                       <span className="okpi-compare-type">Anticipated</span>
                     </div>
                   )}
                   {vals.Actual && (
-                    <div className="okpi-compare-bar" style={{ background: "#1f6feb" }}>
+                    <div className="okpi-compare-bar" style={{ background: "#58a6ff" }}>
                       <span>{Math.round(vals.Actual).toLocaleString()}</span>
                       <span className="okpi-compare-type">Actual</span>
                     </div>

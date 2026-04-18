@@ -1448,9 +1448,9 @@
 }
 .sb-neutral .sb-value { color: #c9d1d9; }
 .sb-better .sb-value  { color: #58a6ff; }
-.sb-worse  .sb-value  { color: #f85149; }
+.sb-worse  .sb-value  { color: #d29922; }
 .sb-better .sb-delta  { color: #58a6ff; }
-.sb-worse  .sb-delta  { color: #f85149; }
+.sb-worse  .sb-delta  { color: #d29922; }
 .sb-divider {
   width: 1px;
   background: #21262d;

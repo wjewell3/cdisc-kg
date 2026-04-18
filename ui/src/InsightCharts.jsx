@@ -40,7 +40,7 @@ function SvgBarChart({ data, title, field, activeValues, onFilter }) {
           const barW = Math.max((count / maxVal) * maxBarW, 3);
           const isActive = activeValues?.has(label);
           const hasAny = activeValues?.size > 0;
-          const color = PALETTE[i % PALETTE.length];
+          const color = "#30363d";
           const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
           const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
           return (

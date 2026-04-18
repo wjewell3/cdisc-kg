@@ -14,7 +14,7 @@ function MiniBar({ data, title, maxItems = 8, palette = PALETTE }) {
         <div key={label} className="si-bar-row">
           <span className="si-bar-label" title={label}>{label}</span>
           <div className="si-bar-track">
-            <div className="si-bar-fill" style={{ width: `${(count / maxVal) * 100}%`, background: palette[i % palette.length] }} />
+            <div className="si-bar-fill" style={{ width: `${(count / maxVal) * 100}%`, background: "#30363d" }} />
           </div>
           <span className="si-bar-count">{count.toLocaleString()}</span>
         </div>
@@ -78,7 +78,7 @@ export default function SiteIntelligence({ onSelectTrial }) {
   const completionColor = useMemo(() => {
     if (!profile?.summary?.completion_rate_pct) return "#8b949e";
     const r = profile.summary.completion_rate_pct;
-    return r >= 75 ? "#58a6ff" : r >= 50 ? "#d29922" : "#f85149";
+    return r >= 50 ? "#58a6ff" : "#d29922";
   }, [profile]);
 
   return (

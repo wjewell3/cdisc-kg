@@ -18,7 +18,7 @@ function MiniBar({ data, title, palette = PALETTE }) {
           <div className="ip-bar-track">
             <div
               className="ip-bar-fill"
-              style={{ width: `${Math.max((count / maxVal) * 100, 3)}%`, background: palette[i % palette.length] }}
+              style={{ width: `${Math.max((count / maxVal) * 100, 3)}%`, background: "#30363d" }}
             />
           </div>
           <span className="ip-bar-count">{count.toLocaleString()}</span>
@@ -104,7 +104,7 @@ export default function InsightPanel({ insightTarget, onClose }) {
 
   const completionColor = (rate) => {
     if (rate === null || rate === undefined) return null;
-    return rate >= 75 ? "#58a6ff" : rate >= 50 ? "#d29922" : "#f85149";
+    return rate >= 50 ? "#58a6ff" : "#d29922";
   };
 
   const isOpen = !!insightTarget;
