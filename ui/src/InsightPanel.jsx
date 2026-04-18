@@ -18,7 +18,7 @@ function MiniBar({ data, title, palette = PALETTE }) {
           <div className="ip-bar-track">
             <div
               className="ip-bar-fill"
-              style={{ width: `${Math.max((count / maxVal) * 100, 3)}%`, background: "#30363d" }}
+              style={{ width: `${Math.max((count / maxVal) * 100, 3)}%`, background: "#c9d1d9" }}
             />
           </div>
           <span className="ip-bar-count">{count.toLocaleString()}</span>

@@ -41,7 +41,7 @@ function MiniBar({ data, title, maxItems = 10, valueLabel = "", highlightFn, sor
               className="okpi-bar-fill"
               style={{
                 width: `${Math.max((d.value / maxVal) * 100, 3)}%`,
-                background: highlightFn ? highlightFn(d) : "#30363d",
+                background: highlightFn ? highlightFn(d) : "#c9d1d9",
               }}
             />
           </div>
@@ -342,7 +342,7 @@ function EnrollmentBenchmark({ filterParams }) {
                 <span className="okpi-compare-label">{design}</span>
                 <div className="okpi-compare-bars">
                   {vals.Anticipated && (
-                    <div className="okpi-compare-bar" style={{ background: "#30363d" }}>
+                    <div className="okpi-compare-bar" style={{ background: "#c9d1d9" }}>
                       <span>{Math.round(vals.Anticipated).toLocaleString()}</span>
                       <span className="okpi-compare-type">Anticipated</span>
                     </div>

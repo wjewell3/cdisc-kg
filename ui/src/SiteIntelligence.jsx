@@ -14,7 +14,7 @@ function MiniBar({ data, title, maxItems = 8, palette = PALETTE }) {
         <div key={label} className="si-bar-row">
           <span className="si-bar-label" title={label}>{label}</span>
           <div className="si-bar-track">
-            <div className="si-bar-fill" style={{ width: `${(count / maxVal) * 100}%`, background: "#30363d" }} />
+            <div className="si-bar-fill" style={{ width: `${(count / maxVal) * 100}%`, background: "#c9d1d9" }} />
           </div>
           <span className="si-bar-count">{count.toLocaleString()}</span>
         </div>
