@@ -457,7 +457,7 @@ export default function TrialsPanel() {
                     className={`preset-dropdown-item ${activeQuery === q.text ? "preset-card-active" : ""}`}
                     onMouseDown={(e) => { e.preventDefault(); handlePreset(q); }}
                   >
-                    <span className="preset-text">\u201C{q.text}\u201D</span>
+                    <span className="preset-text">"{q.text}"</span>
                     <span className="preset-desc">{q.description}</span>
                     <div className="preset-tags">
                       {q.tags.map((t) => <span key={t} className="preset-tag">{t}</span>)}
