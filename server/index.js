@@ -54,17 +54,16 @@ function openDb() {
     console.log(`[server] Using SQLite snapshot from ${snapshotAge}`);
 
     // Create performance indexes for geo queries (one-time cost per snapshot refresh)
-    const hasGeoIndex = d.prepare(
-      "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_fac_country_city'"
-    ).get();
-    if (!hasGeoIndex) {
-      console.log("[server] Building geo indexes (one-time, ~30s)...");
-      try {
-        d.prepare("CREATE INDEX IF NOT EXISTS idx_fac_country_city ON facilities(country, city)").run();
-        d.prepare("CREATE INDEX IF NOT EXISTS idx_ctr_name ON countries(name)").run();
-        console.log("[server] Geo indexes ready");
-      } catch (e) {
-        console.warn("[server] Geo index creation failed (non-fatal):", e.message);
+    // Each index gets its own try-catch so a missing table doesn't block the others.
+    const indexes = [
+      ["idx_ctr_name",          "CREATE INDEX IF NOT EXISTS idx_ctr_name ON countries(name)"],
+      ["idx_ctr_nct",           "CREATE INDEX IF NOT EXISTS idx_ctr_nct ON countries(nct_id)"],
+      ["idx_fac_country_city",  "CREATE INDEX IF NOT EXISTS idx_fac_country_city ON facilities(country, city)"],
+    ];
+    for (const [name, sql] of indexes) {
+      const exists = d.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`).get(name);
+      if (!exists) {
+        try { d.prepare(sql).run(); } catch (e) { /* table may not exist yet */ }
       }
     }
 
