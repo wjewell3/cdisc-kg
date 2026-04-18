@@ -181,11 +181,11 @@
 }
 .ask-bar-fill {
   height: 100%;
-  background: #c9d1d9;
+  background: #39d2c0;
   border-radius: 3px;
   transition: width 0.3s;
 }
-.ask-bar-fill-geo { background: #c9d1d9; }
+.ask-bar-fill-geo { background: #39d2c0; }
 .ask-bar-val {
   width: 50px;
   text-align: right;

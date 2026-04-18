@@ -91,7 +91,7 @@ function SvgBarChart({ data, title, field, activeValues, onFilter, onEntityInsig
           const barW = Math.max((count / maxVal) * maxBarW, 3);
           const isActive = activeValues?.has(label);
           const hasAny = activeValues?.size > 0;
-          const color = isOthers ? "#6e7681" : "#c9d1d9";
+          const color = isOthers ? "#6e7681" : "#39d2c0";
           const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
           return (
             <g
@@ -257,7 +257,7 @@ function EnrollmentHistogram({ trials, bucketCounts, activeEnrollRanges, onFilte
           const barW = Math.max((b.count / maxVal) * maxBarW, 3);
           const isActive = activeEnrollRanges?.has(b.label);
           const hasAny = activeEnrollRanges?.size > 0;
-          const color = "#c9d1d9";
+          const color = "#39d2c0";
           const pct = total > 0 ? ((b.count / total) * 100).toFixed(1) : "0.0";
           return (
             <g
