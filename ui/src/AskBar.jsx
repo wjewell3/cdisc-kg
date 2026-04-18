@@ -154,16 +154,18 @@ function renderCard(card, i) {
   switch (card.type) {
     case "briefing": return <BriefingCard key={i} card={card} />;
     case "kpi": return <KpiCard key={i} card={card} />;
-    case "bar_chart": return <BarChartCard key={i} card={card} />;
-    case "leaderboard": return <LeaderboardCard key={i} card={card} />;
+    // bar_chart, leaderboard, geo_summary, country_table are suppressed here —
+    // the same data is shown better in the OperationalKPIs section below.
+    case "bar_chart": return null;
+    case "leaderboard": return null;
+    case "geo_summary": return null;
+    case "country_table": return null;
     case "kg_adjacency":
     case "kg_gaps":
     case "kg_network":
     case "kg_landscape": return <KgCard key={i} card={card} />;
-    case "geo_summary": return <GeoCard key={i} card={card} />;
-    case "country_table": return <CountryTableCard key={i} card={card} />;
-    case "entity_insight": return <BarChartCard key={i} card={{ title: "Entity Insight", data: [] }} />;
-    case "enrollment_summary": return null; // handled by bar charts
+    case "entity_insight": return null;
+    case "enrollment_summary": return null;
     case "search_suggestion": return <SearchSuggestionCard key={i} card={card} />;
     case "error": return <ErrorCard key={i} card={card} />;
     case "filters": return null; // consumed by parent
