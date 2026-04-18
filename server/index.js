@@ -2197,6 +2197,8 @@ app.get("/api/geographic-intelligence", async (req, res) => {
         GROUP BY region ORDER BY trial_count DESC
       `, pgParams)).rows;
     }
+
+    return res.json({
       by_country: byCountry,
       us_international: usIntl,
       status_by_country: [],
