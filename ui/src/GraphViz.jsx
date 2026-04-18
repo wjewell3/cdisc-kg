@@ -320,6 +320,7 @@ export default function GraphViz({ queryId, filterStats }) {
   const containerRef = useRef(null);
   const cyRef = useRef(null);
   const prevQueryRef = useRef(null);
+  const pathRef = useRef(null);
   const [descVisible, setDescVisible] = useState(false);
 
   const path = QUERY_PATHS[queryId] ?? null;
@@ -354,10 +355,25 @@ export default function GraphViz({ queryId, filterStats }) {
     return () => cy.destroy();
   }, []);
 
+  // Resize Cytoscape when the container dimensions change (e.g. scrollbar appears)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver(() => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      cy.resize();
+      if (!pathRef.current) cy.fit(undefined, 28);
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
   // Transition on queryId change
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
+    pathRef.current = path;
     setDescVisible(false);
 
     // Stop any running animations

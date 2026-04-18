@@ -37,6 +37,7 @@
 }
 
 .graph-panel-viz {
+  flex-shrink: 0;
   background: #0d1117;
   border: 1px solid #21262d;
   border-radius: 8px;
