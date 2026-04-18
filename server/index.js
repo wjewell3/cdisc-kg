@@ -38,8 +38,9 @@ let snapshotAge = null; // ISO string from _meta
 function openDb() {
   if (!existsSync(DB_PATH)) return null;
   try {
-    const d = new Database(DB_PATH, { readonly: true });
+    const d = new Database(DB_PATH); // read-write so we can create indexes
     d.pragma("cache_size = -32000");
+    d.pragma("journal_mode = WAL");  // safe for concurrent snapshot writer
     const meta = d.prepare("SELECT value FROM _meta WHERE key = 'snapshot_time'").get();
     snapshotAge = meta?.value || null;
     const ageHours = snapshotAge
@@ -51,6 +52,22 @@ function openDb() {
       return null;
     }
     console.log(`[server] Using SQLite snapshot from ${snapshotAge}`);
+
+    // Create performance indexes for geo queries (one-time cost per snapshot refresh)
+    const hasGeoIndex = d.prepare(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_fac_country_city'"
+    ).get();
+    if (!hasGeoIndex) {
+      console.log("[server] Building geo indexes (one-time, ~30s)...");
+      try {
+        d.prepare("CREATE INDEX IF NOT EXISTS idx_fac_country_city ON facilities(country, city)").run();
+        d.prepare("CREATE INDEX IF NOT EXISTS idx_ctr_name ON countries(name)").run();
+        console.log("[server] Geo indexes ready");
+      } catch (e) {
+        console.warn("[server] Geo index creation failed (non-fatal):", e.message);
+      }
+    }
+
     return d;
   } catch (e) {
     console.error("[server] Failed to open SQLite:", e.message);
