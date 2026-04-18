@@ -80,7 +80,7 @@ export default function TrialsMap({ filterParams = {}, onCountryFilter, onCountr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tooltip, setTooltip] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   // Drill-in state
   const [drilledCountry, setDrilledCountry] = useState(null); // { name, aactName, center, zoom }
@@ -191,7 +191,7 @@ export default function TrialsMap({ filterParams = {}, onCountryFilter, onCountr
               scale: isDrilled ? 140 * drilledCountry.zoom : 140,
             }}
             width={800}
-            height={isDrilled ? 450 : 380}
+            height={isDrilled ? 320 : 260}
             style={{ width: "100%", height: "auto", background: "#0d1117" }}
           >
             <Geographies geography={GEO_URL}>

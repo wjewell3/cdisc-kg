@@ -18,6 +18,10 @@
   gap: 12px;
 }
 
+.graph-panel-header-actions {
+  margin-left: auto;
+}
+
 .graph-panel-icon {
   font-size: 28px;
   color: #58a6ff;

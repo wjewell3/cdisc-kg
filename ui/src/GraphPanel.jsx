@@ -7,6 +7,8 @@ import { useState, useCallback } from "react";
 import GraphViz from "./GraphViz";
 import { KGContextPanel } from "./GraphIntelligence";
 import { executeGraphQuery, TRIAL_QUERIES } from "./trialsEngine";
+import RulesManager from "./RulesManager";
+import { useDataQuality } from "./useDataQuality";
 import "./GraphIntelligence.css";
 import "./GraphPanel.css";
 
@@ -18,6 +20,8 @@ export default function GraphPanel() {
   const [graphQueryId, setGraphQueryId] = useState(null);
   const [displayQueryId, setDisplayQueryId] = useState(null);
   const [inputFocused, setInputFocused] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const { rules, addGrouping, removeGrouping, updateGrouping, setEnrollmentBounds, exportRules, importRules, enrollMin, enrollMax } = useDataQuality();
 
   const runGraphQuery = useCallback(async (text) => {
     setQuestion(text);
@@ -50,6 +54,12 @@ export default function GraphPanel() {
             <p className="graph-panel-subtitle">
               580k trials · 512k interventions · 129k conditions · 50k sponsors · 225 countries — connected as a graph
             </p>
+          </div>
+          <div className="graph-panel-header-actions">
+            <button className="rules-manager-btn" onClick={() => setRulesOpen(true)}>
+              ⚙ Rules{(rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)) > 0 ? ` (${rules.groupings.length + (enrollMin !== null || enrollMax !== null ? 1 : 0)})` : ""}
+              {(enrollMin !== null || enrollMax !== null) && <span className="rules-bounds-badge">●</span>}
+            </button>
           </div>
         </div>
       </div>
@@ -166,6 +176,21 @@ export default function GraphPanel() {
       <div className="graph-panel-tools">
         <KGContextPanel conditions={[]} sponsors={[]} />
       </div>
+
+      {rulesOpen && (
+        <RulesManager
+          rules={rules}
+          addGrouping={addGrouping}
+          removeGrouping={removeGrouping}
+          updateGrouping={updateGrouping}
+          setEnrollmentBounds={setEnrollmentBounds}
+          enrollMin={enrollMin}
+          enrollMax={enrollMax}
+          exportRules={exportRules}
+          importRules={importRules}
+          onClose={() => setRulesOpen(false)}
+        />
+      )}
     </div>
   );
 }

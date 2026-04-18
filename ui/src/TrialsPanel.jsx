@@ -552,7 +552,12 @@ export default function TrialsPanel() {
 
                 {/* ── Geography Map ─────────────────────────────── */}
                 <TrialsMap
-                  filterParams={okpiFilterParams}
+                  filterParams={useMemo(() => {
+                    // Only pass params the geo endpoint can use efficiently.
+                    // intervention + status cause heavy SQLite JOINs → timeouts.
+                    const { condition, phase, sponsor, country } = okpiFilterParams;
+                    return { condition, phase, sponsor, country };
+                  }, [okpiFilterParams])}
                   onCountryFilter={(country) => {
                     setChartFilters(prev => {
                       // Remove any existing country filter, then add the new one
