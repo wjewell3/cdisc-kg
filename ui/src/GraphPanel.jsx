@@ -6,7 +6,7 @@
 import { useState, useCallback } from "react";
 import GraphViz from "./GraphViz";
 import { KGContextPanel } from "./GraphIntelligence";
-import { executeGraphQuery, isGraphQuestion, TRIAL_QUERIES } from "./trialsEngine";
+import { executeGraphQuery, TRIAL_QUERIES } from "./trialsEngine";
 import "./GraphIntelligence.css";
 import "./GraphPanel.css";
 
@@ -16,6 +16,7 @@ export default function GraphPanel() {
   const [question, setQuestion] = useState("");
   const [graphResult, setGraphResult] = useState(null);
   const [graphQueryId, setGraphQueryId] = useState(null);
+  const [inputFocused, setInputFocused] = useState(false);
 
   const runGraphQuery = useCallback(async (text) => {
     setQuestion(text);
@@ -65,6 +66,8 @@ export default function GraphPanel() {
             type="text"
             value={question}
             onChange={e => setQuestion(e.target.value)}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setTimeout(() => setInputFocused(false), 150)}
             placeholder='Ask the Knowledge Graph — e.g., "What conditions are adjacent to Breast Cancer?"'
           />
           <button type="submit" className="graph-panel-submit" disabled={!question.trim()}>
@@ -72,19 +75,26 @@ export default function GraphPanel() {
           </button>
         </form>
 
-        {/* Preset graph queries */}
-        <div className="graph-panel-presets">
-          <span className="graph-panel-presets-label">Try:</span>
-          {GRAPH_PRESETS.map(q => (
-            <button
-              key={q.id}
-              className={`graph-panel-preset-btn ${graphQueryId === q.id ? "active" : ""}`}
-              onClick={() => runGraphQuery(q.text)}
-            >
-              {q.text.length > 50 ? q.text.slice(0, 48) + "…" : q.text}
-            </button>
-          ))}
-        </div>
+        {/* Preset graph queries — card dropdown on focus */}
+        {inputFocused && (
+          <div className="graph-panel-preset-dropdown">
+            {GRAPH_PRESETS.map(q => (
+              <button
+                key={q.id}
+                className={`graph-panel-preset-card ${graphQueryId === q.id ? "active" : ""}`}
+                onMouseDown={(e) => { e.preventDefault(); runGraphQuery(q.text); }}
+              >
+                <span className="graph-panel-preset-text">{q.text}</span>
+                <span className="graph-panel-preset-desc">{q.description}</span>
+                <div className="graph-panel-preset-tags">
+                  {q.tags.map(t => (
+                    <span key={t} className={`graph-panel-preset-tag ${t === "Graph" ? "graph-panel-preset-tag-graph" : ""}`}>{t}</span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Results panel */}

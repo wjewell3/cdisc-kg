@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef, Fragment } from "react";
-import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, isGraphQuestion, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import InsightPanel from "./InsightPanel";
@@ -440,27 +440,27 @@ export default function TrialsPanel() {
                 onChange={(e) => setQuery(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-                placeholder='Ask a question or filter — e.g., "What conditions are adjacent to Breast Cancer?" or "Phase 3 Alzheimer trials"'
+                placeholder='Search trials — e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
                 className="query-input"
               />
               <button type="submit" className="query-submit" disabled={!query.trim()}>
-                {query.trim() && isGraphQuestion(query) ? "Ask Graph →" : "Search →"}
+                Search →
               </button>
             </form>
 
             {/* Preset queries — shown as dropdown when search box is focused */}
             {searchFocused && (
               <div className="preset-dropdown">
-                {TRIAL_QUERIES.map((q) => (
+                {TRIAL_QUERIES.filter(q => !q.isGraph).map((q) => (
                   <button
                     key={q.id}
-                    className={`preset-dropdown-item ${activeQuery === q.text ? "preset-card-active" : ""} ${q.isGraph ? "preset-graph" : ""}`}
+                    className={`preset-dropdown-item ${activeQuery === q.text ? "preset-card-active" : ""}`}
                     onMouseDown={(e) => { e.preventDefault(); handlePreset(q); }}
                   >
-                    <span className="preset-text">{q.isGraph ? "" : "\u201C"}{q.text}{q.isGraph ? "" : "\u201D"}</span>
+                    <span className="preset-text">\u201C{q.text}\u201D</span>
                     <span className="preset-desc">{q.description}</span>
                     <div className="preset-tags">
-                      {q.tags.map((t) => <span key={t} className={`preset-tag ${t === "Graph" ? "preset-tag-graph" : ""}`}>{t}</span>)}
+                      {q.tags.map((t) => <span key={t} className="preset-tag">{t}</span>)}
                     </div>
                   </button>
                 ))}
