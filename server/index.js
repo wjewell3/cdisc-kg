@@ -1959,11 +1959,11 @@ app.get("/api/geographic-intelligence", async (req, res) => {
   try {
     const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention });
 
-    // Add country filter: restrict to trials running in this country
+    // Add country filter: use IN subquery (much faster than correlated EXISTS on large tables)
     let countryWhere = where;
     const countryParams = [...params];
     if (country) {
-      const countryClause = `EXISTS (SELECT 1 FROM countries c2 WHERE c2.nct_id = s.nct_id AND c2.name = ?)`;
+      const countryClause = `s.nct_id IN (SELECT nct_id FROM countries WHERE name = ?)`;
       countryWhere = where ? `${where} AND ${countryClause}` : `WHERE ${countryClause}`;
       countryParams.push(country);
     }
@@ -1998,25 +1998,43 @@ app.get("/api/geographic-intelligence", async (req, res) => {
     let topSites = [];
     let byCityInCountry = [];
     if (hasFacilities) {
-      const siteCountryFilter = country ? ` AND f.country = ?` : "";
-      const siteParams = [...(where ? params : []), ...(country ? [country] : [])];
-      topSites = db.prepare(`
-        SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id) AS trial_count,
-               f.latitude AS lat, f.longitude AS lng
-        FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
-        ${where ? where + " AND" : "WHERE"} f.name IS NOT NULL AND f.name <> ''${siteCountryFilter}
-        GROUP BY f.name, f.city, f.country ORDER BY trial_count DESC LIMIT 30
-      `).all(...siteParams);
+      // Fast path when only country filter (no condition/phase/etc.) — skip studies JOIN
+      if (country && !where) {
+        topSites = db.prepare(`
+          SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id) AS trial_count,
+                 f.latitude AS lat, f.longitude AS lng
+          FROM facilities f
+          WHERE f.name IS NOT NULL AND f.name <> '' AND f.country = ?
+          GROUP BY f.name, f.city, f.country ORDER BY trial_count DESC LIMIT 30
+        `).all(country);
 
-      // When drilled into a country, return city-level breakdown
-      if (country) {
         byCityInCountry = db.prepare(`
           SELECT f.city, f.state, COUNT(DISTINCT f.nct_id) AS trial_count,
                  ROUND(AVG(f.latitude), 4) AS lat, ROUND(AVG(f.longitude), 4) AS lng
-          FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
-          ${where ? where + " AND" : "WHERE"} f.country = ? AND f.city IS NOT NULL AND f.city <> ''
+          FROM facilities f
+          WHERE f.country = ? AND f.city IS NOT NULL AND f.city <> ''
           GROUP BY f.city, f.state ORDER BY trial_count DESC LIMIT 50
-        `).all(...params, country);
+        `).all(country);
+      } else {
+        const siteCountryFilter = country ? ` AND f.country = ?` : "";
+        const siteParams = [...(where ? params : []), ...(country ? [country] : [])];
+        topSites = db.prepare(`
+          SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id) AS trial_count,
+                 f.latitude AS lat, f.longitude AS lng
+          FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
+          ${where ? where + " AND" : "WHERE"} f.name IS NOT NULL AND f.name <> ''${siteCountryFilter}
+          GROUP BY f.name, f.city, f.country ORDER BY trial_count DESC LIMIT 30
+        `).all(...siteParams);
+
+        if (country) {
+          byCityInCountry = db.prepare(`
+            SELECT f.city, f.state, COUNT(DISTINCT f.nct_id) AS trial_count,
+                   ROUND(AVG(f.latitude), 4) AS lat, ROUND(AVG(f.longitude), 4) AS lng
+            FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
+            ${where} AND f.country = ? AND f.city IS NOT NULL AND f.city <> ''
+            GROUP BY f.city, f.state ORDER BY trial_count DESC LIMIT 50
+          `).all(...params, country);
+        }
       }
     }
 

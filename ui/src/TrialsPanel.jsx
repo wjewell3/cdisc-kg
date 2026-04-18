@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef, Fragment } from "react";
-import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, isGraphQuestion, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import InsightPanel from "./InsightPanel";
