@@ -1,0 +1,149 @@
+/* GraphPanel — KG Explorer page styles */
+.graph-panel-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 20px;
+}
+
+.graph-panel-header {
+  margin-bottom: 16px;
+}
+
+.graph-panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.graph-panel-icon {
+  font-size: 28px;
+  color: #58a6ff;
+}
+
+.graph-panel-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #e6edf3;
+  margin: 0;
+}
+
+.graph-panel-subtitle {
+  font-size: 12px;
+  color: #8b949e;
+  margin: 2px 0 0;
+}
+
+.graph-panel-viz {
+  background: #0d1117;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.graph-panel-query-section {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.graph-panel-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-panel-form-icon {
+  font-size: 18px;
+  color: #58a6ff;
+}
+
+.graph-panel-input {
+  flex: 1;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #e6edf3;
+  font-size: 13px;
+}
+.graph-panel-input:focus {
+  border-color: #58a6ff;
+  outline: none;
+}
+.graph-panel-input::placeholder {
+  color: #484f58;
+}
+
+.graph-panel-submit {
+  background: #238636;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.graph-panel-submit:hover { background: #2ea043; }
+.graph-panel-submit:disabled { opacity: 0.5; cursor: default; }
+
+.graph-panel-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.graph-panel-presets-label {
+  font-size: 11px;
+  color: #8b949e;
+  font-weight: 600;
+}
+
+.graph-panel-preset-btn {
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #58a6ff;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.graph-panel-preset-btn:hover { border-color: #58a6ff; background: #161b22; }
+.graph-panel-preset-btn.active { background: #0d419d; border-color: #58a6ff; color: #fff; }
+
+.graph-panel-results {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.graph-panel-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  color: #8b949e;
+  font-size: 13px;
+}
+
+.graph-panel-error {
+  color: #f85149;
+  font-size: 13px;
+  padding: 12px;
+}
+
+.graph-panel-tools {
+  margin-top: 16px;
+}

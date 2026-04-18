@@ -6,6 +6,7 @@
  * mode=sponsor-performance  → /api/sponsor-performance
  * mode=enrollment-benchmark → /api/enrollment-benchmark
  * mode=geographic           → /api/geographic-intelligence
+ * mode=ask                  → /api/ask  (POST, smart intake)
  */
 const OKE_BASE = (process.env.TRIALS_API_BASE || "").replace(/\/$/, "");
 
@@ -14,11 +15,12 @@ const MODE_MAP = {
   "sponsor-performance": "/api/sponsor-performance",
   "enrollment-benchmark": "/api/enrollment-benchmark",
   "geographic": "/api/geographic-intelligence",
+  "ask": "/api/ask",
 };
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
@@ -30,6 +32,20 @@ export default async function handler(req, res) {
 
   try {
     const url = new URL(`${OKE_BASE}${path}`);
+
+    // /api/ask is POST — forward the body as JSON
+    if (mode === "ask") {
+      const upstream = await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body || {}),
+        signal: AbortSignal.timeout(30000),
+      });
+      const body = await upstream.json();
+      return res.status(upstream.status).json(body);
+    }
+
+    // All other modes are GET with query params
     for (const [k, v] of Object.entries(rest)) {
       url.searchParams.set(k, v);
     }

@@ -2118,6 +2118,306 @@ app.get("/api/geographic-intelligence", async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// /api/ask — unified smart intake. GPT-4.1 classifies intent → dispatches to
+// analytics or KG endpoint(s) → returns unified card-based response.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const ASK_ROUTER_PROMPT = `You are an intent-classification router for a clinical trials intelligence platform.
+Given a user question, classify it into one of these intents and extract entities.
+
+Intents:
+- "failure_analysis" — questions about termination/failure rates, why trials fail, stop reasons
+- "sponsor_performance" — sponsor completion rates, leaderboard, best/worst sponsors
+- "enrollment_benchmark" — enrollment ambition vs actuals, design types, over/under-enrollment
+- "geographic" — country distribution, site geography, where trials run, US vs international
+- "entity_insight" — questions about a specific sponsor/condition/intervention/phase portfolio
+- "trial_lookup" — questions about a specific NCT ID
+- "kg_traversal" — questions about what's connected to what, adjacency, repurposing, gaps, shortest paths, networks
+- "general_search" — broad search queries that don't fit above
+
+Respond with ONLY valid JSON (no markdown fences):
+{
+  "intent": "<intent>",
+  "entities": {
+    "condition": "<string or null>",
+    "phase": "<string or null>",
+    "sponsor": "<string or null>",
+    "intervention": "<string or null>",
+    "country": "<string or null>",
+    "nct_id": "<string or null>"
+  },
+  "kg_sub_intent": "<string or null>"  // for kg_traversal: "adjacency", "gaps", "repurposing", "sponsor_network", "condition_landscape", "overlap"
+}
+
+Phase normalization: "Phase 1" -> "PHASE1", "Phase 2" -> "PHASE2", "Phase 3" -> "PHASE3", "Phase 4" -> "PHASE4", "Phase 1/2" -> "PHASE1/PHASE2"
+
+Examples:
+- "Why do Phase 3 oncology trials fail?" -> {"intent":"failure_analysis","entities":{"condition":"Cancer","phase":"PHASE3"},"kg_sub_intent":null}
+- "What conditions are adjacent to Breast Cancer?" -> {"intent":"kg_traversal","entities":{"condition":"Breast Cancer"},"kg_sub_intent":"adjacency"}
+- "Which sponsors lead in Alzheimer trials?" -> {"intent":"sponsor_performance","entities":{"condition":"Alzheimer"},"kg_sub_intent":null}
+- "Show me NCT00001234" -> {"intent":"trial_lookup","entities":{"nct_id":"NCT00001234"},"kg_sub_intent":null}
+- "Where does Pfizer run trials?" -> {"intent":"geographic","entities":{"sponsor":"Pfizer"},"kg_sub_intent":null}
+- "What drugs are used in both Crohn's and Ulcerative Colitis?" -> {"intent":"kg_traversal","entities":{"condition":"Crohn"},"kg_sub_intent":"repurposing"}`;
+
+app.post("/api/ask", async (req, res) => {
+  const { question } = req.body || {};
+  if (!question || typeof question !== "string") return res.status(400).json({ error: "question required" });
+
+  const GITHUB_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
+  if (!GITHUB_COPILOT_TOKEN) {
+    // Fallback: treat as general search
+    return res.json({
+      question,
+      intent: "general_search",
+      source: "fallback",
+      entities: {},
+      cards: [{ type: "search_suggestion", text: "LLM not configured — use the search bar to query trials directly." }],
+    });
+  }
+
+  let classification;
+  try {
+    const llmResp = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-4.1",
+        max_tokens: 300,
+        temperature: 0,
+        messages: [
+          { role: "system", content: ASK_ROUTER_PROMPT },
+          { role: "user", content: question },
+        ],
+      }),
+    });
+    if (!llmResp.ok) throw new Error(`LLM ${llmResp.status}`);
+    const llmData = await llmResp.json();
+    const raw = (llmData.choices?.[0]?.message?.content || "").trim()
+      .replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    classification = JSON.parse(raw);
+  } catch (e) {
+    console.error("[ask] classification failed:", e.message);
+    return res.json({
+      question, intent: "general_search", source: "fallback",
+      entities: {},
+      cards: [{ type: "error", text: `Intent classification failed: ${e.message}` }],
+    });
+  }
+
+  const { intent, entities = {}, kg_sub_intent } = classification;
+  const cards = [];
+  let source = "analytics";
+
+  try {
+    // ── Analytics intents ──
+    if (intent === "failure_analysis") {
+      const params = {};
+      if (entities.condition) params.condition = entities.condition;
+      if (entities.phase) params.phase = entities.phase;
+      if (entities.sponsor) params.sponsor = entities.sponsor;
+      if (entities.intervention) params.intervention = entities.intervention;
+      // Re-use internal route handler logic by making internal HTTP call
+      const qs = new URLSearchParams(params).toString();
+      const url = `http://localhost:${PORT}/api/failure-analysis?${qs}`;
+      const r = await fetch(url); const data = await r.json();
+      if (r.ok) {
+        cards.push({ type: "kpi", label: "Termination Rate", value: `${data.termination_rate_pct}%`, color: data.termination_rate_pct > 20 ? "red" : "amber" });
+        cards.push({ type: "bar_chart", title: "Stop Reasons", data: (data.stop_reasons || []).slice(0, 8) });
+        if (data.by_condition?.length) cards.push({ type: "bar_chart", title: "Termination by Condition", data: data.by_condition.slice(0, 8) });
+        if (data.by_phase?.length) cards.push({ type: "bar_chart", title: "Termination by Phase", data: data.by_phase.slice(0, 8) });
+      }
+    } else if (intent === "sponsor_performance") {
+      const params = {};
+      if (entities.condition) params.condition = entities.condition;
+      if (entities.phase) params.phase = entities.phase;
+      const qs = new URLSearchParams(params).toString();
+      const url = `http://localhost:${PORT}/api/sponsor-performance?${qs}`;
+      const r = await fetch(url); const data = await r.json();
+      if (r.ok) {
+        cards.push({ type: "leaderboard", title: "Sponsor Completion Rate", data: (data.sponsors || []).slice(0, 10) });
+      }
+    } else if (intent === "enrollment_benchmark") {
+      const params = {};
+      if (entities.condition) params.condition = entities.condition;
+      if (entities.phase) params.phase = entities.phase;
+      const qs = new URLSearchParams(params).toString();
+      const url = `http://localhost:${PORT}/api/enrollment-benchmark?${qs}`;
+      const r = await fetch(url); const data = await r.json();
+      if (r.ok) {
+        cards.push({ type: "enrollment_summary", data: data.summary || {} });
+        if (data.by_allocation?.length) cards.push({ type: "bar_chart", title: "By Allocation", data: data.by_allocation });
+      }
+    } else if (intent === "geographic") {
+      const params = {};
+      if (entities.condition) params.condition = entities.condition;
+      if (entities.phase) params.phase = entities.phase;
+      if (entities.sponsor) params.sponsor = entities.sponsor;
+      if (entities.country) params.country = entities.country;
+      const qs = new URLSearchParams(params).toString();
+      const url = `http://localhost:${PORT}/api/geographic-intelligence?${qs}`;
+      const r = await fetch(url); const data = await r.json();
+      if (r.ok) {
+        cards.push({ type: "geo_summary", data: { total_countries: data.total_countries, us_international: data.us_international } });
+        if (data.by_country?.length) cards.push({ type: "country_table", data: data.by_country.slice(0, 15) });
+        if (data.by_region?.length) cards.push({ type: "bar_chart", title: "By Region", data: data.by_region });
+      }
+    } else if (intent === "entity_insight") {
+      // Determine entity type
+      let type = "condition", name = "";
+      if (entities.sponsor) { type = "sponsor"; name = entities.sponsor; }
+      else if (entities.condition) { type = "condition"; name = entities.condition; }
+      else if (entities.intervention) { type = "intervention"; name = entities.intervention; }
+      if (name && db) {
+        try {
+          const result = queryEntityInsight(type, name);
+          if (result && !result.empty) {
+            cards.push({ type: "entity_insight", data: result });
+          }
+        } catch {}
+      }
+    } else if (intent === "trial_lookup" && entities.nct_id) {
+      const url = `http://localhost:${PORT}/api/trial-intelligence?nct_id=${encodeURIComponent(entities.nct_id)}`;
+      const r = await fetch(url); const data = await r.json();
+      if (r.ok) cards.push({ type: "trial_intelligence", data });
+    }
+
+    // ── KG intents ──
+    if (intent === "kg_traversal") {
+      source = "kg";
+      if (neo4j) {
+        const session = neo4j.session({ defaultAccessMode: neo4jDriver.session.READ });
+        try {
+          if (kg_sub_intent === "adjacency" && entities.condition) {
+            const result = await session.run(
+              `MATCH (c1:Condition {name: $condition})<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
+               WHERE c1 <> c2
+               WITH c2.name AS condition, COUNT(DISTINCT i) AS shared_interventions, COLLECT(DISTINCT i.name)[0..3] AS example_drugs
+               RETURN condition, shared_interventions, example_drugs
+               ORDER BY shared_interventions DESC LIMIT 15`,
+              { condition: entities.condition }
+            );
+            const rows = result.records.map(r => ({
+              condition: r.get("condition"),
+              shared_interventions: r.get("shared_interventions").toNumber ? r.get("shared_interventions").toNumber() : r.get("shared_interventions"),
+              example_drugs: r.get("example_drugs"),
+            }));
+            cards.push({ type: "kg_adjacency", title: `Conditions adjacent to ${entities.condition}`, data: rows });
+          } else if (kg_sub_intent === "gaps" && entities.sponsor) {
+            const result = await session.run(
+              `MATCH (s:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)
+               WITH s, COLLECT(DISTINCT c.name) AS myConditions
+               MATCH (c2:Condition)<-[:TREATS]-(t2:Trial)<-[:RUNS]-(s2:Sponsor)
+               WHERE NOT c2.name IN myConditions AND s2.name <> s.name
+               WITH c2.name AS gap_condition, COUNT(DISTINCT s2) AS competitor_count, COUNT(DISTINCT t2) AS trial_count
+               RETURN gap_condition, competitor_count, trial_count
+               ORDER BY trial_count DESC LIMIT 15`,
+              { sponsor: entities.sponsor }
+            );
+            const rows = result.records.map(r => ({
+              gap_condition: r.get("gap_condition"),
+              competitor_count: typeof r.get("competitor_count").toNumber === "function" ? r.get("competitor_count").toNumber() : r.get("competitor_count"),
+              trial_count: typeof r.get("trial_count").toNumber === "function" ? r.get("trial_count").toNumber() : r.get("trial_count"),
+            }));
+            cards.push({ type: "kg_gaps", title: `Strategic gaps for ${entities.sponsor}`, data: rows });
+          } else if (kg_sub_intent === "sponsor_network" && entities.sponsor) {
+            const result = await session.run(
+              `MATCH (s:Sponsor {name: $sponsor})-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)
+               WITH s, c, COUNT(t) AS trials
+               RETURN c.name AS condition, trials ORDER BY trials DESC LIMIT 15`,
+              { sponsor: entities.sponsor }
+            );
+            const rows = result.records.map(r => ({
+              condition: r.get("condition"),
+              trials: typeof r.get("trials").toNumber === "function" ? r.get("trials").toNumber() : r.get("trials"),
+            }));
+            cards.push({ type: "kg_network", title: `${entities.sponsor}'s therapeutic footprint`, data: rows });
+          } else if (kg_sub_intent === "condition_landscape" && entities.condition) {
+            const result = await session.run(
+              `MATCH (c:Condition {name: $condition})<-[:TREATS]-(t:Trial)<-[:RUNS]-(s:Sponsor)
+               WITH s.name AS sponsor, COUNT(t) AS trials
+               RETURN sponsor, trials ORDER BY trials DESC LIMIT 15`,
+              { condition: entities.condition }
+            );
+            const rows = result.records.map(r => ({
+              sponsor: r.get("sponsor"),
+              trials: typeof r.get("trials").toNumber === "function" ? r.get("trials").toNumber() : r.get("trials"),
+            }));
+            cards.push({ type: "kg_landscape", title: `Sponsors in ${entities.condition}`, data: rows });
+          }
+        } finally {
+          await session.close();
+        }
+      }
+    }
+
+    // ── Generate narrative briefing if we have data ──
+    if (cards.length > 0 && GITHUB_COPILOT_TOKEN) {
+      try {
+        const cardSummary = cards.map(c => {
+          if (c.type === "kpi") return `${c.label}: ${c.value}`;
+          if (c.type === "bar_chart") return `${c.title}: ${JSON.stringify(c.data?.slice(0, 5))}`;
+          if (c.type === "leaderboard") return `${c.title}: ${JSON.stringify(c.data?.slice(0, 5))}`;
+          if (c.type === "entity_insight") return `Entity insight: ${JSON.stringify(c.data).slice(0, 500)}`;
+          return `${c.type}: ${JSON.stringify(c.data).slice(0, 300)}`;
+        }).join("\n");
+
+        const briefResp = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4.1",
+            max_tokens: 250,
+            temperature: 0.3,
+            messages: [
+              { role: "system", content: "You are a clinical trials analyst. Given the user's question and data results, write a 2-3 sentence plain-English insight summary. Be specific and operational. No hedging." },
+              { role: "user", content: `Question: "${question}"\n\nData:\n${cardSummary}` },
+            ],
+          }),
+        });
+        if (briefResp.ok) {
+          const briefData = await briefResp.json();
+          const briefing = briefData.choices?.[0]?.message?.content?.trim();
+          if (briefing) cards.unshift({ type: "briefing", text: briefing });
+        }
+      } catch (e) {
+        console.error("[ask] briefing generation failed:", e.message);
+      }
+    }
+
+    // If no cards from intent dispatch, fall back to general search context
+    if (cards.length === 0) {
+      cards.push({ type: "search_suggestion", text: "No specific data matched — try using the search bar or charts to explore." });
+    }
+
+    // Add filter suggestion card so the UI can auto-apply filters
+    const filters = {};
+    if (entities.condition) filters.condition = entities.condition;
+    if (entities.phase) filters.phase = entities.phase;
+    if (entities.sponsor) filters.sponsor = entities.sponsor;
+    if (entities.intervention) filters.intervention = entities.intervention;
+    if (entities.country) filters.country = entities.country;
+    if (Object.keys(filters).length) {
+      cards.push({ type: "filters", data: filters });
+    }
+
+    return res.json({
+      question,
+      intent,
+      source: intent === "kg_traversal" ? "kg" : cards.some(c => c.type?.startsWith("kg_")) ? "hybrid" : "analytics",
+      entities,
+      cards,
+    });
+  } catch (e) {
+    console.error("[ask] dispatch failed:", e.message);
+    return res.json({
+      question, intent, source: "error",
+      entities,
+      cards: [{ type: "error", text: `Failed to process: ${e.message}` }],
+    });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

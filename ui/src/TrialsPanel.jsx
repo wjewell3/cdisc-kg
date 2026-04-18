@@ -1,12 +1,11 @@
 import { useState, useCallback, useMemo, useEffect, useRef, Fragment } from "react";
-import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, executeGraphQuery, isGraphQuestion, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
-import { KGContextPanel } from "./GraphIntelligence";
-import GraphViz from "./GraphViz";
 import InsightPanel from "./InsightPanel";
 import OperationalKPIs from "./OperationalKPIs";
 import TrialsMap from "./TrialsMap";
+import AskBar from "./AskBar";
 import "./OperationalKPIs.css";
 import { useDataQuality } from "./useDataQuality";
 import "./TrialsPanel.css";
@@ -65,11 +64,8 @@ export default function TrialsPanel() {
   const [intelStep, setIntelStep] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [graphResult, setGraphResult] = useState(null); // { cypher, columns, rows, narrative, loading, error }
-  const [graphQueryId, setGraphQueryId] = useState(null); // preset id (g1-g5) for viz shape
   const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
-  const [okpiView, setOkpiView] = useState(null); // controlled by Question Launcher → OperationalKPIs
-  const [kgQuestion, setKgQuestion] = useState(""); // open-ended KG question input
+  const [okpiView, setOkpiView] = useState(null); // controlled by AskBar → OperationalKPIs
   const okpiRef = useRef(null);
 
   const currentAgg = chartAggData || aggData;
@@ -258,28 +254,6 @@ export default function TrialsPanel() {
     setError(null);
     setShowFilterPicker(false);
     setDisplayCount(25);
-    setGraphResult(null);
-    setGraphQueryId(null);
-
-    // Check if this is a graph-native question (NL → Cypher)
-    if (isGraphQuestion(text)) {
-      setResolutions([{ label: `Graph query: "${text}"`, param: "graph", value: text, kgPath: "NL → Cypher → Neo4j" }]);
-      setActiveResolutions([]);
-      // Capture preset id so the viz knows which shape to build
-      const preset = TRIAL_QUERIES.find(q => q.isGraph && q.text === text);
-      setGraphQueryId(preset?.id ?? null);
-      setGraphResult({ loading: true, error: null, cypher: null, columns: [], rows: [], narrative: null });
-      // Don't show full-page spinner — keep charts visible beneath the graph panel.
-      // Move to "results" so the base charts section renders (from baseResults).
-      setStep("results");
-      try {
-        const data = await executeGraphQuery(text);
-        setGraphResult({ loading: false, error: null, ...data });
-      } catch (err) {
-        setGraphResult({ loading: false, error: err.message, cypher: null, columns: [], rows: [], narrative: null });
-      }
-      return;
-    }
 
     const { params, resolutions: resolved } = resolveTrialQuery(text);
     setResolutions(resolved);
@@ -376,40 +350,10 @@ export default function TrialsPanel() {
     setQuery("");
     setResolutions([]);
     setActiveResolutions([]);
-    setGraphResult(null);
-    setShowFilterPicker(false);
     setDisplayCount(25);
     // Re-fetch base agg when resetting
     executeTrialAgg({}).then(setAggData).catch(() => {});
   }, []);
-
-  const kgEntities = useMemo(() => {
-    const conditions = new Set();
-    const sponsors = new Set();
-    for (const f of chartFilters) {
-      if (f.field === "condition") conditions.add(f.value);
-      if (f.field === "sponsor") sponsors.add(f.value);
-    }
-    for (const r of activeResolutions) {
-      if (r.param === "condition") conditions.add(r.value);
-      if (r.param === "sponsor") sponsors.add(r.value);
-    }
-    return { conditions: [...conditions], sponsors: [...sponsors] };
-  }, [chartFilters, activeResolutions]);
-
-  // Build filter stats for KG viz bubble counts
-  const kgFilterStats = useMemo(() => {
-    const agg = currentAgg;
-    if (!agg || !chartFilters.length) return null; // null = use defaults
-    // agg arrays are [name, count] tuples
-    const sumArr = (arr) => arr?.reduce((s, d) => s + (Array.isArray(d) ? (d[1] || 0) : (d.count || 0)), 0) || 0;
-    return {
-      total: agg.total || 0,
-      sponsors: sumArr(agg.sponsor),
-      conditions: sumArr(agg.condition),
-      interventions: sumArr(agg.intervention),
-    };
-  }, [currentAgg, chartFilters]);
 
   // Build filter params for operational KPI endpoints (mirrors buildCurrentParams but as plain object)
   const okpiFilterParams = useMemo(() => {
@@ -427,66 +371,24 @@ export default function TrialsPanel() {
     return p;
   }, [activeResolutions, chartFilters]);
 
-  // ── Question Launcher ─────────────────────────────────────────────
-  const launchQuestion = useCallback((key) => {
-    if (key === "failure") {
-      // "What's the real termination rate for Phase 3 oncology trials, and why do they fail?"
-      setChartFilters([{ field: "condition", value: "Cancer" }, { field: "phase", value: "PHASE3" }]);
-      setOkpiView("failure");
-      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-    } else if (key === "sponsors") {
-      // "Which sponsors have the best completion rates for trials in my therapeutic area?"
-      setOkpiView("sponsors");
-      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-    } else if (key === "enrollment") {
-      // "How does enrollment ambition compare to historical actuals for this design type?"
-      setOkpiView("enrollment");
-      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-    } else if (key === "geography") {
-      // "Where are the geographic concentrations and gaps in site activation?"
-      setOkpiView("geography");
-      setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-    }
-    setStep("results");
-  }, []);
-
-  // ── Open-ended KG question ────────────────────────────────────────
-  const askKG = useCallback((e) => {
-    e.preventDefault();
-    if (kgQuestion.trim()) runQuery(kgQuestion);
-  }, [kgQuestion, runQuery]);
-
   // Handle entity insight — clicking a chart bar label opens the InsightPanel
   const handleEntityInsight = useCallback((type, name) => {
     setInsightTarget({ type, name });
   }, []);
 
-  // Graph → chart filter bridge: apply filterable entities from graph results
-  const applyGraphFilters = useCallback((columns, row) => {
+  // AskBar callbacks: apply extracted filters and navigate to OKPI tab
+  const handleAskFilters = useCallback((filters) => {
     const newFilters = [];
-    for (const col of columns) {
-      const val = row[col];
-      if (!val || typeof val !== "string") continue;
-      const lc = col.toLowerCase();
-      if (lc.includes("condition") || lc === "expansion_target" || lc === "disease") {
-        newFilters.push({ field: "condition", value: val });
-      } else if (lc.includes("sponsor")) {
-        newFilters.push({ field: "sponsor", value: val });
-      } else if (lc.includes("intervention") || lc === "drug" || lc === "treatment") {
-        newFilters.push({ field: "intervention", value: val });
-      }
+    for (const [field, value] of Object.entries(filters)) {
+      if (value) newFilters.push({ field, value });
     }
-    if (newFilters.length > 0) {
-      setChartFilters(prev => {
-        const next = [...prev];
-        for (const nf of newFilters) {
-          if (!next.some(f => f.field === nf.field && f.value === nf.value)) next.push(nf);
-        }
-        return next;
-      });
-      setGraphResult(null);
-      setGraphQueryId(null);
-    }
+    if (newFilters.length) setChartFilters(newFilters);
+    setStep("results");
+  }, []);
+
+  const handleAskOkpi = useCallback((view) => setOkpiView(view), []);
+  const handleAskScrollOkpi = useCallback(() => {
+    setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
   }, []);
 
   return (
@@ -511,40 +413,12 @@ export default function TrialsPanel() {
         </div>
       </div>
 
-      {/* ── Question Launcher — strategic questions in one click ───── */}
-      <div className="question-launcher">
-        <div className="ql-label">Start with a strategic question</div>
-        <div className="ql-buttons">
-          <button className="ql-btn ql-failure" onClick={() => launchQuestion("failure")}>
-            <span className="ql-icon">⚠</span>
-            <span className="ql-text">Why do Phase 3 oncology trials fail?</span>
-          </button>
-          <button className="ql-btn ql-sponsors" onClick={() => launchQuestion("sponsors")}>
-            <span className="ql-icon">🏆</span>
-            <span className="ql-text">Which sponsors lead in my therapeutic area?</span>
-          </button>
-          <button className="ql-btn ql-enrollment" onClick={() => launchQuestion("enrollment")}>
-            <span className="ql-icon">📊</span>
-            <span className="ql-text">How does enrollment ambition compare to actuals?</span>
-          </button>
-          <button className="ql-btn ql-geo" onClick={() => launchQuestion("geography")}>
-            <span className="ql-icon">🌍</span>
-            <span className="ql-text">Where are the site concentrations & gaps?</span>
-          </button>
-        </div>
-        {/* ── Ask the Knowledge Graph — open-ended NL → Cypher ──── */}
-        <form className="ql-kg-form" onSubmit={askKG}>
-          <span className="ql-kg-icon">⬡</span>
-          <input
-            className="ql-kg-input"
-            type="text"
-            value={kgQuestion}
-            onChange={e => setKgQuestion(e.target.value)}
-            placeholder="Ask the Knowledge Graph anything — e.g., &quot;What conditions are adjacent to Breast Cancer?&quot;"
-          />
-          <button type="submit" className="ql-kg-submit" disabled={!kgQuestion.trim()}>Ask KG →</button>
-        </form>
-      </div>
+      {/* ── Unified Smart Intake ───────────────────────────────── */}
+      <AskBar
+        onFiltersExtracted={handleAskFilters}
+        onOkpiView={handleAskOkpi}
+        onScrollToOkpi={handleAskScrollOkpi}
+      />
 
       <div className="trials-body">
 
@@ -619,107 +493,6 @@ export default function TrialsPanel() {
           </div>
         )}
 
-        {/* ── KG Universe — always-visible schema viz ───────────────── */}
-        <div className="trials-section kg-universe-section">
-          <div className="section-header">
-            <div className="section-icon">&#x2B21;</div>
-            <h2>Knowledge Graph</h2>
-            <span className="result-count">{kgFilterStats ? `${(kgFilterStats.total || 0).toLocaleString()} trials` : "580k+ trials"}</span>
-          </div>
-          <p className="kg-universe-hint">
-            The KG connects every trial to its sponsor, conditions, interventions, and countries.
-            Run a graph query above to zoom into a subgraph.
-          </p>
-          <GraphViz
-            queryId={graphResult && !graphResult.loading && !graphResult.error && graphResult.rows?.length > 0 ? graphQueryId : null}
-            filterStats={kgFilterStats}
-          />
-        </div>
-
-        {/* ── Graph Query Results panel ─────────────────────────────── */}
-        {graphResult && (
-          <div className="trials-section graph-query-section slide-in">
-            <div className="section-header">
-              <div className="section-icon">&#x2B22;</div>
-              <h2>Graph Query Results</h2>
-              {!graphResult.loading && !graphResult.error && (
-                <span className="result-count">{graphResult.total} rows</span>
-              )}
-            </div>
-
-            {graphResult.loading ? (
-              <div className="loading-state" style={{ padding: "20px 0" }}>
-                <div className="loading-spinner" />
-                <p>Querying knowledge graph…</p>
-              </div>
-            ) : graphResult.error ? (
-              <div className="error-state">
-                <div className="error-icon">&#x26A0;&#xFE0F;</div>
-                <p className="error-msg">
-                  {graphResult.error.includes("quota") || graphResult.error.includes("expired") || graphResult.error.includes("forbidden") || graphResult.error.includes("403")
-                    ? "GitHub Copilot API token expired or quota exceeded. Preset questions work without it — freeform questions need a valid token."
-                    : graphResult.error}
-                </p>
-              </div>
-            ) : (
-              <div className="graph-result-panel">
-                {graphResult.narrative && (
-                  <div className="graph-narrative">
-                    <span className="graph-narrative-icon">&#x1F4A1;</span>
-                    <p>{graphResult.narrative}</p>
-                  </div>
-                )}
-                {graphResult.cypher && (
-                  <details className="graph-cypher-details">
-                    <summary className="graph-cypher-summary">Cypher query</summary>
-                    <pre className="graph-cypher-code">{graphResult.cypher}</pre>
-                  </details>
-                )}
-                {graphResult.rows.length > 0 ? (
-                    <div className="graph-table-wrap">
-                      <table className="graph-result-table">
-                        <thead>
-                          <tr>
-                            {graphResult.columns.map(col => (
-                              <th key={col}>{col}</th>
-                            ))}
-                            <th className="graph-action-col">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {graphResult.rows.map((row, i) => (
-                            <tr key={i}>
-                              {graphResult.columns.map(col => (
-                                <td key={col}>
-                                  {Array.isArray(row[col])
-                                    ? row[col].join(", ")
-                                    : typeof row[col] === "number"
-                                      ? row[col].toLocaleString()
-                                      : String(row[col] ?? "")}
-                                </td>
-                              ))}
-                              <td>
-                                <button
-                                  className="graph-filter-btn"
-                                  title="Apply this row as chart filters"
-                                  onClick={() => applyGraphFilters(graphResult.columns, row)}
-                                >
-                                  → Filter
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                ) : (
-                  <div className="graph-empty">No results returned for this query.</div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ── Section 2: Visual Insights (charts as filters) ───────────── */}
         {step === "loading" ? (
           <div className="trials-section slide-in">
@@ -776,8 +549,6 @@ export default function TrialsPanel() {
                   fetchInterventions={fetchInterventions}
                   normalizeAggData={normalizeAggData}
                 />
-
-                <KGContextPanel conditions={kgEntities.conditions} sponsors={kgEntities.sponsors} />
 
                 {/* ── Geography Map ─────────────────────────────── */}
                 <TrialsMap
