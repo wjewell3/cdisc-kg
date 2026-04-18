@@ -2114,51 +2114,102 @@ app.get("/api/geographic-intelligence", async (req, res) => {
     if (phase) { pgClauses.push(`s.phase = $${idx}`); pgParams.push(phase); idx++; }
     if (sponsor) { pgClauses.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${idx})`); pgParams.push(`%${sponsor}%`); idx++; }
     if (intervention) { pgClauses.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${idx})`); pgParams.push(`%${intervention}%`); idx++; }
-    if (country) { pgClauses.push(`EXISTS (SELECT 1 FROM countries c2 WHERE c2.nct_id = s.nct_id AND c2.name = $${idx})`); pgParams.push(country); idx++; }
+    if (country) { pgClauses.push(`s.nct_id IN (SELECT nct_id FROM countries WHERE name = $${idx})`); pgParams.push(country); idx++; }
     const pgWhere = pgClauses.length ? `WHERE ${pgClauses.join(" AND ")}` : "";
-
-    const { rows: byCountry } = await pool.query(`
-      SELECT ctry.name AS country, COUNT(DISTINCT ctry.nct_id)::int AS trial_count
-      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
-      GROUP BY ctry.name ORDER BY trial_count DESC LIMIT 50
-    `, pgParams);
-
-    const { rows: [usIntl] } = await pool.query(`
-      SELECT SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END)::int AS us_trials,
-             SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END)::int AS intl_trials,
-             COUNT(DISTINCT ctry.nct_id)::int AS total_trials
-      FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
-    `, pgParams);
-
-    const siteFilter = country ? ` AND f.country = $${idx}` : "";
     const siteParams = country ? [...pgParams, country] : pgParams;
-    const { rows: topSites } = await pool.query(`
-      SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id)::int AS trial_count,
-             ROUND(AVG(f.latitude)::numeric, 4) AS lat, ROUND(AVG(f.longitude)::numeric, 4) AS lng
-      FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
-      ${pgWhere ? pgWhere + " AND" : "WHERE"} f.name IS NOT NULL AND f.name <> ''${siteFilter}
-      GROUP BY f.name, f.city, f.state, f.country ORDER BY trial_count DESC LIMIT 30
-    `, siteParams);
 
-    let byCityPg = [];
-    if (country) {
-      const cityIdx = idx; // already incremented past country in siteParams
-      byCityPg = (await pool.query(`
-        SELECT f.city, f.state, COUNT(DISTINCT f.nct_id)::int AS trial_count,
-               ROUND(AVG(f.latitude)::numeric, 4) AS lat, ROUND(AVG(f.longitude)::numeric, 4) AS lng
-        FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
-        ${pgWhere ? pgWhere + " AND" : "WHERE"} f.country = $${cityIdx} AND f.city IS NOT NULL AND f.city <> ''
-        GROUP BY f.city, f.state ORDER BY trial_count DESC LIMIT 50
-      `, siteParams)).rows;
+    // ── Fast path: country-only filter — skip studies JOIN for aggregate queries ──
+    const countryOnly = country && !condition && !phase && !sponsor && !intervention;
+
+    let byCountry, usIntl;
+    if (countryOnly) {
+      const res1 = await pool.query(`
+        SELECT c2.name AS country, COUNT(DISTINCT c2.nct_id)::int AS trial_count
+        FROM countries c2 WHERE c2.nct_id IN (SELECT nct_id FROM countries WHERE name = $1)
+        GROUP BY c2.name ORDER BY trial_count DESC LIMIT 50
+      `, [country]);
+      byCountry = res1.rows;
+
+      const res2 = await pool.query(
+        `SELECT COUNT(DISTINCT nct_id)::int AS c FROM countries WHERE name = $1`, [country]
+      );
+      const usRes = await pool.query(
+        `SELECT COUNT(DISTINCT nct_id)::int AS c FROM countries WHERE name = 'United States'`
+      );
+      const total = res2.rows[0]?.c || 0;
+      const usCount = usRes.rows[0]?.c || 0;
+      usIntl = { us_trials: usCount, intl_trials: Math.max(0, total - usCount), total_trials: total };
+    } else {
+      const r1 = await pool.query(`
+        SELECT ctry.name AS country, COUNT(DISTINCT ctry.nct_id)::int AS trial_count
+        FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
+        GROUP BY ctry.name ORDER BY trial_count DESC LIMIT 50
+      `, pgParams);
+      byCountry = r1.rows;
+
+      const r2 = await pool.query(`
+        SELECT SUM(CASE WHEN ctry.name = 'United States' THEN 1 ELSE 0 END)::int AS us_trials,
+               SUM(CASE WHEN ctry.name <> 'United States' THEN 1 ELSE 0 END)::int AS intl_trials,
+               COUNT(DISTINCT ctry.nct_id)::int AS total_trials
+        FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
+      `, pgParams);
+      usIntl = r2.rows[0];
     }
 
-    const { rows: regionCounts } = await pool.query(`
+    // topSites: facilities fast path when country-only
+    let topSites;
+    if (countryOnly) {
+      const r = await pool.query(`
+        SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id)::int AS trial_count,
+               ROUND(AVG(f.latitude)::numeric, 4) AS lat, ROUND(AVG(f.longitude)::numeric, 4) AS lng
+        FROM facilities f
+        WHERE f.name IS NOT NULL AND f.name <> '' AND f.country = $1
+        GROUP BY f.name, f.city, f.state, f.country ORDER BY trial_count DESC LIMIT 30
+      `, [country]);
+      topSites = r.rows;
+    } else {
+      const siteFilter = country ? ` AND f.country = $${idx}` : "";
+      const r = await pool.query(`
+        SELECT f.name AS site_name, f.city, f.state, f.country, COUNT(DISTINCT f.nct_id)::int AS trial_count,
+               ROUND(AVG(f.latitude)::numeric, 4) AS lat, ROUND(AVG(f.longitude)::numeric, 4) AS lng
+        FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
+        ${pgWhere ? pgWhere + " AND" : "WHERE"} f.name IS NOT NULL AND f.name <> ''${siteFilter}
+        GROUP BY f.name, f.city, f.state, f.country ORDER BY trial_count DESC LIMIT 30
+      `, siteParams);
+      topSites = r.rows;
+    }
+
+    // byCityPg: fast path avoids studies JOIN when country-only
+    let byCityPg = [];
+    if (country) {
+      if (countryOnly) {
+        const r = await pool.query(`
+          SELECT f.city, f.state, COUNT(DISTINCT f.nct_id)::int AS trial_count,
+                 ROUND(AVG(f.latitude)::numeric, 4) AS lat, ROUND(AVG(f.longitude)::numeric, 4) AS lng
+          FROM facilities f
+          WHERE f.country = $1 AND f.city IS NOT NULL AND f.city <> ''
+          GROUP BY f.city, f.state ORDER BY trial_count DESC LIMIT 50
+        `, [country]);
+        byCityPg = r.rows;
+      } else {
+        const cityIdx = idx;
+        byCityPg = (await pool.query(`
+          SELECT f.city, f.state, COUNT(DISTINCT f.nct_id)::int AS trial_count,
+                 ROUND(AVG(f.latitude)::numeric, 4) AS lat, ROUND(AVG(f.longitude)::numeric, 4) AS lng
+          FROM facilities f JOIN studies s ON s.nct_id = f.nct_id
+          ${pgWhere ? pgWhere + " AND" : "WHERE"} f.country = $${cityIdx} AND f.city IS NOT NULL AND f.city <> ''
+          GROUP BY f.city, f.state ORDER BY trial_count DESC LIMIT 50
+        `, siteParams)).rows;
+      }
+    }
+
+    const regionCounts = countryOnly ? [] : (await pool.query(`
       SELECT ${REGION_CASE} AS region,
         COUNT(DISTINCT ctry.nct_id)::int AS trial_count,
         SUM(CASE WHEN s.overall_status IN ('Recruiting','Active, not recruiting','Enrolling by invitation','Not yet recruiting') THEN 1 ELSE 0 END)::int AS active_count
       FROM countries ctry JOIN studies s ON s.nct_id = ctry.nct_id ${pgWhere}
       GROUP BY region ORDER BY trial_count DESC
-    `, pgParams);
+    `, pgParams)).rows;
 
     return res.json({
       by_country: byCountry,
