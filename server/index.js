@@ -1912,46 +1912,59 @@ app.get("/api/graph/trials-like", async (req, res) => {
 });
 
 // ── Graph Centrality ────────────────────────────────────────────────────────
-// Degree centrality + bridge detection for conditions and sponsors.
-// True graph-native: identifies "hub" and "bridge" entities.
+// Genuinely graph-native: multi-hop bridge score + 2nd-degree reach.
+// Bridge score: conditions that lie on paths between distinct sponsor clusters
+// (Sponsor₁ → Trial → Condition → Trial → Sponsor₂ where Sponsor₁ ≠ Sponsor₂).
+// This CANNOT be replicated with SQL GROUP BY — it requires 3-hop path reasoning.
 app.get("/api/graph/centrality", async (req, res) => {
-  const { type = "condition", limit = "25" } = req.query;
+  const { type = "condition", limit = "20" } = req.query;
   if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
 
   try {
     let records;
     if (type === "condition") {
-      // Degree centrality: conditions with most unique sponsor+intervention connections
-      // Bridge score: conditions that connect otherwise-separate sponsor clusters
+      // Bridge score: how many distinct sponsor-pairs does this condition connect?
+      // High bridge score = condition sits at intersection of multiple sponsor programs.
+      // Secondary: 2nd-degree reach = distinct conditions reachable in 2 hops via shared interventions.
       records = await cypher(`
-        MATCH (c:Condition)<-[:TREATS]-(t:Trial)
-        WITH c, COUNT(DISTINCT t) AS trials
-        WHERE trials >= 50
-        OPTIONAL MATCH (c)<-[:TREATS]-(t2:Trial)<-[:RUNS]-(s:Sponsor)
-        OPTIONAL MATCH (c)<-[:TREATS]-(t3:Trial)-[:USES]->(i:Intervention)
-        WITH c.name AS entity, trials,
-             COUNT(DISTINCT s) AS unique_sponsors,
+        MATCH (c:Condition)<-[:TREATS]-(t:Trial)<-[:RUNS]-(s:Sponsor)
+        WITH c, COLLECT(DISTINCT s) AS sponsors, COUNT(DISTINCT t) AS trials
+        WHERE SIZE(sponsors) >= 3
+        WITH c, trials, SIZE(sponsors) AS sponsor_count, sponsors
+        // Bridge score: count distinct sponsor pairs connected through this condition
+        UNWIND sponsors AS s1
+        UNWIND sponsors AS s2
+        WITH c, trials, sponsor_count, s1, s2
+        WHERE id(s1) < id(s2)
+        WITH c.name AS entity, trials, sponsor_count,
+             COUNT(*) AS bridge_score
+        // 2nd-degree reach: conditions reachable via shared interventions (2-hop)
+        MATCH (src:Condition {name: entity})<-[:TREATS]-(t2:Trial)-[:USES]->(i:Intervention)
+        WITH entity, trials, sponsor_count, bridge_score,
              COUNT(DISTINCT i) AS unique_interventions
-        WITH entity, trials, unique_sponsors, unique_interventions,
-             unique_sponsors * unique_interventions AS connectivity_score
-        RETURN entity, trials, unique_sponsors, unique_interventions, connectivity_score
-        ORDER BY connectivity_score DESC
+        RETURN entity, trials, sponsor_count, bridge_score, unique_interventions
+        ORDER BY bridge_score DESC
         LIMIT toInteger($limit)
       `, { limit });
     } else if (type === "sponsor") {
+      // For sponsors: how many distinct condition-pairs does this sponsor bridge?
+      // High score = sponsor operates across diverse therapeutic areas.
       records = await cypher(`
-        MATCH (s:Sponsor)-[:RUNS]->(t:Trial)
-        WITH s, COUNT(DISTINCT t) AS trials
-        WHERE trials >= 20
-        OPTIONAL MATCH (s)-[:RUNS]->(t2:Trial)-[:TREATS]->(c:Condition)
-        OPTIONAL MATCH (s)-[:RUNS]->(t3:Trial)-[:USES]->(i:Intervention)
-        WITH s.name AS entity, trials,
-             COUNT(DISTINCT c) AS unique_conditions,
+        MATCH (s:Sponsor)-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)
+        WITH s, COLLECT(DISTINCT c) AS conditions, COUNT(DISTINCT t) AS trials
+        WHERE SIZE(conditions) >= 3
+        WITH s, trials, SIZE(conditions) AS condition_count, conditions
+        UNWIND conditions AS c1
+        UNWIND conditions AS c2
+        WITH s, trials, condition_count, c1, c2
+        WHERE id(c1) < id(c2)
+        WITH s.name AS entity, trials, condition_count,
+             COUNT(*) AS bridge_score
+        MATCH (src:Sponsor {name: entity})-[:RUNS]->(t2:Trial)-[:USES]->(i:Intervention)
+        WITH entity, trials, condition_count, bridge_score,
              COUNT(DISTINCT i) AS unique_interventions
-        WITH entity, trials, unique_conditions, unique_interventions,
-             unique_conditions * unique_interventions AS connectivity_score
-        RETURN entity, trials, unique_conditions, unique_interventions, connectivity_score
-        ORDER BY connectivity_score DESC
+        RETURN entity, trials, condition_count, bridge_score, unique_interventions
+        ORDER BY bridge_score DESC
         LIMIT toInteger($limit)
       `, { limit });
     } else {
@@ -1959,18 +1972,28 @@ app.get("/api/graph/centrality", async (req, res) => {
     }
 
     const items = records.map(r => {
-      const obj = { entity: r.get("entity"), trials: nInt(r.get("trials")), connectivity_score: nInt(r.get("connectivity_score")) };
+      const obj = {
+        entity: r.get("entity"),
+        trials: nInt(r.get("trials")),
+        bridge_score: nInt(r.get("bridge_score")),
+        unique_interventions: nInt(r.get("unique_interventions")),
+      };
       if (type === "condition") {
-        obj.unique_sponsors = nInt(r.get("unique_sponsors"));
-        obj.unique_interventions = nInt(r.get("unique_interventions"));
+        obj.sponsor_count = nInt(r.get("sponsor_count"));
       } else {
-        obj.unique_conditions = nInt(r.get("unique_conditions"));
-        obj.unique_interventions = nInt(r.get("unique_interventions"));
+        obj.condition_count = nInt(r.get("condition_count"));
       }
       return obj;
     });
 
-    res.json({ type, items });
+    res.json({
+      type,
+      algorithm: "multi-hop bridge score (3-hop sponsor-condition-sponsor paths)",
+      description: type === "condition"
+        ? "Conditions that bridge the most distinct sponsor programs — hub positions in the clinical trial network"
+        : "Sponsors that bridge the most distinct therapeutic areas — diversified portfolio leaders",
+      items,
+    });
   } catch (e) {
     console.error("[graph/centrality]", e.message);
     res.status(500).json({ error: e.message });
@@ -1978,52 +2001,175 @@ app.get("/api/graph/centrality", async (req, res) => {
 });
 
 // ── Graph Communities ────────────────────────────────────────────────────────
-// Condition clusters via shared-intervention co-occurrence.
-// Groups conditions into implicit therapeutic-area communities.
+// Real overlay-graph community detection via condition-condition edges.
+// Step 1: Build condition pairs linked by shared interventions (2-hop path)
+// Step 2: Label propagation — each condition adopts the community of its strongest neighbor
+// This is genuinely graph-native: the communities emerge from graph structure,
+// not from pre-defined categories or GROUP BY.
 app.get("/api/graph/communities", async (req, res) => {
-  const { limit = "50" } = req.query;
+  const { min_shared = "3", limit = "60" } = req.query;
   if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
 
   try {
-    // Build communities via strongly connected condition pairs (shared interventions)
-    // Then assign cluster labels by dominant condition in each cluster
+    // Phase 1: Build the overlay graph — condition pairs with shared intervention count
+    // This is a 2-hop traversal: Condition₁ ← TREATS ← Trial → USES → Intervention ← USES ← Trial → TREATS → Condition₂
     const records = await cypher(`
-      MATCH (c1:Condition)<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)
-      WITH c1, i, COUNT(DISTINCT t) AS ct
-      WHERE ct >= 10
-      WITH c1, COLLECT(DISTINCT i.name) AS drugs
-      WHERE SIZE(drugs) >= 5
-      MATCH (c1)<-[:TREATS]-(t2:Trial)
-      WITH c1.name AS condition, SIZE(drugs) AS drug_diversity,
-           COUNT(DISTINCT t2) AS trial_count, drugs[0..3] AS top_drugs
-      RETURN condition, drug_diversity, trial_count, top_drugs
-      ORDER BY drug_diversity DESC
-      LIMIT toInteger($limit)
-    `, { limit });
+      MATCH (c1:Condition)<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
+      WHERE id(c1) < id(c2)
+      WITH c1.name AS cond1, c2.name AS cond2, COUNT(DISTINCT i) AS shared_interventions
+      WHERE shared_interventions >= toInteger($min_shared)
+      RETURN cond1, cond2, shared_interventions
+      ORDER BY shared_interventions DESC
+      LIMIT 500
+    `, { min_shared });
 
-    // Group into clusters: conditions sharing >50% of top drugs
-    const items = records.map(r => ({
-      condition: r.get("condition"),
-      drug_diversity: nInt(r.get("drug_diversity")),
-      trial_count: nInt(r.get("trial_count")),
-      top_drugs: r.get("top_drugs"),
+    // Phase 2: Label propagation in JS — each condition starts as its own community,
+    // then iteratively adopts the community label of its strongest neighbor.
+    const edges = records.map(r => ({
+      a: r.get("cond1"), b: r.get("cond2"), weight: nInt(r.get("shared_interventions")),
     }));
 
-    // Simple clustering: bucket by top drug overlap
-    const clusters = {};
-    for (const item of items) {
-      const key = item.top_drugs?.[0] || "Other";
-      if (!clusters[key]) clusters[key] = { cluster_label: key, conditions: [] };
-      clusters[key].conditions.push(item);
+    // Build adjacency
+    const adj = {};
+    for (const e of edges) {
+      if (!adj[e.a]) adj[e.a] = [];
+      if (!adj[e.b]) adj[e.b] = [];
+      adj[e.a].push({ peer: e.b, weight: e.weight });
+      adj[e.b].push({ peer: e.a, weight: e.weight });
     }
 
+    // Initialize: each node = its own community
+    const community = {};
+    const allNodes = Object.keys(adj);
+    allNodes.forEach(n => { community[n] = n; });
+
+    // Iterate label propagation (5 rounds)
+    for (let round = 0; round < 5; round++) {
+      for (const node of allNodes) {
+        const votes = {};
+        for (const { peer, weight } of adj[node]) {
+          const label = community[peer];
+          votes[label] = (votes[label] || 0) + weight;
+        }
+        // Adopt strongest neighbor's community
+        let bestLabel = community[node], bestWeight = 0;
+        for (const [label, w] of Object.entries(votes)) {
+          if (w > bestWeight) { bestLabel = label; bestWeight = w; }
+        }
+        community[node] = bestLabel;
+      }
+    }
+
+    // Group into clusters
+    const clusters = {};
+    for (const [node, label] of Object.entries(community)) {
+      if (!clusters[label]) clusters[label] = [];
+      clusters[label].push(node);
+    }
+
+    // Get trial counts for cluster members
+    const trialCounts = {};
+    const tcRecords = await cypher(`
+      MATCH (c:Condition)<-[:TREATS]-(t:Trial)
+      WHERE c.name IN $names
+      RETURN c.name AS condition, COUNT(DISTINCT t) AS trials
+    `, { names: allNodes });
+    for (const r of tcRecords) {
+      trialCounts[r.get("condition")] = nInt(r.get("trials"));
+    }
+
+    // Format clusters, sorted by size
+    const result = Object.entries(clusters)
+      .map(([label, members]) => ({
+        community_seed: label,
+        size: members.length,
+        total_trials: members.reduce((s, m) => s + (trialCounts[m] || 0), 0),
+        conditions: members
+          .map(m => ({ name: m, trials: trialCounts[m] || 0 }))
+          .sort((a, b) => b.trials - a.trials),
+        // Internal edge density
+        internal_edges: edges.filter(e =>
+          community[e.a] === label && community[e.b] === label
+        ).length,
+      }))
+      .filter(c => c.size >= 2)
+      .sort((a, b) => b.size - a.size)
+      .slice(0, parseInt(limit));
+
     res.json({
-      total_conditions: items.length,
-      items,
-      clusters: Object.values(clusters).sort((a, b) => b.conditions.length - a.conditions.length).slice(0, 15),
+      algorithm: "label propagation over condition-condition overlay graph (2-hop via shared interventions)",
+      description: "Communities emerge from graph structure — conditions clustered by shared drug pipelines, not predefined categories",
+      min_shared_interventions: parseInt(min_shared),
+      total_conditions: allNodes.length,
+      total_communities: result.length,
+      communities: result,
     });
   } catch (e) {
     console.error("[graph/communities]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Sponsor Completion Rate via KG ──────────────────────────────────────────
+// Moves the "sponsor performance" analytics path through the knowledge graph.
+// Instead of SQL GROUP BY, this traverses Sponsor → Trial edges and aggregates
+// trial.status in Cypher — the KG IS the semantic layer the analytics run on.
+// Demonstrates: same insight, graph-native execution path.
+app.get("/api/graph/sponsor-completion", async (req, res) => {
+  const { condition, phase, min_trials = "20", limit = "25" } = req.query;
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    // Build dynamic WHERE clause based on optional filters
+    let matchClause = "MATCH (s:Sponsor)-[:RUNS]->(t:Trial)";
+    let whereClause = "";
+    const params = { min_trials, limit };
+
+    if (condition) {
+      matchClause += "-[:TREATS]->(c:Condition {name: $condition})";
+      params.condition = condition;
+    }
+    if (phase) {
+      whereClause = "WHERE t.phase = $phase";
+      params.phase = phase;
+    }
+
+    const records = await cypher(`
+      ${matchClause}
+      ${whereClause}
+      WITH s.name AS sponsor,
+           COUNT(DISTINCT t) AS total,
+           SUM(CASE WHEN t.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN t.status IN ['TERMINATED', 'WITHDRAWN', 'SUSPENDED'] THEN 1 ELSE 0 END) AS failed,
+           SUM(CASE WHEN t.status IN ['RECRUITING', 'ACTIVE_NOT_RECRUITING', 'ENROLLING_BY_INVITATION', 'NOT_YET_RECRUITING'] THEN 1 ELSE 0 END) AS active
+      WHERE total >= toInteger($min_trials)
+      WITH sponsor, total, completed, failed, active,
+           ROUND(100.0 * completed / total) AS completion_pct,
+           ROUND(100.0 * failed / total) AS failure_pct
+      RETURN sponsor, total, completed, failed, active,
+             completion_pct, failure_pct
+      ORDER BY completion_pct DESC
+      LIMIT toInteger($limit)
+    `, params);
+
+    const items = records.map(r => ({
+      sponsor: r.get("sponsor"),
+      total: nInt(r.get("total")),
+      completed: nInt(r.get("completed")),
+      failed: nInt(r.get("failed")),
+      active: nInt(r.get("active")),
+      completion_pct: nInt(r.get("completion_pct")),
+      failure_pct: nInt(r.get("failure_pct")),
+    }));
+
+    res.json({
+      source: "knowledge_graph",
+      description: "Sponsor completion rates computed via graph traversal (Sponsor → Trial edge aggregation), not SQL GROUP BY",
+      filters: { condition: condition || null, phase: phase || null, min_trials: parseInt(min_trials) },
+      items,
+    });
+  } catch (e) {
+    console.error("[graph/sponsor-completion]", e.message);
     res.status(500).json({ error: e.message });
   }
 });

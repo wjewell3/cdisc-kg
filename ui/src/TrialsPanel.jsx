@@ -497,6 +497,9 @@ export default function TrialsPanel() {
         onScrollToOkpi={handleAskScrollOkpi}
       />
 
+      {/* ── Strategic KG Questions — top of page, not buried ──────── */}
+      <StrategicKGQuestions />
+
       <div className="trials-body">
 
         {/* ── Section 1: Search + preset queries ───────────────────────── */}
@@ -646,9 +649,6 @@ export default function TrialsPanel() {
                 <div ref={okpiRef}>
                   <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
                 </div>
-
-                {/* ── Strategic KG Questions ──────────────────────── */}
-                <StrategicKGQuestions />
 
                 {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">

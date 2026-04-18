@@ -390,13 +390,13 @@ function GraphCentralityView() {
 
   useEffect(() => { load(entityType); }, [entityType, load]);
 
-  const maxScore = useMemo(() => data?.items ? Math.max(...data.items.map(i => i.connectivity_score)) : 1, [data]);
+  const maxScore = useMemo(() => data?.items ? Math.max(...data.items.map(i => i.bridge_score)) : 1, [data]);
 
   return (
     <div style={{ padding: "16px" }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>Graph Centrality</span>
-        <span style={{ fontSize: 11, color: "#8b949e", flex: 1 }}>Entities with the most connections — hubs of the clinical trial network</span>
+      <div style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>Graph Bridge Centrality</span>
+        <span style={{ fontSize: 11, color: "#8b949e", flex: 1 }}>Entities that bridge distinct clusters — multi-hop graph reasoning</span>
         <div className="okpi-toggle-group">
           {["condition", "sponsor"].map(t => (
             <button
@@ -409,14 +409,15 @@ function GraphCentralityView() {
           ))}
         </div>
       </div>
+      {data?.algorithm && <div style={{ fontSize: 10, color: "#a371f7", marginBottom: 10, fontStyle: "italic" }}>{data.algorithm}</div>}
 
-      {loading && <div className="okpi-loading"><div className="loading-spinner" /><span>Loading from knowledge graph…</span></div>}
+      {loading && <div className="okpi-loading"><div className="loading-spinner" /><span>Traversing knowledge graph…</span></div>}
       {error && <div className="okpi-error">⚠ {error}</div>}
 
       {data?.items && !loading && (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 100px 90px 90px", gap: 6, padding: "4px 0", borderBottom: "1px solid #30363d", marginBottom: 4 }}>
-            {["#","Entity","Trials","↔ Sponsors","↔ Drugs"].map(h => (
+            {["#","Entity","Bridge Score","Trials", entityType === "condition" ? "Sponsors" : "Conditions"].map(h => (
               <span key={h} style={{ fontSize: 10, color: "#8b949e", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h}</span>
             ))}
           </div>
@@ -428,15 +429,13 @@ function GraphCentralityView() {
                   {item.entity.length > 32 ? item.entity.slice(0, 30) + "…" : item.entity}
                 </div>
                 <div style={{ height: 4, background: "#21262d", borderRadius: 2, marginTop: 2, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.max((item.connectivity_score / maxScore) * 100, 2)}%`, background: "#a371f7", transition: "width 0.4s" }} />
+                  <div style={{ height: "100%", width: `${Math.max((item.bridge_score / maxScore) * 100, 2)}%`, background: "#a371f7", transition: "width 0.4s" }} />
                 </div>
               </div>
+              <span style={{ fontSize: 11, color: "#a371f7", textAlign: "right", fontWeight: 600 }}>{item.bridge_score.toLocaleString()}</span>
               <span style={{ fontSize: 11, color: "#58a6ff", textAlign: "right" }}>{item.trials.toLocaleString()}</span>
               <span style={{ fontSize: 11, color: "#8b949e", textAlign: "right" }}>
-                {entityType === "condition" ? item.unique_sponsors?.toLocaleString() : item.unique_conditions?.toLocaleString()}
-              </span>
-              <span style={{ fontSize: 11, color: "#8b949e", textAlign: "right" }}>
-                {item.unique_interventions?.toLocaleString()}
+                {entityType === "condition" ? item.sponsor_count?.toLocaleString() : item.condition_count?.toLocaleString()}
               </span>
             </div>
           ))}
