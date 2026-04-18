@@ -104,7 +104,7 @@ export default function InsightPanel({ insightTarget, onClose }) {
 
   const completionColor = (rate) => {
     if (rate === null || rate === undefined) return null;
-    return rate >= 75 ? "#3fb950" : rate >= 50 ? "#d29922" : "#f85149";
+    return rate >= 75 ? "#58a6ff" : rate >= 50 ? "#d29922" : "#f85149";
   };
 
   const isOpen = !!insightTarget;

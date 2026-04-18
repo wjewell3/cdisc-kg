@@ -19,7 +19,7 @@ function trialsApiBase() {
 
 function rateColor(rate) {
   if (rate == null) return "#8b949e";
-  return rate >= 75 ? "#3fb950" : rate >= 50 ? "#d29922" : "#f85149";
+  return rate >= 75 ? "#58a6ff" : rate >= 50 ? "#d29922" : "#f85149";
 }
 
 // ── Mini bar component (reused) ────────────────────────────────────
@@ -105,7 +105,7 @@ function FailureAnalysis({ filterParams }) {
           <div className="okpi-kpi-label">Terminated</div>
         </div>
         <div className="okpi-kpi">
-          <div className="okpi-kpi-value" style={{ color: "#3fb950" }}>{counts.completed.toLocaleString()}</div>
+          <div className="okpi-kpi-value" style={{ color: "#58a6ff" }}>{counts.completed.toLocaleString()}</div>
           <div className="okpi-kpi-label">Completed</div>
         </div>
       </div>
@@ -215,7 +215,7 @@ function SponsorPerformance({ filterParams }) {
                   {s.sponsor.length > 35 ? s.sponsor.slice(0, 33) + "…" : s.sponsor}
                 </td>
                 <td>{s.total.toLocaleString()}</td>
-                <td style={{ color: "#3fb950" }}>{s.completed.toLocaleString()}</td>
+                <td style={{ color: "#58a6ff" }}>{s.completed.toLocaleString()}</td>
                 <td style={{ color: "#f85149" }}>{s.terminated.toLocaleString()}</td>
                 <td>
                   <span className="okpi-rate-badge" style={{ background: rateColor(s.completion_rate_pct), color: "#fff" }}>
@@ -305,7 +305,7 @@ function EnrollmentBenchmark({ filterParams }) {
         </div>
         {ambitionDelta != null && (
           <div className="okpi-kpi">
-            <div className="okpi-kpi-value" style={{ color: ambitionDelta > 20 ? "#f85149" : ambitionDelta > 0 ? "#d29922" : "#3fb950" }}>
+            <div className="okpi-kpi-value" style={{ color: ambitionDelta > 20 ? "#f85149" : ambitionDelta > 0 ? "#d29922" : "#58a6ff" }}>
               {ambitionDelta > 0 ? "+" : ""}{ambitionDelta}%
             </div>
             <div className="okpi-kpi-label">Ambition Gap</div>

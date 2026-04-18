@@ -23,7 +23,7 @@ function RegionBar({ regions }) {
         <div key={r.region} className="geo-bar-row">
           <span className="geo-bar-label">{r.region}</span>
           <div className="geo-bar-track">
-            <div className="geo-bar-fill" style={{ width: `${Math.max((r.trial_count / max) * 100, 3)}%`, background: PALETTE[i % PALETTE.length] }} />
+            <div className="geo-bar-fill" style={{ width: `${Math.max((r.trial_count / max) * 100, 3)}%`, background: "#58a6ff" }} />
           </div>
           <span className="geo-bar-count">{r.trial_count.toLocaleString()}</span>
           <span className="geo-bar-active">({r.active_count?.toLocaleString() || 0} active)</span>

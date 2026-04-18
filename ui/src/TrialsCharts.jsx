@@ -53,7 +53,7 @@ function trialsApiBase() {
 
 function completionColor(rate) {
   if (rate == null) return undefined;
-  return rate >= 75 ? "#3fb950" : rate >= 50 ? "#d29922" : "#f85149";
+  return rate >= 75 ? "#58a6ff" : rate >= 50 ? "#d29922" : "#f85149";
 }
 
 function SvgBarChart({ data, title, field, activeValues, onFilter, onEntityInsight, maxItems = 8, total = null }) {

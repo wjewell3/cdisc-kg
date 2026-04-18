@@ -78,7 +78,7 @@ export default function SiteIntelligence({ onSelectTrial }) {
   const completionColor = useMemo(() => {
     if (!profile?.summary?.completion_rate_pct) return "#8b949e";
     const r = profile.summary.completion_rate_pct;
-    return r >= 75 ? "#3fb950" : r >= 50 ? "#d29922" : "#f85149";
+    return r >= 75 ? "#58a6ff" : r >= 50 ? "#d29922" : "#f85149";
   }, [profile]);
 
   return (

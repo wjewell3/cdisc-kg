@@ -445,8 +445,8 @@
 .resolution-count {
   margin-left: auto;
   font-size: 12px;
-  color: #3fb950;
-  background: rgba(63, 185, 80, 0.1);
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.1);
   padding: 4px 10px;
   border-radius: 12px;
   font-weight: 600;
@@ -1326,7 +1326,7 @@
 }
 .intel-metric.intel-risk .intel-metric-val { color: #f85149; }
 .intel-metric.intel-warn .intel-metric-val { color: #d29922; }
-.intel-metric.intel-ok .intel-metric-val  { color: #3fb950; }
+.intel-metric.intel-ok .intel-metric-val  { color: #58a6ff; }
 .intel-metric-label { font-size: 11px; font-weight: 600; color: #8b949e; }
 .intel-metric-sub   { font-size: 10px; color: #6e7681; }
 
@@ -1447,9 +1447,9 @@
   gap: 1px;
 }
 .sb-neutral .sb-value { color: #c9d1d9; }
-.sb-better .sb-value  { color: #3fb950; }
+.sb-better .sb-value  { color: #58a6ff; }
 .sb-worse  .sb-value  { color: #f85149; }
-.sb-better .sb-delta  { color: #3fb950; }
+.sb-better .sb-delta  { color: #58a6ff; }
 .sb-worse  .sb-delta  { color: #f85149; }
 .sb-divider {
   width: 1px;
