@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 const LABEL_COLORS = {
   Condition: "#39d2c0", Trial: "#8b949e", Intervention: "#a78bfa",
@@ -24,6 +24,40 @@ const KG_QUESTIONS = [
   },
 ];
 
+// Inline entity-input launchers — strategic questions that require a specific entity
+const ENTITY_QUESTIONS = [
+  {
+    id: "eq1",
+    label: "Strategic Gaps",
+    icon: "🎯",
+    placeholder: "Enter sponsor (e.g. Pfizer)",
+    hint: "Conditions the sponsor doesn't cover but competitors do — white-space analysis for roadmap planning.",
+    paramKey: "sponsor",
+    endpoint: "strategic-gaps",
+    extraParams: { limit: "10" },
+  },
+  {
+    id: "eq2",
+    label: "Competitive Landscape",
+    icon: "🏗️",
+    placeholder: "Enter condition (e.g. Diabetes)",
+    hint: "Active sponsors and adjacent conditions in a therapeutic area — partnership and sourcing signals.",
+    paramKey: "condition",
+    endpoint: "condition-landscape",
+    extraParams: { limit: "10" },
+  },
+  {
+    id: "eq3",
+    label: "Sponsor Portfolio",
+    icon: "📋",
+    placeholder: "Enter sponsor (e.g. Novartis)",
+    hint: "Full research footprint — conditions, interventions, and trial count for vendor assessment.",
+    paramKey: "sponsor",
+    endpoint: "sponsor-network",
+    extraParams: { limit: "15" },
+  },
+];
+
 function trialsApiBase() {
   return import.meta.env.VITE_TRIALS_API_BASE || "";
 }
@@ -41,12 +75,20 @@ export default function StrategicKGQuestions() {
   const [pathLoading, setPathLoading] = useState(false);
   const [pathError, setPathError] = useState(null);
 
+  // Entity question state
+  const [entityInputs, setEntityInputs] = useState({});
+  const [entityData, setEntityData] = useState(null);
+  const [entityLoading, setEntityLoading] = useState(false);
+  const [entityError, setEntityError] = useState(null);
+
   const runQuestion = async (q) => {
     if (loading) return;
     setActive(q.id);
     setLoading(true);
     setError(null);
     setData(null);
+    setEntityData(null);
+    setPathData(null);
 
     try {
       const base = trialsApiBase();
@@ -73,6 +115,7 @@ export default function StrategicKGQuestions() {
     setPathError(null);
     setPathData(null);
     setData(null);
+    setEntityData(null);
 
     try {
       const base = trialsApiBase();
@@ -89,6 +132,33 @@ export default function StrategicKGQuestions() {
       setPathLoading(false);
     }
   };
+
+  const runEntityQuestion = useCallback(async (eq) => {
+    const val = (entityInputs[eq.id] || "").trim();
+    if (!val || entityLoading) return;
+    setActive(eq.id);
+    setEntityLoading(true);
+    setEntityError(null);
+    setEntityData(null);
+    setData(null);
+    setPathData(null);
+
+    try {
+      const base = trialsApiBase();
+      const params = new URLSearchParams({ [eq.paramKey]: val, ...eq.extraParams });
+      const url = base
+        ? `${base}/api/graph/${eq.endpoint}?${params}`
+        : `/api/graph?path=${eq.endpoint}&${params}`;
+      const r = await fetch(url);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Failed");
+      setEntityData({ question: eq, input: val, result: d });
+    } catch (e) {
+      setEntityError(e.message);
+    } finally {
+      setEntityLoading(false);
+    }
+  }, [entityInputs, entityLoading]);
 
   return (
     <div className="skg-section">
@@ -139,17 +209,44 @@ export default function StrategicKGQuestions() {
         </div>
       </div>
 
-      {(loading || pathLoading) && (
+      {/* ── Entity-input launchers ──────────────────────────── */}
+      <div className="skg-entity-launchers">
+        {ENTITY_QUESTIONS.map((eq) => (
+          <div key={eq.id} className={`skg-entity-launcher${active === eq.id ? " skg-entity-active" : ""}`}>
+            <div className="skg-entity-launcher-header">
+              <span className="skg-entity-icon">{eq.icon}</span>
+              <span className="skg-entity-label">{eq.label}</span>
+            </div>
+            <form className="skg-entity-form" onSubmit={(e) => { e.preventDefault(); runEntityQuestion(eq); }}>
+              <input
+                className="skg-path-input"
+                placeholder={eq.placeholder}
+                value={entityInputs[eq.id] || ""}
+                onChange={(e) => setEntityInputs(prev => ({ ...prev, [eq.id]: e.target.value }))}
+              />
+              <button className="skg-path-go" type="submit" disabled={!(entityInputs[eq.id] || "").trim() || entityLoading}>
+                Go
+              </button>
+            </form>
+            <div className="skg-entity-hint">{eq.hint}</div>
+          </div>
+        ))}
+      </div>
+
+      {(loading || pathLoading || entityLoading) && (
         <div className="skg-loading">
           <div className="loading-spinner" style={{ width: 20, height: 20 }} />
           <span>Traversing knowledge graph…</span>
         </div>
       )}
 
-      {(error || pathError) && <div className="skg-error">⚠ {error || pathError}</div>}
+      {(error || pathError || entityError) && <div className="skg-error">⚠ {error || pathError || entityError}</div>}
 
       {/* Path result */}
       {pathData && !pathLoading && <PathResult data={pathData} from={pathFrom} to={pathTo} />}
+
+      {/* Entity question results */}
+      {entityData && !entityLoading && <EntityResult data={entityData} />}
 
       {/* Other results */}
       {data && !loading && <SKGResult data={data} />}
@@ -214,6 +311,102 @@ function PathResult({ data, from, to }) {
       </div>
     </div>
   );
+}
+
+// ── Entity question result renderers ─────────────────────────────────────
+function EntityResult({ data }) {
+  const { question, input, result } = data;
+
+  // Strategic Gaps — array of { condition, adjacency_strength, via_conditions }
+  if (question.endpoint === "strategic-gaps" && Array.isArray(result)) {
+    if (result.length === 0) return <div className="skg-result"><div className="skg-result-title">🎯 No gaps found for "{input}"</div></div>;
+    const maxStrength = Math.max(...result.map(r => r.adjacency_strength));
+    return (
+      <div className="skg-result">
+        <div className="skg-result-title">🎯 Strategic Gaps for {input}</div>
+        <div className="skg-result-subtitle">Conditions this sponsor doesn't cover but competitors do — ranked by adjacency strength</div>
+        <div className="skg-result-body">
+          {result.map((item, i) => (
+            <div key={i} className="skg-row">
+              <span className="skg-rank">{i + 1}</span>
+              <span className="skg-entity" title={item.condition}>{item.condition}</span>
+              <div className="skg-bar-track">
+                <div className="skg-bar-fill" style={{ width: `${Math.max((item.adjacency_strength / maxStrength) * 100, 3)}%`, background: "#d29922" }} />
+              </div>
+              <span className="skg-metric">{item.adjacency_strength.toLocaleString()} adjacent trials</span>
+              <span className="skg-metric-sub">via {item.via_conditions?.slice(0, 3).join(", ")}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Competitive Landscape — { condition, adjacent_conditions, landscape_sponsors }
+  if (question.endpoint === "condition-landscape" && result.condition) {
+    return (
+      <div className="skg-result">
+        <div className="skg-result-title">🏗️ Competitive Landscape: {result.condition}</div>
+        <div className="skg-result-subtitle">Active sponsors and adjacent therapeutic areas</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div>
+            <div className="skg-cluster-label" style={{ marginBottom: 8 }}>Adjacent Conditions (shared drugs)</div>
+            {(result.adjacent_conditions || []).map((c, i) => (
+              <div key={i} className="skg-row" style={{ padding: "3px 0" }}>
+                <span className="skg-rank">{i + 1}</span>
+                <span className="skg-entity">{c.condition}</span>
+                <span className="skg-metric">{c.shared_drugs} shared</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className="skg-cluster-label" style={{ marginBottom: 8 }}>Top Sponsors in Area</div>
+            {(result.landscape_sponsors || []).map((s, i) => (
+              <div key={i} className="skg-row" style={{ padding: "3px 0" }}>
+                <span className="skg-rank">{i + 1}</span>
+                <span className="skg-entity">{s.sponsor?.length > 28 ? s.sponsor.slice(0, 26) + "…" : s.sponsor}</span>
+                <span className="skg-metric">{s.trials} trials</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Sponsor Portfolio — { trial_count, conditions, interventions, competitors }
+  if (question.endpoint === "sponsor-network" && result.trial_count != null) {
+    return (
+      <div className="skg-result">
+        <div className="skg-result-title">📋 Portfolio: {input}</div>
+        <div className="skg-result-subtitle">{result.trial_count.toLocaleString()} total trials</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div>
+            <div className="skg-cluster-label" style={{ marginBottom: 8 }}>Top Conditions</div>
+            {(result.conditions || []).slice(0, 10).map((c, i) => (
+              <div key={i} className="skg-row" style={{ padding: "3px 0" }}>
+                <span className="skg-rank">{i + 1}</span>
+                <span className="skg-entity">{c.condition}</span>
+                <span className="skg-metric">{c.trials} trials</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className="skg-cluster-label" style={{ marginBottom: 8 }}>Top Interventions</div>
+            {(result.interventions || []).slice(0, 10).map((iv, i) => (
+              <div key={i} className="skg-row" style={{ padding: "3px 0" }}>
+                <span className="skg-rank">{i + 1}</span>
+                <span className="skg-entity">{iv.intervention}</span>
+                <span className="skg-metric">{iv.trials} trials</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="skg-result"><pre style={{ fontSize: 11, color: "#8b949e" }}>{JSON.stringify(result, null, 2)}</pre></div>;
 }
 
 // ── Result renderers ────────────────────────────────────────────────────

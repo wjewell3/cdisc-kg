@@ -1092,6 +1092,16 @@
   gap: 12px;
 }
 
+.trials-map-grid-cell {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 8px;
+  transition: border-color 0.15s;
+  min-height: 260px;
+}
+.trials-map-grid-cell:hover { border-color: #388bfd; }
+
 .trials-svg-wrap {
   background: #161b22;
   border: 1px solid #21262d;

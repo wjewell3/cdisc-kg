@@ -441,3 +441,48 @@
   font-size: 11px;
   align-items: center;
 }
+
+/* ── Entity-input launchers ──────────────────────────── */
+.skg-entity-launchers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.skg-entity-launcher {
+  padding: 10px 12px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  transition: border-color 0.15s;
+}
+.skg-entity-launcher:hover { border-color: #484f58; }
+.skg-entity-active { border-color: #a371f7; }
+
+.skg-entity-launcher-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.skg-entity-icon { font-size: 14px; }
+
+.skg-entity-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+.skg-entity-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.skg-entity-hint {
+  font-size: 10px;
+  color: #8b949e;
+  line-height: 1.3;
+}

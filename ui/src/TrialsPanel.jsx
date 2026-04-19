@@ -628,21 +628,20 @@ export default function TrialsPanel() {
                   fetchConditions={fetchConditions}
                   fetchInterventions={fetchInterventions}
                   normalizeAggData={normalizeAggData}
-                />
-
-                {/* ── Geography Map ─────────────────────────────── */}
-                <TrialsMap
-                  filterParams={geoFilterParams}
-                  onCountryFilter={(country) => {
-                    setChartFilters(prev => {
-                      // Remove any existing country filter, then add the new one
-                      const without = prev.filter(f => f.field !== "country");
-                      return [...without, { field: "country", value: country }];
-                    });
-                  }}
-                  onCountryClear={() => {
-                    setChartFilters(prev => prev.filter(f => f.field !== "country"));
-                  }}
+                  mapSlot={
+                    <TrialsMap
+                      filterParams={geoFilterParams}
+                      onCountryFilter={(country) => {
+                        setChartFilters(prev => {
+                          const without = prev.filter(f => f.field !== "country");
+                          return [...without, { field: "country", value: country }];
+                        });
+                      }}
+                      onCountryClear={() => {
+                        setChartFilters(prev => prev.filter(f => f.field !== "country"));
+                      }}
+                    />
+                  }
                 />
 
                 {/* ── Operational KPIs ─────────────────────────────── */}
