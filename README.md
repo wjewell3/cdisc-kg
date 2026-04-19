@@ -2,6 +2,8 @@
 
 A knowledge-graph-powered operational intelligence platform for clinical trials, built on 580k+ studies from [AACT](https://aact.ctti-clinicaltrials.org/) (ClinicalTrials.gov). Live at **[cdisc-kg.vercel.app](https://cdisc-kg.vercel.app)**.
 
+> **In 60 seconds:** Ask a question like *"What therapeutic gaps does Novartis have?"* — the platform translates it into a Neo4j graph query across 580k trials, returns structured insight cards, and auto-applies filters to 6 cross-filter charts. No SQL, no manual joins. The knowledge graph connects every trial to its sponsor, condition, intervention, country, and operational metrics, so any question slices the entire domain.
+
 ## Vision
 
 Clinical trial data sits in siloed tables — studies, facilities, designs, eligibility, dropouts, countries. This platform encodes **clinical and operational processes** as a knowledge graph and surfaces actionable intelligence from it. The goal is not just search — it's answering questions like:

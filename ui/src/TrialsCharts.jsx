@@ -476,7 +476,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
     <div className="trials-charts-section">
       <div className="trials-charts-header">
         <div className="section-icon">📊</div>
-        <h3>Cross-Trial Analytics</h3>
+        <h3>Portfolio Snapshot</h3>
         <span className="tchart-count-badge">{totalCount.toLocaleString()} trial{totalCount !== 1 ? "s" : ""}</span>
         {activeFilters.length > 0 && (
           <button className="tchart-clear-btn" onClick={() => onFilter(null, null)}>
@@ -485,7 +485,7 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
         )}
       </div>
       <StatsBanner stats={currentStats} baseline={bStats} hasFilters={hasFilteredStats ?? activeFilters.length > 0} />
-      <p className="tchart-insight-hint">Click a bar to filter · double-click for deep entity insight</p>
+      <p className="tchart-insight-hint">Click a bar to filter the dataset · double-click for deep entity insight</p>
       <div className="trials-charts-grid">
         {hasData(phaseData) && (
           phaseData.length > 3 ? (

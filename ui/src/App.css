@@ -42,6 +42,46 @@
   border-color: #39d2c0;
 }
 
+/* ── More dropdown ──────────────────────── */
+.tab-more-wrap {
+  position: relative;
+}
+.tab-btn-more.active {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+.tab-more-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 160px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.tab-more-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: transparent;
+  color: #8b949e;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.tab-more-item:hover {
+  background: #21262d;
+  color: #e6edf3;
+}
+.tab-more-item.active {
+  color: #58a6ff;
+}
+
 /* ======= Layout ======= */
 .app {
   display: flex;

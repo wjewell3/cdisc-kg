@@ -16,10 +16,10 @@
   flex: 1;
   background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 8px;
-  padding: 10px 14px;
+  border-radius: 12px;
+  padding: 14px 18px;
   color: #e6edf3;
-  font-size: 14px;
+  font-size: 16px;
 }
 .ask-bar-input:focus { border-color: #58a6ff; outline: none; box-shadow: 0 0 0 2px rgba(88,166,255,0.15); }
 .ask-bar-input::placeholder { color: #484f58; }
@@ -28,9 +28,9 @@
   background: #238636;
   color: #fff;
   border: none;
-  border-radius: 8px;
-  padding: 10px 20px;
-  font-size: 14px;
+  border-radius: 12px;
+  padding: 14px 24px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;

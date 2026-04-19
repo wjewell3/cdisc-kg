@@ -11,6 +11,7 @@ const KG_QUESTIONS = [
     label: "Therapeutic Clusters",
     question: "Which conditions share drug pipelines?",
     description: "Finds clusters of conditions that are treated by the same drugs — they emerge naturally from the data, not from pre-defined categories.",
+    subtitle: "→ Conditions grouped by shared interventions",
     endpoint: "communities",
     params: { min_shared: "3", limit: "20" },
   },
@@ -19,6 +20,7 @@ const KG_QUESTIONS = [
     label: "Sponsor Completion Rates",
     question: "Which sponsors have the best completion rates?",
     description: "Completion rates computed by following sponsor → trial relationships in the knowledge graph.",
+    subtitle: "→ Sponsor leaderboard by trial completion %",
     endpoint: "sponsor-completion",
     params: { min_trials: "20", limit: "20" },
   },
@@ -31,30 +33,33 @@ const ENTITY_QUESTIONS = [
     label: "Strategic Gaps",
     icon: "🎯",
     placeholder: "Enter sponsor (e.g. Pfizer)",
-    hint: "Conditions the sponsor doesn't cover but competitors do — white-space analysis for roadmap planning.",
+    hint: "→ Conditions the sponsor doesn't cover but competitors do",
     paramKey: "sponsor",
     endpoint: "strategic-gaps",
     extraParams: { limit: "10" },
+    examples: ["Pfizer", "Novartis", "Merck"],
   },
   {
     id: "eq2",
     label: "Competitive Landscape",
     icon: "🏗️",
     placeholder: "Enter condition (e.g. Diabetes)",
-    hint: "Active sponsors and adjacent conditions in a therapeutic area — partnership and sourcing signals.",
+    hint: "→ Active sponsors and adjacent conditions in a therapeutic area",
     paramKey: "condition",
     endpoint: "condition-landscape",
     extraParams: { limit: "10" },
+    examples: ["Breast Cancer", "Diabetes Mellitus", "Alzheimer Disease"],
   },
   {
     id: "eq3",
     label: "Sponsor Portfolio",
     icon: "📋",
     placeholder: "Enter sponsor (e.g. Novartis)",
-    hint: "Full research footprint — conditions, interventions, and trial count for vendor assessment.",
+    hint: "→ Full research footprint — conditions, interventions, trial count",
     paramKey: "sponsor",
     endpoint: "sponsor-network",
     extraParams: { limit: "15" },
+    examples: ["Novartis", "GSK", "Roche"],
   },
 ];
 
@@ -134,8 +139,8 @@ export default function StrategicKGQuestions() {
     }
   };
 
-  const runEntityQuestion = useCallback(async (eq) => {
-    const val = (entityInputs[eq.id] || "").trim();
+  const runEntityQuestion = useCallback(async (eq, overrideVal) => {
+    const val = (overrideVal || entityInputs[eq.id] || "").trim();
     if (!val || entityLoading) return;
     setActive(eq.id);
     setEntityLoading(true);
@@ -181,6 +186,7 @@ export default function StrategicKGQuestions() {
           >
             <span className="skg-btn-label">{q.label}</span>
             <span className="skg-btn-desc">{q.question}</span>
+            {q.subtitle && <span className="skg-btn-subtitle">{q.subtitle}</span>}
           </button>
         ))}
       </div>
@@ -232,6 +238,18 @@ export default function StrategicKGQuestions() {
               </button>
             </form>
             <div className="skg-entity-hint">{eq.hint}</div>
+            {eq.examples && (
+              <div className="skg-entity-examples">
+                {eq.examples.map(ex => (
+                  <button key={ex} className="skg-entity-chip" onClick={() => {
+                    setEntityInputs(prev => ({ ...prev, [eq.id]: ex }));
+                    runEntityQuestion({ ...eq }, ex);
+                  }}>
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>

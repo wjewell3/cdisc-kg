@@ -179,7 +179,16 @@ function App() {
   const [activePanel, setActivePanel] = useState(initialPanel);
   const [selectedEdge, setSelectedEdge] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const fgRef = useRef();
+
+  // Close "More" dropdown when clicking outside
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e) => { if (!e.target.closest(".tab-more-wrap")) setMoreOpen(false); };
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [moreOpen]);
 
   // Sync URL → panel when browser back/forward
   useEffect(() => {
@@ -318,24 +327,27 @@ function App() {
           >
             Graph Explorer ⬡
           </button>
-          <button
-            className={`tab-btn ${activePanel === "graph" ? "active" : ""}`}
-            onClick={() => switchPanel("graph")}
-          >
-            Standards Graph
-          </button>
-          <button
-            className={`tab-btn ${activePanel === "browse" ? "active" : ""}`}
-            onClick={() => switchPanel("browse")}
-          >
-            Data Catalog
-          </button>
-          <button
-            className={`tab-btn ${activePanel === "learn" ? "active" : ""}`}
-            onClick={() => switchPanel("learn")}
-          >
-            SDTM Training
-          </button>
+          <div className="tab-more-wrap">
+            <button
+              className={`tab-btn tab-btn-more ${["graph", "browse", "learn"].includes(activePanel) ? "active" : ""}`}
+              onClick={() => setMoreOpen(o => !o)}
+            >
+              More ▾
+            </button>
+            {moreOpen && (
+              <div className="tab-more-dropdown">
+                <button className={`tab-more-item ${activePanel === "graph" ? "active" : ""}`} onClick={() => { switchPanel("graph"); setMoreOpen(false); }}>
+                  Standards Graph
+                </button>
+                <button className={`tab-more-item ${activePanel === "browse" ? "active" : ""}`} onClick={() => { switchPanel("browse"); setMoreOpen(false); }}>
+                  Data Catalog
+                </button>
+                <button className={`tab-more-item ${activePanel === "learn" ? "active" : ""}`} onClick={() => { switchPanel("learn"); setMoreOpen(false); }}>
+                  SDTM Training
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         {stats && (
           <span className="stats-badge">

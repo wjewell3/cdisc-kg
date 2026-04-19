@@ -97,6 +97,13 @@
   text-align: left;
 }
 
+.skg-btn-subtitle {
+  font-size: 10px;
+  color: #39d2c0;
+  text-align: left;
+  margin-top: 2px;
+}
+
 .skg-loading {
   display: flex;
   align-items: center;
@@ -501,6 +508,28 @@
 
 .skg-entity-hint {
   font-size: 10px;
-  color: #8b949e;
+  color: #39d2c0;
   line-height: 1.3;
+}
+
+.skg-entity-examples {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.skg-entity-chip {
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.skg-entity-chip:hover {
+  border-color: #a371f7;
+  color: #e6edf3;
 }
