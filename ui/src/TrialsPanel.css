@@ -292,6 +292,70 @@
 }
 .readiness-banner .ptb-product { color: #a371f7; }
 
+/* Product-tab user-question chips */
+.ptb-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(139, 148, 158, 0.15);
+}
+.ptb-q {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.5);
+  border: 1px solid rgba(139, 148, 158, 0.2);
+  color: #8b949e;
+  font-style: italic;
+}
+
+/* ── Story sections (per-tab narrative framing) ── */
+.story-section {
+  margin: 24px 0;
+  padding-top: 16px;
+  border-top: 1px solid #21262d;
+}
+.story-section:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: none;
+}
+.story-header {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.story-num {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #39d2c0 0%, #58a6ff 100%);
+  color: #0d1117;
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+.story-header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  color: #c9d1d9;
+  font-weight: 600;
+}
+.story-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #8b949e;
+  line-height: 1.45;
+  max-width: 760px;
+}
+
 /* ── Gap Callout (lifecycle roadmap) ── */
 .monitor-gap-callout {
   margin-top: 16px;
