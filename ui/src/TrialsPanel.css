@@ -245,6 +245,40 @@
   font-size: 15px;
 }
 
+/* ── Gap Callout (lifecycle roadmap) ── */
+.monitor-gap-callout {
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: #161b22;
+  border: 1px dashed #30363d;
+  border-radius: 8px;
+}
+.gap-callout-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #d29922;
+  margin-bottom: 8px;
+}
+.gap-callout-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.gap-item {
+  font-size: 11px;
+  padding: 3px 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  color: #8b949e;
+}
+.gap-callout-note {
+  font-size: 11px;
+  color: #6e7681;
+  font-style: italic;
+}
+
 /* ── Body ── */
 .trials-body {
   flex: 1;

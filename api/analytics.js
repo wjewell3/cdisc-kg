@@ -16,6 +16,10 @@ const MODE_MAP = {
   "enrollment-benchmark": "/api/enrollment-benchmark",
   "geographic": "/api/geographic-intelligence",
   "ask": "/api/ask",
+  "safety-signals": "/api/safety-signals",
+  "milestone-funnel": "/api/milestone-funnel",
+  "results-readiness": "/api/results-readiness",
+  "trial-complexity": "/api/trial-complexity",
 };
 
 export default async function handler(req, res) {

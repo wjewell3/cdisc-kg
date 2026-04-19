@@ -3202,6 +3202,311 @@ app.post("/api/ask", async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Lifecycle Endpoints: Monitor Risk + Close Trial + Plan Complexity ════════
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Safety Signal Analysis (Monitor) ─────────────────────────────────────────
+// Adverse event summary by condition/sponsor/intervention — SAE rates, organ systems
+app.get("/api/safety-signals", async (req, res) => {
+  const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Database unavailable" });
+  try {
+    const params = []; const where = []; let p = 1;
+    if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
+    if (phase) { where.push(`s.phase = $${p}`); params.push(phase); p++; }
+    if (sponsor) { where.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${p})`); params.push(`%${sponsor}%`); p++; }
+    if (intervention) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${p})`); params.push(`%${intervention}%`); p++; }
+    const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    // Total trials with reported events in cohort
+    const countSql = `SELECT COUNT(DISTINCT re.nct_id)::int AS trials_with_events,
+      SUM(re.subjects_affected)::int AS total_affected,
+      SUM(re.subjects_at_risk)::int AS total_at_risk
+      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id ${wc}`;
+    const { rows: [summary] } = await pool.query(countSql, params);
+
+    // SAE vs other breakdown
+    const typeSql = `SELECT re.event_type, COUNT(DISTINCT re.nct_id)::int AS trials,
+      SUM(re.subjects_affected)::int AS affected
+      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id ${wc}
+      GROUP BY re.event_type ORDER BY affected DESC`;
+    const { rows: byType } = await pool.query(typeSql, params);
+
+    // Top organ systems by adverse events
+    const organSql = `SELECT re.organ_system, SUM(re.subjects_affected)::int AS affected,
+      COUNT(DISTINCT re.nct_id)::int AS trials
+      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id
+      ${wc ? wc + " AND" : "WHERE"} re.organ_system IS NOT NULL
+      GROUP BY re.organ_system ORDER BY affected DESC LIMIT 15`;
+    const { rows: byOrgan } = await pool.query(organSql, params);
+
+    // Top adverse event terms (serious only)
+    const saeSql = `SELECT re.adverse_event_term AS term, SUM(re.subjects_affected)::int AS affected,
+      COUNT(DISTINCT re.nct_id)::int AS trials
+      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id
+      ${wc ? wc + " AND" : "WHERE"} re.event_type = 'serious'
+      AND re.adverse_event_term IS NOT NULL
+      GROUP BY re.adverse_event_term ORDER BY affected DESC LIMIT 20`;
+    const { rows: topSAEs } = await pool.query(saeSql, params);
+
+    // SAE rate by top conditions
+    const condSaeSql = `SELECT c2.name AS condition, COUNT(DISTINCT re.nct_id)::int AS trials,
+      SUM(re.subjects_affected)::int AS affected, SUM(re.subjects_at_risk)::int AS at_risk
+      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id
+      JOIN conditions c2 ON c2.nct_id = s.nct_id
+      ${wc ? wc + " AND" : "WHERE"} re.event_type = 'serious'
+      GROUP BY c2.name HAVING COUNT(DISTINCT re.nct_id) >= 10
+      ORDER BY SUM(re.subjects_affected)::float / NULLIF(SUM(re.subjects_at_risk), 0) DESC LIMIT 15`;
+    const { rows: condSAE } = await pool.query(condSaeSql, params);
+
+    res.json({
+      trials_with_events: summary?.trials_with_events || 0,
+      total_affected: summary?.total_affected || 0,
+      total_at_risk: summary?.total_at_risk || 0,
+      by_type: byType,
+      by_organ_system: byOrgan,
+      top_serious_events: topSAEs,
+      sae_by_condition: condSAE.map(r => ({
+        ...r,
+        sae_rate_pct: r.at_risk > 0 ? parseFloat(((r.affected / r.at_risk) * 100).toFixed(1)) : null,
+      })),
+    });
+  } catch (e) {
+    console.error("[safety-signals]", e.message);
+    res.status(500).json({ error: "Query failed" });
+  }
+});
+
+// ── Milestone Funnel (Monitor) ───────────────────────────────────────────────
+// Participant flow: STARTED → COMPLETED → stage-level dropout
+app.get("/api/milestone-funnel", async (req, res) => {
+  const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Database unavailable" });
+  try {
+    const params = []; const where = []; let p = 1;
+    if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
+    if (phase) { where.push(`s.phase = $${p}`); params.push(phase); p++; }
+    if (sponsor) { where.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${p})`); params.push(`%${sponsor}%`); p++; }
+    if (intervention) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${p})`); params.push(`%${intervention}%`); p++; }
+    const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    // Aggregate milestones: avg participants at each stage (STARTED, COMPLETED, NOT COMPLETED)
+    const funnelSql = `SELECT m.title, SUM(m.count)::int AS total_participants,
+      COUNT(DISTINCT m.nct_id)::int AS trials
+      FROM milestones m JOIN studies s ON s.nct_id = m.nct_id ${wc}
+      GROUP BY m.title ORDER BY total_participants DESC LIMIT 10`;
+    const { rows: funnel } = await pool.query(funnelSql, params);
+
+    // Dropout reasons from drop_withdrawals aggregated across cohort
+    const dropSql = `SELECT dw.reason, SUM(dw.count)::int AS total,
+      COUNT(DISTINCT dw.nct_id)::int AS trials
+      FROM drop_withdrawals dw JOIN studies s ON s.nct_id = dw.nct_id
+      ${wc ? wc + " AND" : "WHERE"} dw.count > 0 AND dw.reason IS NOT NULL
+      GROUP BY dw.reason ORDER BY total DESC LIMIT 15`;
+    const { rows: dropReasons } = await pool.query(dropSql, params);
+
+    // Trials with milestones vs total
+    const coverageSql = `SELECT COUNT(DISTINCT m.nct_id)::int AS with_milestones,
+      (SELECT COUNT(*)::int FROM studies s ${wc}) AS total_trials
+      FROM milestones m JOIN studies s ON s.nct_id = m.nct_id ${wc}`;
+    const { rows: [coverage] } = await pool.query(coverageSql, params);
+
+    res.json({
+      total_trials: coverage?.total_trials || 0,
+      trials_with_milestones: coverage?.with_milestones || 0,
+      funnel,
+      drop_reasons: dropReasons,
+    });
+  } catch (e) {
+    console.error("[milestone-funnel]", e.message);
+    res.status(500).json({ error: "Query failed" });
+  }
+});
+
+// ── Results Readiness (Close) ────────────────────────────────────────────────
+// Outcome reporting completeness, time-to-results, statistical significance
+app.get("/api/results-readiness", async (req, res) => {
+  const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Database unavailable" });
+  try {
+    const params = []; const where = []; let p = 1;
+    if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
+    if (phase) { where.push(`s.phase = $${p}`); params.push(phase); p++; }
+    if (sponsor) { where.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${p})`); params.push(`%${sponsor}%`); p++; }
+    if (intervention) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${p})`); params.push(`%${intervention}%`); p++; }
+    const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    // Results reporting summary
+    const reportingSql = `SELECT
+      COUNT(*)::int AS total_completed,
+      SUM(CASE WHEN cv.were_results_reported THEN 1 ELSE 0 END)::int AS results_reported,
+      ROUND(AVG(CASE WHEN cv.months_to_report_results IS NOT NULL THEN cv.months_to_report_results END)::numeric, 1) AS avg_months_to_report,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cv.months_to_report_results)
+        FILTER (WHERE cv.months_to_report_results IS NOT NULL) AS median_months_to_report
+      FROM studies s JOIN calculated_values cv ON cv.nct_id = s.nct_id
+      ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'COMPLETED'`;
+    const { rows: [reporting] } = await pool.query(reportingSql, params);
+
+    // Reporting rate by phase
+    const byPhaseSql = `SELECT s.phase,
+      COUNT(*)::int AS total,
+      SUM(CASE WHEN cv.were_results_reported THEN 1 ELSE 0 END)::int AS reported,
+      ROUND(AVG(CASE WHEN cv.months_to_report_results IS NOT NULL THEN cv.months_to_report_results END)::numeric, 1) AS avg_months
+      FROM studies s JOIN calculated_values cv ON cv.nct_id = s.nct_id
+      ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'COMPLETED'
+      GROUP BY s.phase HAVING COUNT(*) >= 10
+      ORDER BY COUNT(*) DESC`;
+    const { rows: byPhase } = await pool.query(byPhaseSql, params);
+
+    // Reporting rate by top sponsors
+    const bySponsorSql = `SELECT sp.name AS sponsor,
+      COUNT(*)::int AS total,
+      SUM(CASE WHEN cv.were_results_reported THEN 1 ELSE 0 END)::int AS reported,
+      ROUND(AVG(CASE WHEN cv.months_to_report_results IS NOT NULL THEN cv.months_to_report_results END)::numeric, 1) AS avg_months
+      FROM studies s JOIN calculated_values cv ON cv.nct_id = s.nct_id
+      JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
+      ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'COMPLETED'
+      GROUP BY sp.name HAVING COUNT(*) >= 20
+      ORDER BY SUM(CASE WHEN cv.were_results_reported THEN 1 ELSE 0 END)::float / COUNT(*) DESC
+      LIMIT 20`;
+    const { rows: bySponsor } = await pool.query(bySponsorSql, params);
+
+    // Outcome counts: planned vs reported
+    const outcomesSql = `SELECT
+      COUNT(DISTINCT doi.nct_id)::int AS trials_with_planned_outcomes,
+      ROUND(AVG(planned.cnt)::numeric, 1) AS avg_planned_outcomes,
+      COUNT(DISTINCT o.nct_id)::int AS trials_with_reported_outcomes,
+      ROUND(AVG(reported.cnt)::numeric, 1) AS avg_reported_outcomes
+      FROM studies s
+      LEFT JOIN (SELECT nct_id, COUNT(*)::int AS cnt FROM design_outcomes GROUP BY nct_id) planned ON planned.nct_id = s.nct_id
+      LEFT JOIN design_outcomes doi ON doi.nct_id = s.nct_id
+      LEFT JOIN (SELECT nct_id, COUNT(*)::int AS cnt FROM outcomes GROUP BY nct_id) reported ON reported.nct_id = s.nct_id
+      LEFT JOIN outcomes o ON o.nct_id = s.nct_id
+      ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'COMPLETED'`;
+    const { rows: [outcomes] } = await pool.query(outcomesSql, params);
+
+    // Statistical significance: p-value distribution
+    const pvalSql = `SELECT
+      COUNT(*)::int AS total_analyses,
+      SUM(CASE WHEN oa.p_value::float < 0.05 THEN 1 ELSE 0 END)::int AS significant,
+      SUM(CASE WHEN oa.p_value::float >= 0.05 THEN 1 ELSE 0 END)::int AS not_significant
+      FROM outcome_analyses oa JOIN studies s ON s.nct_id = oa.nct_id
+      ${wc ? wc + " AND" : "WHERE"} oa.p_value IS NOT NULL AND oa.p_value ~ '^[0-9]'`;
+    const { rows: [pvals] } = await pool.query(pvalSql, params);
+
+    res.json({
+      total_completed: reporting?.total_completed || 0,
+      results_reported: reporting?.results_reported || 0,
+      reporting_rate_pct: reporting?.total_completed > 0
+        ? parseFloat(((reporting.results_reported / reporting.total_completed) * 100).toFixed(1))
+        : null,
+      avg_months_to_report: reporting?.avg_months_to_report ? parseFloat(reporting.avg_months_to_report) : null,
+      median_months_to_report: reporting?.median_months_to_report ? parseFloat(parseFloat(reporting.median_months_to_report).toFixed(1)) : null,
+      by_phase: byPhase.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
+      by_sponsor: bySponsor.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
+      outcomes: {
+        trials_with_planned: outcomes?.trials_with_planned_outcomes || 0,
+        avg_planned: outcomes?.avg_planned_outcomes ? parseFloat(outcomes.avg_planned_outcomes) : null,
+        trials_with_reported: outcomes?.trials_with_reported_outcomes || 0,
+        avg_reported: outcomes?.avg_reported_outcomes ? parseFloat(outcomes.avg_reported_outcomes) : null,
+      },
+      statistical_significance: {
+        total_analyses: pvals?.total_analyses || 0,
+        significant: pvals?.significant || 0,
+        not_significant: pvals?.not_significant || 0,
+        significance_rate_pct: pvals?.total_analyses > 0
+          ? parseFloat(((pvals.significant / pvals.total_analyses) * 100).toFixed(1))
+          : null,
+      },
+    });
+  } catch (e) {
+    console.error("[results-readiness]", e.message);
+    res.status(500).json({ error: "Query failed" });
+  }
+});
+
+// ── Trial Complexity Profile (Plan) ──────────────────────────────────────────
+// Design complexity: arms, outcomes, endpoints per trial
+app.get("/api/trial-complexity", async (req, res) => {
+  const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Database unavailable" });
+  try {
+    const params = []; const where = []; let p = 1;
+    if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
+    if (phase) { where.push(`s.phase = $${p}`); params.push(phase); p++; }
+    if (sponsor) { where.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${p})`); params.push(`%${sponsor}%`); p++; }
+    if (intervention) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${p})`); params.push(`%${intervention}%`); p++; }
+    const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    // Avg arms per trial
+    const armsSql = `SELECT ROUND(AVG(dg.cnt)::numeric, 1) AS avg_arms,
+      MAX(dg.cnt)::int AS max_arms
+      FROM studies s JOIN (SELECT nct_id, COUNT(*)::int AS cnt FROM design_groups GROUP BY nct_id) dg ON dg.nct_id = s.nct_id
+      ${wc}`;
+    const { rows: [arms] } = await pool.query(armsSql, params);
+
+    // Avg planned outcomes per trial
+    const outSql = `SELECT
+      ROUND(AVG(planned.cnt)::numeric, 1) AS avg_planned_outcomes,
+      ROUND(AVG(CASE WHEN planned.prim > 0 THEN planned.prim END)::numeric, 1) AS avg_primary,
+      ROUND(AVG(CASE WHEN planned.sec > 0 THEN planned.sec END)::numeric, 1) AS avg_secondary
+      FROM studies s
+      JOIN (SELECT nct_id, COUNT(*) AS cnt,
+        SUM(CASE WHEN outcome_type = 'primary' THEN 1 ELSE 0 END) AS prim,
+        SUM(CASE WHEN outcome_type = 'secondary' THEN 1 ELSE 0 END) AS sec
+        FROM design_outcomes GROUP BY nct_id) planned ON planned.nct_id = s.nct_id
+      ${wc}`;
+    const { rows: [outcomes] } = await pool.query(outSql, params);
+
+    // Design distribution
+    const designSql = `SELECT d.allocation, d.masking, d.intervention_model, COUNT(*)::int AS count
+      FROM studies s JOIN designs d ON d.nct_id = s.nct_id
+      ${wc}
+      GROUP BY d.allocation, d.masking, d.intervention_model
+      ORDER BY count DESC LIMIT 10`;
+    const { rows: designs } = await pool.query(designSql, params);
+
+    // Group type distribution (experimental, active comparator, placebo, sham)
+    const groupTypeSql = `SELECT dg.group_type, COUNT(DISTINCT dg.nct_id)::int AS trials
+      FROM design_groups dg JOIN studies s ON s.nct_id = dg.nct_id
+      ${wc ? wc + " AND" : "WHERE"} dg.group_type IS NOT NULL
+      GROUP BY dg.group_type ORDER BY trials DESC`;
+    const { rows: groupTypes } = await pool.query(groupTypeSql, params);
+
+    // Duration distribution (P25, P50, P75)
+    const durationSql = `SELECT
+      ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric, 0) AS p25_months,
+      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric, 0) AS p50_months,
+      ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric, 0) AS p75_months
+      FROM studies s JOIN calculated_values cv ON cv.nct_id = s.nct_id
+      ${wc ? wc + " AND" : "WHERE"} cv.actual_duration IS NOT NULL AND cv.actual_duration > 0`;
+    const { rows: [duration] } = await pool.query(durationSql, params);
+
+    res.json({
+      avg_arms: arms?.avg_arms ? parseFloat(arms.avg_arms) : null,
+      max_arms: arms?.max_arms || null,
+      avg_planned_outcomes: outcomes?.avg_planned_outcomes ? parseFloat(outcomes.avg_planned_outcomes) : null,
+      avg_primary_outcomes: outcomes?.avg_primary ? parseFloat(outcomes.avg_primary) : null,
+      avg_secondary_outcomes: outcomes?.avg_secondary ? parseFloat(outcomes.avg_secondary) : null,
+      design_distribution: designs,
+      group_types: groupTypes,
+      duration: {
+        p25_months: duration?.p25_months ? parseFloat(duration.p25_months) : null,
+        p50_months: duration?.p50_months ? parseFloat(duration.p50_months) : null,
+        p75_months: duration?.p75_months ? parseFloat(duration.p75_months) : null,
+      },
+    });
+  } catch (e) {
+    console.error("[trial-complexity]", e.message);
+    res.status(500).json({ error: "Query failed" });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

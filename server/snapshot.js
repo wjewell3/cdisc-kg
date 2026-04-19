@@ -217,6 +217,105 @@ async function main() {
       older_adult INTEGER
     );
 
+    -- ── Lifecycle tables (Plan / Monitor / Close) ────────────────────────────
+
+    CREATE TABLE IF NOT EXISTS milestones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      result_group_id TEXT,
+      ctgov_group_code TEXT,
+      title TEXT,
+      period TEXT,
+      count INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS reported_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      result_group_id TEXT,
+      ctgov_group_code TEXT,
+      event_type TEXT,
+      default_assessment TEXT,
+      organ_system TEXT,
+      adverse_event_term TEXT,
+      subjects_affected INTEGER,
+      subjects_at_risk INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS outcomes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      outcome_type TEXT,
+      title TEXT,
+      description TEXT,
+      time_frame TEXT,
+      population TEXT,
+      units TEXT,
+      param_type TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS outcome_analyses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      outcome_id INTEGER,
+      non_inferiority_type TEXT,
+      p_value TEXT,
+      p_value_modifier TEXT,
+      method TEXT,
+      param_type TEXT,
+      param_value TEXT,
+      ci_percent REAL,
+      ci_lower_limit TEXT,
+      ci_upper_limit TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS result_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      ctgov_group_code TEXT,
+      result_type TEXT,
+      title TEXT,
+      description TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS baseline_measurements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      result_group_id TEXT,
+      ctgov_group_code TEXT,
+      title TEXT,
+      units TEXT,
+      param_type TEXT,
+      param_value_num REAL,
+      category TEXT,
+      classification TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS design_outcomes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      outcome_type TEXT,
+      measure TEXT,
+      time_frame TEXT,
+      description TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS design_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      group_type TEXT,
+      title TEXT,
+      description TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nct_id TEXT NOT NULL,
+      event TEXT,
+      event_date_type TEXT,
+      event_date TEXT
+    );
+
     -- Metadata
     CREATE TABLE IF NOT EXISTS _meta (
       key TEXT PRIMARY KEY,
@@ -368,6 +467,80 @@ async function main() {
     ); }
   );
 
+  // ── Lifecycle tables ────────────────────────────────────────────────────────
+
+  // milestones (participant flow through stages)
+  const insMile = db.prepare(`INSERT INTO milestones (nct_id, result_group_id, ctgov_group_code, title, period, count) VALUES (?,?,?,?,?,?)`);
+  await ingest("milestones",
+    `SELECT nct_id, result_group_id::text, ctgov_group_code, title, period, count FROM milestones WHERE count > 0 ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM milestones WHERE count > 0`,
+    (rows) => { for (const r of rows) insMile.run(r.nct_id, r.result_group_id, r.ctgov_group_code, r.title, r.period, parseInt(r.count)); }
+  );
+
+  // reported_events (adverse events — 6.5M rows, filter to subjects_affected > 0)
+  const insEvt = db.prepare(`INSERT INTO reported_events (nct_id, result_group_id, ctgov_group_code, event_type, default_assessment, organ_system, adverse_event_term, subjects_affected, subjects_at_risk) VALUES (?,?,?,?,?,?,?,?,?)`);
+  await ingest("reported_events",
+    `SELECT nct_id, result_group_id::text, ctgov_group_code, event_type, default_assessment, organ_system, adverse_event_term, subjects_affected, subjects_at_risk FROM reported_events WHERE subjects_affected > 0 ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM reported_events WHERE subjects_affected > 0`,
+    (rows) => { for (const r of rows) insEvt.run(r.nct_id, r.result_group_id, r.ctgov_group_code, r.event_type, r.default_assessment, r.organ_system, r.adverse_event_term, parseInt(r.subjects_affected || 0), parseInt(r.subjects_at_risk || 0)); }
+  );
+
+  // outcomes (descriptions of measured endpoints)
+  const insOut = db.prepare(`INSERT INTO outcomes (nct_id, outcome_type, title, description, time_frame, population, units, param_type) VALUES (?,?,?,?,?,?,?,?)`);
+  await ingest("outcomes",
+    `SELECT nct_id, outcome_type, title, description, time_frame, population, units, param_type FROM outcomes ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM outcomes`,
+    (rows) => { for (const r of rows) insOut.run(r.nct_id, r.outcome_type, r.title, r.description, r.time_frame, r.population, r.units, r.param_type); }
+  );
+
+  // outcome_analyses (statistical results)
+  const insOA = db.prepare(`INSERT INTO outcome_analyses (nct_id, outcome_id, non_inferiority_type, p_value, p_value_modifier, method, param_type, param_value, ci_percent, ci_lower_limit, ci_upper_limit) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+  await ingest("outcome_analyses",
+    `SELECT nct_id, outcome_id, non_inferiority_type, p_value, p_value_modifier, method, param_type, param_value, ci_percent, ci_lower_limit, ci_upper_limit FROM outcome_analyses ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM outcome_analyses`,
+    (rows) => { for (const r of rows) insOA.run(r.nct_id, r.outcome_id, r.non_inferiority_type, r.p_value, r.p_value_modifier, r.method, r.param_type, r.param_value, r.ci_percent ? parseFloat(r.ci_percent) : null, r.ci_lower_limit, r.ci_upper_limit); }
+  );
+
+  // result_groups (arm-level groupings for interpreting outcomes/events)
+  const insRG = db.prepare(`INSERT INTO result_groups (nct_id, ctgov_group_code, result_type, title, description) VALUES (?,?,?,?,?)`);
+  await ingest("result_groups",
+    `SELECT nct_id, ctgov_group_code, result_type, title, description FROM result_groups ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM result_groups`,
+    (rows) => { for (const r of rows) insRG.run(r.nct_id, r.ctgov_group_code, r.result_type, r.title, r.description); }
+  );
+
+  // baseline_measurements (demographics per arm)
+  const insBM = db.prepare(`INSERT INTO baseline_measurements (nct_id, result_group_id, ctgov_group_code, title, units, param_type, param_value_num, category, classification) VALUES (?,?,?,?,?,?,?,?,?)`);
+  await ingest("baseline_measurements",
+    `SELECT nct_id, result_group_id::text, ctgov_group_code, title, units, param_type, param_value_num, category, classification FROM baseline_measurements ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM baseline_measurements`,
+    (rows) => { for (const r of rows) insBM.run(r.nct_id, r.result_group_id, r.ctgov_group_code, r.title, r.units, r.param_type, r.param_value_num ? parseFloat(r.param_value_num) : null, r.category, r.classification); }
+  );
+
+  // design_outcomes (planned endpoints)
+  const insDO = db.prepare(`INSERT INTO design_outcomes (nct_id, outcome_type, measure, time_frame, description) VALUES (?,?,?,?,?)`);
+  await ingest("design_outcomes",
+    `SELECT nct_id, outcome_type, measure, time_frame, description FROM design_outcomes ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM design_outcomes`,
+    (rows) => { for (const r of rows) insDO.run(r.nct_id, r.outcome_type, r.measure, r.time_frame, r.description); }
+  );
+
+  // design_groups (arm structure)
+  const insDG = db.prepare(`INSERT INTO design_groups (nct_id, group_type, title, description) VALUES (?,?,?,?)`);
+  await ingest("design_groups",
+    `SELECT nct_id, group_type, title, description FROM design_groups ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM design_groups`,
+    (rows) => { for (const r of rows) insDG.run(r.nct_id, r.group_type, r.title, r.description); }
+  );
+
+  // pending_results (QC submission events)
+  const insPR = db.prepare(`INSERT INTO pending_results (nct_id, event, event_date_type, event_date) VALUES (?,?,?,?)`);
+  await ingest("pending_results",
+    `SELECT nct_id, event, event_date_type, event_date::text FROM pending_results ORDER BY nct_id`,
+    `SELECT COUNT(*) AS count FROM pending_results`,
+    (rows) => { for (const r of rows) insPR.run(r.nct_id, r.event, r.event_date_type, r.event_date); }
+  );
+
   // ── Build secondary indexes ─────────────────────────────────────────────────
   console.log("[snapshot] building indexes…");
   db.exec(`
@@ -382,6 +555,16 @@ async function main() {
     CREATE INDEX IF NOT EXISTS idx_drop_nct ON drop_withdrawals(nct_id);
     CREATE INDEX IF NOT EXISTS idx_countries_nct ON countries(nct_id);
     CREATE INDEX IF NOT EXISTS idx_cv_duration ON calculated_values(actual_duration);
+    CREATE INDEX IF NOT EXISTS idx_mile_nct ON milestones(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_revt_nct ON reported_events(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_revt_type ON reported_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_out_nct ON outcomes(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_oa_nct ON outcome_analyses(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_rg_nct ON result_groups(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_bm_nct ON baseline_measurements(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_do_nct ON design_outcomes(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_dg_nct ON design_groups(nct_id);
+    CREATE INDEX IF NOT EXISTS idx_pr_nct ON pending_results(nct_id);
   `);
 
   // ── Populate FTS ────────────────────────────────────────────────────────────

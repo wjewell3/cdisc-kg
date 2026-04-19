@@ -5,6 +5,9 @@ import RulesManager from "./RulesManager";
 import InsightPanel from "./InsightPanel";
 import OperationalKPIs from "./OperationalKPIs";
 import StrategicKGQuestions from "./StrategicKGQuestions";
+import MonitorRisk from "./MonitorRisk";
+import CloseTrial from "./CloseTrial";
+import PlanComplexity from "./PlanComplexity";
 import TrialsMap from "./TrialsMap";
 import AskBar from "./AskBar";
 import "./OperationalKPIs.css";
@@ -134,7 +137,7 @@ export default function TrialsPanel() {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
   const [okpiView, setOkpiView] = useState(null); // controlled by AskBar → OperationalKPIs
-  const [subView, setSubView] = useState("overview"); // sub-tab: overview | condition | sponsor | browse
+  const [subView, setSubView] = useState("plan"); // sub-tab: plan | monitor | close | browse
   const okpiRef = useRef(null);
 
   const currentAgg = chartAggData || aggData;
@@ -487,10 +490,10 @@ export default function TrialsPanel() {
       {/* ── Sub-tab navigation ─────────────────────────────────── */}
       <div className="sub-tab-bar">
         {[
-          { key: "overview",  label: "Overview",          icon: "📊" },
-          { key: "condition", label: "Assess Condition",  icon: "🧬" },
-          { key: "sponsor",   label: "Assess Sponsor",    icon: "🏢" },
-          { key: "browse",    label: "Browse Trials",     icon: "📋" },
+          { key: "plan",    label: "Plan Trial",    icon: "🎯" },
+          { key: "monitor", label: "Monitor Risk",  icon: "⚠️" },
+          { key: "close",   label: "Close Trial",   icon: "✅" },
+          { key: "browse",  label: "Browse Trials",  icon: "📋" },
         ].map(t => (
           <button
             key={t.key}
@@ -569,9 +572,9 @@ export default function TrialsPanel() {
                   </span>
                 </div>
               <div className="results-layout">
-                {/* ── Overview sub-tab ──────────────────────────────── */}
-                {subView === "overview" && (<>
-                <StrategicKGQuestions showOnly={["kq3","kq4"]} hideHeader />
+                {/* ── Plan Trial sub-tab ────────────────────────────── */}
+                {subView === "plan" && (<>
+                <StrategicKGQuestions showOnly={["kq3","kq4","eq2","eq1","eq3","path"]} hideHeader />
 
                 {/* Charts — full width above results */}
                 <TrialsCharts
@@ -603,22 +606,36 @@ export default function TrialsPanel() {
                     setChartFilters(prev => prev.filter(f => f.field !== "country"));
                   }}
                 />
-                </>)}
 
-                {/* ── Assess Condition sub-tab ──────────────────────── */}
-                {subView === "condition" && (<>
-                <StrategicKGQuestions showOnly={["eq2","path"]} hideHeader />
+                {/* Feasibility & complexity */}
+                <PlanComplexity filterParams={okpiFilterParams} />
+
+                {/* Operational KPIs (all views) */}
                 <div ref={okpiRef}>
-                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} showViews={["failure","enrollment","geography"]} />
+                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
                 </div>
                 </>)}
 
-                {/* ── Assess Sponsor sub-tab ────────────────────────── */}
-                {subView === "sponsor" && (<>
-                <StrategicKGQuestions showOnly={["eq1","eq3"]} hideHeader />
-                <div ref={okpiRef}>
-                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} showViews={["sponsors"]} />
+                {/* ── Monitor Risk sub-tab ──────────────────────────── */}
+                {subView === "monitor" && (<>
+                <MonitorRisk filterParams={okpiFilterParams} />
+
+                {/* Roadmap gap callout */}
+                <div className="monitor-gap-callout">
+                  <div className="gap-callout-title">📡 Roadmap: Real-Time Monitoring Requires</div>
+                  <div className="gap-callout-items">
+                    <span className="gap-item">Enrollment velocity (CTMS)</span>
+                    <span className="gap-item">Screen failure rates (EDC)</span>
+                    <span className="gap-item">Protocol deviations (EDC)</span>
+                    <span className="gap-item">Site activation timeline (CTMS)</span>
+                  </div>
+                  <div className="gap-callout-note">Registry data provides retrospective risk signals. Live monitoring requires EDC/CTMS integration — scoped as external data partnership workstream.</div>
                 </div>
+                </>)}
+
+                {/* ── Close Trial sub-tab ───────────────────────────── */}
+                {subView === "close" && (<>
+                <CloseTrial filterParams={okpiFilterParams} />
                 </>)}
 
                 {/* ── Browse Trials sub-tab ─────────────────────────── */}
