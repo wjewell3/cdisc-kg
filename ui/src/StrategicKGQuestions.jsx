@@ -63,6 +63,7 @@ function trialsApiBase() {
 }
 
 export default function StrategicKGQuestions() {
+  const [expanded, setExpanded] = useState(false);
   const [active, setActive] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -162,12 +163,14 @@ export default function StrategicKGQuestions() {
 
   return (
     <div className="skg-section">
-      <div className="skg-header">
+      <div className="skg-header skg-header-toggle" onClick={() => setExpanded(e => !e)} role="button" tabIndex={0} onKeyDown={e => e.key === "Enter" && setExpanded(x => !x)}>
         <span className="skg-badge">KG</span>
-        <span className="skg-title">Strategic Questions</span>
-        <span className="skg-subtitle">Questions answered by traversing relationships between trials, sponsors, conditions, and interventions</span>
+        <span className="skg-title">Knowledge Graph Exploration</span>
+        <span className="skg-subtitle">Strategic questions powered by relationship traversal across trials, sponsors, conditions, and interventions</span>
+        <span className={`skg-chevron${expanded ? " skg-chevron-open" : ""}`}>▸</span>
       </div>
 
+      {expanded && (<>
       <div className="skg-buttons">
         {KG_QUESTIONS.map((q) => (
           <button
@@ -250,6 +253,7 @@ export default function StrategicKGQuestions() {
 
       {/* Other results */}
       {data && !loading && <SKGResult data={data} />}
+      </>)}
     </div>
   );
 }

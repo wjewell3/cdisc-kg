@@ -15,6 +15,24 @@
   flex-wrap: wrap;
 }
 
+.skg-header-toggle {
+  cursor: pointer;
+  margin-bottom: 0;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+.skg-header-toggle:hover { opacity: 0.85; }
+
+.skg-chevron {
+  font-size: 14px;
+  color: #8b949e;
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+.skg-chevron-open {
+  transform: rotate(90deg);
+}
+
 .skg-badge {
   font-size: 9px;
   font-weight: 700;

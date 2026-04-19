@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef, Fragment } from "react";
-import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, TRIAL_QUERIES, FILTER_CATALOG } from "./trialsEngine";
+import { resolveTrialQuery, executeTrialQuery, executeTrialAgg, executeSponsorSearch, executeConditionSearch, executeInterventionSearch, FILTER_CATALOG } from "./trialsEngine";
 import TrialsCharts, { computeStats } from "./TrialsCharts";
 import RulesManager from "./RulesManager";
 import InsightPanel from "./InsightPanel";
@@ -120,7 +120,6 @@ export default function TrialsPanel() {
   const [results, setResults] = useState(null);
   const [selectedTrial, setSelectedTrial] = useState(null);
   const [error, setError] = useState(null);
-  const [activeQuery, setActiveQuery] = useState("");
   const [chartFilters, setChartFilters] = useState([]); // [{ field, value }, ...]
   const [activeResolutions, setActiveResolutions] = useState([]);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
@@ -132,7 +131,6 @@ export default function TrialsPanel() {
   const [displayCount, setDisplayCount] = useState(25);
   const [intelligence, setIntelligence] = useState(null); // { data, loading, error }
   const [intelStep, setIntelStep] = useState(0);
-  const [searchFocused, setSearchFocused] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
   const [okpiView, setOkpiView] = useState(null); // controlled by AskBar → OperationalKPIs
@@ -319,7 +317,6 @@ export default function TrialsPanel() {
 
   const runQuery = useCallback(async (text) => {
     setQuery(text);
-    setActiveQuery(text);
     setSelectedTrial(null);
     setError(null);
     setShowFilterPicker(false);
@@ -354,16 +351,6 @@ export default function TrialsPanel() {
       setStep("results");
     }
   }, []);
-
-  const handlePreset = useCallback((q) => { setSearchFocused(false); runQuery(q.text); }, [runQuery]);
-
-  const handleSubmit = useCallback(
-    (e) => {
-      e.preventDefault();
-      if (query.trim()) runQuery(query);
-    },
-    [query, runQuery]
-  );
 
   const filteredTrials = useMemo(() => {
     // chartResults takes priority — real server-filtered rows when chart filters are active
@@ -415,7 +402,6 @@ export default function TrialsPanel() {
     setResults(null);
     setSelectedTrial(null);
     setError(null);
-    setActiveQuery("");
     setStep("question");
     setQuery("");
     setResolutions([]);
@@ -497,57 +483,7 @@ export default function TrialsPanel() {
         onScrollToOkpi={handleAskScrollOkpi}
       />
 
-      {/* ── Strategic KG Questions — top of page, not buried ──────── */}
-      <StrategicKGQuestions />
-
       <div className="trials-body">
-
-        {/* ── Section 1: Search + preset queries ───────────────────────── */}
-        <div className="trials-section compact-section">
-          <div className="section-header">
-            <div className="section-icon">💬</div>
-            <h2>Search Trials</h2>
-            {step !== "question" && (
-              <button className="reset-btn" onClick={reset}>Clear</button>
-            )}
-          </div>
-
-          <div className="search-wrap">
-            <form onSubmit={handleSubmit} className="query-form" style={{ margin: 0 }}>
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-                placeholder='Search trials — e.g., "Phase 3 Alzheimer trials" or "Recruiting breast cancer immunotherapy"'
-                className="query-input"
-              />
-              <button type="submit" className="query-submit" disabled={!query.trim()}>
-                Search →
-              </button>
-            </form>
-
-            {/* Preset queries — shown as dropdown when search box is focused */}
-            {searchFocused && (
-              <div className="preset-dropdown">
-                {TRIAL_QUERIES.filter(q => !q.isGraph).map((q) => (
-                  <button
-                    key={q.id}
-                    className={`preset-dropdown-item ${activeQuery === q.text ? "preset-card-active" : ""}`}
-                    onMouseDown={(e) => { e.preventDefault(); handlePreset(q); }}
-                  >
-                    <span className="preset-text">"{q.text}"</span>
-                    <span className="preset-desc">{q.description}</span>
-                    <div className="preset-tags">
-                      {q.tags.map((t) => <span key={t} className="preset-tag">{t}</span>)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Active filter pills */}
         {(chartFilters.length > 0 || activeResolutions.length > 0) && (
@@ -648,6 +584,9 @@ export default function TrialsPanel() {
                 <div ref={okpiRef}>
                   <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
                 </div>
+
+                {/* ── Knowledge Graph Exploration ──────────────────── */}
+                <StrategicKGQuestions />
 
                 {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">
