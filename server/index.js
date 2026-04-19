@@ -3210,6 +3210,9 @@ app.post("/api/ask", async (req, res) => {
 // Adverse event summary by condition/sponsor/intervention — SAE rates, organ systems
 app.get("/api/safety-signals", async (req, res) => {
   const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+  if (!condition && !phase && !sponsor && !intervention) {
+    return res.status(400).json({ error: "At least one filter (condition, phase, sponsor, or intervention) is required for safety signal analysis — the reported_events table is too large to scan unfiltered." });
+  }
   const pool = getPgPool();
   if (!pool) return res.status(503).json({ error: "Database unavailable" });
   try {
@@ -3261,11 +3264,11 @@ app.get("/api/safety-signals", async (req, res) => {
 
     const [{ rows: [summary] }, { rows: byType }, { rows: byOrgan }, { rows: topSAEs }, { rows: condSAE }] =
       await Promise.all([
-        pool.query(countSql, params),
-        pool.query(typeSql, params),
-        pool.query(organSql, params),
-        pool.query(saeSql, params),
-        pool.query(condSaeSql, params),
+        pool.query({ text: countSql, values: params, statement_timeout: 120000 }),
+        pool.query({ text: typeSql, values: params, statement_timeout: 120000 }),
+        pool.query({ text: organSql, values: params, statement_timeout: 120000 }),
+        pool.query({ text: saeSql, values: params, statement_timeout: 120000 }),
+        pool.query({ text: condSaeSql, values: params, statement_timeout: 120000 }),
       ]);
 
     res.json({
