@@ -3578,6 +3578,177 @@ app.get("/api/trial-complexity", async (req, res) => {
   }
 });
 
+// ── Profile Cohort Analysis (Forecast & Feasibility) ─────────────────────────
+app.get("/api/profile-cohort", async (req, res) => {
+  const {
+    condition = "", phase = "", allocation = "", masking = "",
+    intervention_model = "", primary_purpose = "", age_group = "",
+    gender = "", healthy_volunteers = "", geography = "",
+    multi_site = "", intervention_type = ""
+  } = req.query;
+
+  if (!condition && !phase && !intervention_type) {
+    return res.status(400).json({ error: "At least condition, phase, or intervention_type required." });
+  }
+
+  // ── SQLite path ──
+  if (db) {
+    try {
+      const where = [];
+      const params = [];
+
+      const from = `FROM studies s
+        JOIN designs d ON d.nct_id = s.nct_id
+        JOIN eligibilities e ON e.nct_id = s.nct_id
+        JOIN calculated_values cv ON cv.nct_id = s.nct_id`;
+
+      if (condition) {
+        const vals = condition.split(",").map(c => c.trim()).filter(Boolean);
+        const sub = vals.map(() => `EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name LIKE ?)`).join(" OR ");
+        where.push(`(${sub})`);
+        for (const v of vals) params.push(`%${v}%`);
+      }
+      if (phase) {
+        const phases = phase.split(",").map(p => p.trim()).filter(Boolean);
+        where.push(`s.phase IN (${phases.map(() => "?").join(",")})`);
+        params.push(...phases);
+      }
+      if (allocation) { where.push(`d.allocation = ?`); params.push(allocation); }
+      if (masking) { where.push(`d.masking LIKE ?`); params.push(`%${masking}%`); }
+      if (intervention_model) { where.push(`d.intervention_model = ?`); params.push(intervention_model); }
+      if (primary_purpose) { where.push(`d.primary_purpose = ?`); params.push(primary_purpose); }
+      if (gender && gender !== "All") { where.push(`e.gender = ?`); params.push(gender); }
+      if (healthy_volunteers) { where.push(`e.healthy_volunteers = ?`); params.push(healthy_volunteers); }
+      if (age_group) {
+        if (age_group === "child") where.push(`e.child = 1`);
+        else if (age_group === "adult") where.push(`e.adult = 1`);
+        else if (age_group === "older_adult") where.push(`e.older_adult = 1`);
+      }
+      if (geography === "us_only") where.push(`cv.has_us_facility = 1`);
+      else if (geography === "international") where.push(`(cv.has_us_facility = 0 OR cv.has_us_facility IS NULL)`);
+      if (multi_site === "single") where.push(`cv.has_single_facility = 1`);
+      else if (multi_site === "multi") where.push(`(cv.has_single_facility = 0 OR cv.has_single_facility IS NULL)`);
+      if (intervention_type) {
+        where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.intervention_type = ?)`);
+        params.push(intervention_type);
+      }
+
+      const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+      const cohortSize = db.prepare(`SELECT COUNT(DISTINCT s.nct_id) AS cnt ${from} ${wc}`).get(...params)?.cnt || 0;
+      if (cohortSize === 0) {
+        return res.json({ cohort_size: 0, enrollment: null, duration_months: null, termination: null, site_footprint: null });
+      }
+
+      // Helper: percentiles via ordered OFFSET (SQLite lacks PERCENTILE_CONT)
+      const pctiles = (expr, extraFilter) => {
+        const fw = wc
+          ? `${wc} AND ${extraFilter}`
+          : `WHERE ${extraFilter}`;
+        const n = db.prepare(`SELECT COUNT(*) AS cnt ${from} ${fw}`).get(...params)?.cnt || 0;
+        if (n < 5) return null;
+        const pct = (p) => db.prepare(`SELECT ${expr} AS val ${from} ${fw} ORDER BY ${expr} LIMIT 1 OFFSET ?`).get(...params, Math.floor(n * p))?.val ?? null;
+        const mean = db.prepare(`SELECT ROUND(AVG(${expr}), 1) AS m ${from} ${fw}`).get(...params)?.m ?? null;
+        return { p10: pct(0.10), p25: pct(0.25), p50: pct(0.50), p75: pct(0.75), p90: pct(0.90), mean, n };
+      };
+
+      const enrollment = pctiles("s.enrollment", "s.enrollment IS NOT NULL AND s.enrollment > 0");
+      const duration_months = pctiles("cv.actual_duration", "cv.actual_duration IS NOT NULL AND cv.actual_duration > 0");
+
+      // Termination
+      const terminated = db.prepare(
+        `SELECT COUNT(DISTINCT s.nct_id) AS cnt ${from} ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'TERMINATED'`
+      ).get(...params)?.cnt || 0;
+      const stopReasons = db.prepare(
+        `SELECT s.why_stopped AS reason, COUNT(*) AS count ${from}
+         ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'TERMINATED' AND s.why_stopped IS NOT NULL AND s.why_stopped != ''
+         GROUP BY s.why_stopped ORDER BY count DESC LIMIT 8`
+      ).all(...params);
+
+      // Site footprint
+      const sitePctiles = pctiles("cv.number_of_facilities", "cv.number_of_facilities IS NOT NULL AND cv.number_of_facilities > 0");
+      const usTrials = db.prepare(
+        `SELECT COUNT(DISTINCT s.nct_id) AS cnt ${from} ${wc ? wc + " AND" : "WHERE"} cv.has_us_facility = 1`
+      ).get(...params)?.cnt || 0;
+      const topCountries = db.prepare(
+        `SELECT co.name AS country, COUNT(DISTINCT s.nct_id) AS trials
+         ${from} JOIN countries co ON co.nct_id = s.nct_id ${wc}
+         GROUP BY co.name ORDER BY trials DESC LIMIT 10`
+      ).all(...params);
+
+      return res.json({
+        cohort_size: cohortSize,
+        enrollment,
+        duration_months,
+        termination: {
+          rate_pct: cohortSize > 0 ? parseFloat(((terminated / cohortSize) * 100).toFixed(1)) : 0,
+          terminated_count: terminated,
+          top_reasons: stopReasons,
+        },
+        site_footprint: {
+          median_sites: sitePctiles?.p50 ?? null,
+          p25_sites: sitePctiles?.p25 ?? null,
+          p75_sites: sitePctiles?.p75 ?? null,
+          us_pct: cohortSize > 0 ? parseFloat(((usTrials / cohortSize) * 100).toFixed(1)) : 0,
+          top_countries: topCountries,
+        },
+      });
+    } catch (e) {
+      console.error("[profile-cohort] sqlite:", e.message);
+    }
+  }
+
+  // ── PG fallback ──
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Database unavailable" });
+  try {
+    const params = []; const where = []; let p = 1;
+    if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
+    if (phase) { where.push(`s.phase = $${p}`); params.push(phase); p++; }
+    if (allocation) { where.push(`d.allocation = $${p}`); params.push(allocation); p++; }
+    if (masking) { where.push(`d.masking ILIKE $${p}`); params.push(`%${masking}%`); p++; }
+    if (intervention_model) { where.push(`d.intervention_model = $${p}`); params.push(intervention_model); p++; }
+    if (primary_purpose) { where.push(`d.primary_purpose = $${p}`); params.push(primary_purpose); p++; }
+    if (gender && gender !== "All") { where.push(`e.gender = $${p}`); params.push(gender); p++; }
+    if (healthy_volunteers) { where.push(`e.healthy_volunteers = $${p}`); params.push(healthy_volunteers); p++; }
+    if (age_group === "child") where.push(`e.child = true`);
+    else if (age_group === "adult") where.push(`e.adult = true`);
+    else if (age_group === "older_adult") where.push(`e.older_adult = true`);
+    if (geography === "us_only") where.push(`cv.has_us_facility = true`);
+    else if (geography === "international") where.push(`(cv.has_us_facility = false OR cv.has_us_facility IS NULL)`);
+    if (multi_site === "single") where.push(`cv.has_single_facility = true`);
+    else if (multi_site === "multi") where.push(`(cv.has_single_facility = false OR cv.has_single_facility IS NULL)`);
+    if (intervention_type) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.intervention_type = $${p})`); params.push(intervention_type); p++; }
+
+    const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const from = `FROM studies s JOIN designs d ON d.nct_id = s.nct_id JOIN eligibilities e ON e.nct_id = s.nct_id JOIN calculated_values cv ON cv.nct_id = s.nct_id`;
+    const cohortCte = `WITH cohort AS (SELECT DISTINCT s.nct_id ${from} ${wc})`;
+
+    const { rows: [{ cnt: cohortSize }] } = await pool.query({ text: `${cohortCte} SELECT COUNT(*)::int AS cnt FROM cohort`, values: params, statement_timeout: 60000 });
+    if (cohortSize === 0) return res.json({ cohort_size: 0, enrollment: null, duration_months: null, termination: null, site_footprint: null });
+
+    const { rows: [enroll] } = await pool.query({ text: `${cohortCte} SELECT ROUND(PERCENTILE_CONT(0.10) WITHIN GROUP (ORDER BY s.enrollment)::numeric) AS p10, ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY s.enrollment)::numeric) AS p25, ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY s.enrollment)::numeric) AS p50, ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY s.enrollment)::numeric) AS p75, ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY s.enrollment)::numeric) AS p90, ROUND(AVG(s.enrollment)::numeric, 1) AS mean, COUNT(*)::int AS n FROM studies s WHERE s.nct_id IN (SELECT nct_id FROM cohort) AND s.enrollment IS NOT NULL AND s.enrollment > 0`, values: params, statement_timeout: 60000 });
+    const { rows: [dur] } = await pool.query({ text: `${cohortCte} SELECT ROUND(PERCENTILE_CONT(0.10) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p10, ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p25, ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p50, ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p75, ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p90, ROUND(AVG(cv.actual_duration)::numeric, 1) AS mean, COUNT(*)::int AS n FROM calculated_values cv WHERE cv.nct_id IN (SELECT nct_id FROM cohort) AND cv.actual_duration IS NOT NULL AND cv.actual_duration > 0`, values: params, statement_timeout: 60000 });
+    const { rows: [term] } = await pool.query({ text: `${cohortCte} SELECT COUNT(*)::int AS cnt FROM studies s WHERE s.nct_id IN (SELECT nct_id FROM cohort) AND s.overall_status = 'TERMINATED'`, values: params, statement_timeout: 60000 });
+    const { rows: stopReasons } = await pool.query({ text: `${cohortCte} SELECT s.why_stopped AS reason, COUNT(*)::int AS count FROM studies s WHERE s.nct_id IN (SELECT nct_id FROM cohort) AND s.overall_status = 'TERMINATED' AND s.why_stopped IS NOT NULL AND s.why_stopped != '' GROUP BY s.why_stopped ORDER BY count DESC LIMIT 8`, values: params, statement_timeout: 60000 });
+    const { rows: [sites] } = await pool.query({ text: `${cohortCte} SELECT ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY cv.number_of_facilities)::numeric) AS median_sites, ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY cv.number_of_facilities)::numeric) AS p25_sites, ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY cv.number_of_facilities)::numeric) AS p75_sites FROM calculated_values cv WHERE cv.nct_id IN (SELECT nct_id FROM cohort) AND cv.number_of_facilities IS NOT NULL AND cv.number_of_facilities > 0`, values: params, statement_timeout: 60000 });
+    const { rows: [{ cnt: usCnt }] } = await pool.query({ text: `${cohortCte} SELECT COUNT(*)::int AS cnt FROM calculated_values cv WHERE cv.nct_id IN (SELECT nct_id FROM cohort) AND cv.has_us_facility = true`, values: params, statement_timeout: 60000 });
+    const { rows: topCountries } = await pool.query({ text: `${cohortCte} SELECT co.name AS country, COUNT(DISTINCT co.nct_id)::int AS trials FROM countries co WHERE co.nct_id IN (SELECT nct_id FROM cohort) GROUP BY co.name ORDER BY trials DESC LIMIT 10`, values: params, statement_timeout: 60000 });
+
+    const pf = (v) => v !== null && v !== undefined ? parseFloat(v) : null;
+    res.json({
+      cohort_size: cohortSize,
+      enrollment: enroll?.n > 4 ? { p10: pf(enroll.p10), p25: pf(enroll.p25), p50: pf(enroll.p50), p75: pf(enroll.p75), p90: pf(enroll.p90), mean: pf(enroll.mean), n: enroll.n } : null,
+      duration_months: dur?.n > 4 ? { p10: pf(dur.p10), p25: pf(dur.p25), p50: pf(dur.p50), p75: pf(dur.p75), p90: pf(dur.p90), mean: pf(dur.mean), n: dur.n } : null,
+      termination: { rate_pct: cohortSize > 0 ? parseFloat(((term.cnt / cohortSize) * 100).toFixed(1)) : 0, terminated_count: term.cnt, top_reasons: stopReasons },
+      site_footprint: { median_sites: pf(sites?.median_sites), p25_sites: pf(sites?.p25_sites), p75_sites: pf(sites?.p75_sites), us_pct: cohortSize > 0 ? parseFloat(((usCnt / cohortSize) * 100).toFixed(1)) : 0, top_countries: topCountries },
+    });
+  } catch (e) {
+    console.error("[profile-cohort] pg:", e.message);
+    res.status(500).json({ error: "Query failed" });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

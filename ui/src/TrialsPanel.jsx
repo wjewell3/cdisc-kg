@@ -10,6 +10,8 @@ import CloseTrial from "./CloseTrial";
 import PlanComplexity from "./PlanComplexity";
 import TrialsMap from "./TrialsMap";
 import AskBar from "./AskBar";
+import ProfileBuilder, { EMPTY_PROFILE } from "./ProfileBuilder";
+import ForecastPriors, { ForecastPriorsDisplay } from "./ForecastPriors";
 import "./OperationalKPIs.css";
 import "./StrategicKGQuestions.css";
 import { useDataQuality } from "./useDataQuality";
@@ -139,6 +141,8 @@ export default function TrialsPanel() {
   const [okpiView, setOkpiView] = useState(null); // controlled by AskBar → OperationalKPIs
   const [subView, setSubView] = useState("plan"); // sub-tab: plan | monitor | close | browse
   const okpiRef = useRef(null);
+  const [profile, setProfile] = useState({ ...EMPTY_PROFILE });
+  const { data: cohortData, loading: cohortLoading, error: cohortError, fetchCohort } = ForecastPriors({ profile });
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -438,6 +442,14 @@ export default function TrialsPanel() {
     return { condition, phase, sponsor, country };
   }, [okpiFilterParams]);
 
+  // Profile-derived filter params for Risk/Readiness tabs
+  const profileFilterParams = useMemo(() => {
+    const p = {};
+    if (profile.condition) p.condition = profile.condition;
+    if (profile.phase) p.phase = profile.phase;
+    return p;
+  }, [profile]);
+
   // Handle entity insight — clicking a chart bar label opens the InsightPanel
   const handleEntityInsight = useCallback((type, name) => {
     setInsightTarget({ type, name });
@@ -487,10 +499,13 @@ export default function TrialsPanel() {
         onScrollToOkpi={handleAskScrollOkpi}
       />
 
-      {/* ── Product-suite narrative ──────────────────────────────── */}
-      <div className="product-suite-banner">
-        <span className="psb-text">Historical trial-data priors across 580k+ studies, organized by three capability areas PPD commercializes as digital products.</span>
-      </div>
+      {/* ── Profile Builder (persists across tabs) ────────────────── */}
+      <ProfileBuilder
+        profile={profile}
+        onChange={setProfile}
+        onApply={fetchCohort}
+        loading={cohortLoading}
+      />
 
       {/* ── Sub-tab navigation ─────────────────────────────────── */}
       <div className="sub-tab-bar">
@@ -577,222 +592,85 @@ export default function TrialsPanel() {
                   </span>
                 </div>
               <div className="results-layout">
-                {/* ── Forecast & Feasibility (mirrors Clinical Trial Forecasting Suite) ── */}
+                {/* ── Forecast & Feasibility — Profile-Driven Priors ── */}
                 {subView === "plan" && (<>
                 <div className="product-tab-banner forecast-banner">
                   <div className="ptb-product">📈 Clinical Trial Forecasting Suite</div>
-                  <div className="ptb-desc">Historical evidence base for enrollment forecasting, site selection, and milestone prediction — the trial-data priors that feed forecasting models.</div>
-                  <div className="ptb-questions">
-                    <span className="ptb-q">Can I hit my timeline?</span>
-                    <span className="ptb-q">What's a realistic enrollment rate?</span>
-                    <span className="ptb-q">Which countries/sites deliver?</span>
-                    <span className="ptb-q">What's my delay risk?</span>
-                  </div>
+                  <div className="ptb-desc">Historical evidence base for enrollment forecasting, site selection, and milestone prediction — distribution priors computed over trials matching your profile.</div>
                 </div>
-
-                {/* § Cohort context — what does the trial landscape look like for my profile? */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">1</span>
-                    <div>
-                      <h3>Cohort Context</h3>
-                      <p>Filter to your proposed trial profile. Every downstream forecast is a prior computed over this cohort.</p>
-                    </div>
-                  </div>
-                  <TrialsCharts
-                    trials={(results || baseResults).results}
-                    aggData={currentAgg}
-                    baseAggData={aggData}
-                    stats={panelStats}
-                    baselineStats={panelBaseStats}
-                    hasFilteredStats={chartFilters.length > 0}
-                    activeFilters={chartFilters}
-                    onFilter={handleChartFilter}
-                    onEntityInsight={handleEntityInsight}
-                    fetchSponsors={fetchSponsors}
-                    fetchConditions={fetchConditions}
-                    fetchInterventions={fetchInterventions}
-                    normalizeAggData={normalizeAggData}
-                  />
-                </div>
-
-                {/* § Competitive & repurposing context — KG */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">2</span>
-                    <div>
-                      <h3>Where are trials like mine running?</h3>
-                      <p>Knowledge graph queries: competitive landscape, sponsor portfolios, intervention-repurposing paths.</p>
-                    </div>
-                  </div>
-                  <StrategicKGQuestions showOnly={["eq2","eq3","path"]} hideHeader />
-                </div>
-
-                {/* § Enrollment forecasting prior — HEADLINE */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">3</span>
-                    <div>
-                      <h3>Enrollment Forecasting Priors</h3>
-                      <p>Ambition vs actuals by design type. The core input to any enrollment forecast — how often does enrollment hit the planned target for trials matching your profile?</p>
-                    </div>
-                  </div>
-                  <div ref={okpiRef}>
-                    <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView || "enrollment"} showViews={["enrollment"]} />
-                  </div>
-                </div>
-
-                {/* § Duration & design complexity */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">4</span>
-                    <div>
-                      <h3>Duration & Complexity Priors</h3>
-                      <p>P25–P75 duration, arm counts, planned outcomes, and design mix — the complexity features that drive forecast uncertainty.</p>
-                    </div>
-                  </div>
-                  <PlanComplexity filterParams={okpiFilterParams} />
-                </div>
-
-                {/* § Site selection — geography */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">5</span>
-                    <div>
-                      <h3>Site Selection Priors</h3>
-                      <p>Country/region distribution, US-vs-intl split, and top-volume sites for your cohort. Foundation for site-selection model training.</p>
-                    </div>
-                  </div>
-                  <TrialsMap
-                    filterParams={geoFilterParams}
-                    onCountryFilter={(country) => {
-                      setChartFilters(prev => {
-                        const without = prev.filter(f => f.field !== "country");
-                        return [...without, { field: "country", value: country }];
-                      });
-                    }}
-                    onCountryClear={() => {
-                      setChartFilters(prev => prev.filter(f => f.field !== "country"));
-                    }}
-                  />
-                  <OperationalKPIs filterParams={okpiFilterParams} showViews={["geography"]} />
-                </div>
-
-                {/* § Delay risk priors — failure analysis REFRAMED for forecasting */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">6</span>
-                    <div>
-                      <h3>Delay & Termination Risk Priors</h3>
-                      <p>What fraction of trials like mine terminate early, and why? A prior for delay-risk forecasting models.</p>
-                    </div>
-                  </div>
-                  <OperationalKPIs filterParams={okpiFilterParams} showViews={["failure"]} />
-                </div>
+                <ForecastPriorsDisplay data={cohortData} loading={cohortLoading} error={cohortError} />
                 </>)}
 
-                {/* ── Risk & Decisioning (mirrors Clinical Decision Suite) ───── */}
+                {/* ── Risk & Decisioning ───────────────────────────────── */}
                 {subView === "monitor" && (<>
                 <div className="product-tab-banner risk-banner">
                   <div className="ptb-product">⚠️ Clinical Decision Suite</div>
-                  <div className="ptb-desc">Risk prediction and operational oversight aligned with ICH E6(R3) risk-based quality management — the intelligence layer behind real-time decisioning.</div>
-                  <div className="ptb-questions">
-                    <span className="ptb-q">Are safety signals emerging?</span>
-                    <span className="ptb-q">Is participant flow on track?</span>
-                    <span className="ptb-q">What's failing mid-trial in similar cohorts?</span>
-                    <span className="ptb-q">Which sponsors carry operational risk?</span>
-                  </div>
+                  <div className="ptb-desc">Risk prediction and operational oversight — safety signals, failure patterns, and sponsor track records for trials matching your profile.</div>
                 </div>
 
-                {/* § Safety oversight — HEADLINE for Decision Suite */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">1</span>
-                    <div>
-                      <h3>Safety Signal Oversight</h3>
-                      <p>AE rates, organ-system concentration, and top serious events for trials in your cohort. Aligns with ICH E6(R3) RBQM principles for risk-based safety monitoring.</p>
-                    </div>
+                {(!profile.condition && !profile.phase && !profile.intervention_type) ? (
+                  <div className="fp-empty">
+                    <div className="fp-empty-icon">⚠️</div>
+                    <div className="fp-empty-text">Set a trial profile above to see risk analysis for matching trials.</div>
                   </div>
-                  <MonitorRisk filterParams={okpiFilterParams} />
-                </div>
-
-                {/* § Operational failure patterns */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">2</span>
-                    <div>
-                      <h3>Operational Failure Patterns</h3>
-                      <p>Why similar trials terminate early — stop reasons, condition-level termination rates. A decision-support signal for trials currently in flight.</p>
-                    </div>
-                  </div>
-                  <OperationalKPIs filterParams={okpiFilterParams} showViews={["failure"]} />
-                </div>
-
-                {/* § Sponsor operational risk signal */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">3</span>
-                    <div>
-                      <h3>Sponsor Operational Track Record</h3>
-                      <p>Completion-rate leaderboard for the filtered cohort. Surfaces historical sponsor-level operational risk — an oversight input for active-trial decisioning.</p>
-                    </div>
-                  </div>
-                  <OperationalKPIs filterParams={okpiFilterParams} showViews={["sponsors"]} />
-                </div>
-
-                {/* Roadmap gap callout */}
-                <div className="monitor-gap-callout">
-                  <div className="gap-callout-title">📡 Roadmap: Real-Time Monitoring Requires</div>
-                  <div className="gap-callout-items">
-                    <span className="gap-item">Enrollment velocity (CTMS)</span>
-                    <span className="gap-item">Screen failure rates (EDC)</span>
-                    <span className="gap-item">Protocol deviations (EDC)</span>
-                    <span className="gap-item">Site activation timeline (CTMS)</span>
-                  </div>
-                  <div className="gap-callout-note">Registry data provides retrospective risk signals. Live monitoring requires EDC/CTMS integration — scoped as external data partnership workstream for the DDM to own.</div>
-                </div>
+                ) : (<>
+                <MonitorRisk filterParams={profileFilterParams} />
+                <OperationalKPIs filterParams={profileFilterParams} showViews={["failure"]} />
+                <OperationalKPIs filterParams={profileFilterParams} showViews={["sponsors"]} />
+                </>)}
                 </>)}
 
-                {/* ── Data Readiness (mirrors Intelligent Clinical Suite) ──── */}
+                {/* ── Data Readiness ──────────────────────────────────── */}
                 {subView === "close" && (<>
                 <div className="product-tab-banner readiness-banner">
                   <div className="ptb-product">✅ Intelligent Clinical Suite</div>
-                  <div className="ptb-desc">Predictors of database lock readiness — historical reporting patterns that inform data management workflows and accelerate time from LPLV to DB lock.</div>
-                  <div className="ptb-questions">
-                    <span className="ptb-q">How fast can I reach DB lock?</span>
-                    <span className="ptb-q">Does complexity slow reporting?</span>
-                    <span className="ptb-q">Which sponsors report fastest?</span>
-                    <span className="ptb-q">How complete are outcomes?</span>
-                  </div>
+                  <div className="ptb-desc">Predictors of database lock readiness — historical reporting patterns and complexity-to-readiness correlation for trials matching your profile.</div>
                 </div>
 
-                {/* § Reporting readiness — HEADLINE */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">1</span>
-                    <div>
-                      <h3>Time-to-Report Priors</h3>
-                      <p>For completed trials in your cohort: how many reported results, median months to report, and by-phase / by-sponsor breakdowns. A proxy for time-to-DB-lock until EDC data is partnered.</p>
-                    </div>
+                {(!profile.condition && !profile.phase && !profile.intervention_type) ? (
+                  <div className="fp-empty">
+                    <div className="fp-empty-icon">✅</div>
+                    <div className="fp-empty-text">Set a trial profile above to see data readiness analysis for matching trials.</div>
                   </div>
-                  <CloseTrial filterParams={okpiFilterParams} />
-                </div>
-
-                {/* § Complexity → Readiness correlation — cross-link with Forecast complexity */}
-                <div className="story-section">
-                  <div className="story-header">
-                    <span className="story-num">2</span>
-                    <div>
-                      <h3>Complexity → Readiness Correlation</h3>
-                      <p>Arm counts, planned outcomes, and design complexity for your cohort. More complex trials historically take longer to close — these are the features that feed a DB-lock timing model.</p>
-                    </div>
-                  </div>
-                  <PlanComplexity filterParams={okpiFilterParams} />
-                </div>
+                ) : (<>
+                <CloseTrial filterParams={profileFilterParams} />
+                <PlanComplexity filterParams={profileFilterParams} />
+                </>)}
                 </>)}
 
                 {/* ── Browse Trials sub-tab ─────────────────────────── */}
                 {subView === "browse" && (<>
+                <TrialsCharts
+                  trials={(results || baseResults).results}
+                  aggData={currentAgg}
+                  baseAggData={aggData}
+                  stats={panelStats}
+                  baselineStats={panelBaseStats}
+                  hasFilteredStats={chartFilters.length > 0}
+                  activeFilters={chartFilters}
+                  onFilter={handleChartFilter}
+                  onEntityInsight={handleEntityInsight}
+                  fetchSponsors={fetchSponsors}
+                  fetchConditions={fetchConditions}
+                  fetchInterventions={fetchInterventions}
+                  normalizeAggData={normalizeAggData}
+                />
+                <TrialsMap
+                  filterParams={geoFilterParams}
+                  onCountryFilter={(country) => {
+                    setChartFilters(prev => {
+                      const without = prev.filter(f => f.field !== "country");
+                      return [...without, { field: "country", value: country }];
+                    });
+                  }}
+                  onCountryClear={() => {
+                    setChartFilters(prev => prev.filter(f => f.field !== "country"));
+                  }}
+                />
+                <StrategicKGQuestions showOnly={["eq2","eq3","path"]} hideHeader />
+                <div ref={okpiRef}>
+                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView || "enrollment"} />
+                </div>
                 <div className="results-and-detail">
                 <div className="results-list">
                   {filteredTrials.slice(0, displayCount).map((trial) => (

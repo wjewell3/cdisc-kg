@@ -1,0 +1,233 @@
+/* ── ForecastPriors.css ───────────────────────────────────────────────── */
+
+.forecast-priors {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Cohort badge */
+.fp-cohort-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(72, 187, 120, 0.08);
+  border: 1px solid rgba(72, 187, 120, 0.2);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: #a0aec0;
+}
+.fp-cohort-count {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #48bb78;
+}
+
+/* Panels grid */
+.fp-panels {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+@media (max-width: 900px) {
+  .fp-panels { grid-template-columns: 1fr; }
+}
+
+.fp-panel {
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.2s;
+}
+.fp-panel:hover { border-color: rgba(99, 179, 237, 0.2); }
+.fp-panel-empty {
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 24px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #4a5568;
+  font-size: 0.78rem;
+}
+
+.fp-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fp-panel-header h4 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+.fp-panel-icon { font-size: 1rem; }
+.fp-panel-n {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: #718096;
+  font-weight: 500;
+}
+
+/* Headline metric */
+.fp-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.fp-headline-val {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #63b3ed;
+  line-height: 1;
+}
+.fp-headline-val.fp-val-warn { color: #f6ad55; }
+.fp-headline-unit {
+  font-size: 0.72rem;
+  color: #718096;
+}
+.fp-headline-row {
+  display: flex;
+  gap: 24px;
+}
+
+/* Range bar */
+.fp-range-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fp-range-label {
+  font-size: 0.65rem;
+  color: #718096;
+}
+.fp-range-bar {
+  position: relative;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 5px;
+  overflow: visible;
+}
+.fp-range-whisker {
+  position: absolute;
+  top: 3px;
+  height: 4px;
+  background: rgba(99, 179, 237, 0.15);
+  border-radius: 2px;
+}
+.fp-range-iqr {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(99, 179, 237, 0.35);
+  border-radius: 5px;
+}
+.fp-range-median {
+  position: absolute;
+  top: -2px;
+  width: 3px;
+  height: 14px;
+  background: #63b3ed;
+  border-radius: 1.5px;
+  transform: translateX(-1.5px);
+  z-index: 1;
+}
+.fp-range-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.58rem;
+  color: #4a5568;
+}
+.fp-tick-median {
+  color: #63b3ed;
+  font-weight: 600;
+}
+
+/* Stat row */
+.fp-stat-row {
+  display: flex;
+  gap: 16px;
+  font-size: 0.7rem;
+  color: #718096;
+}
+
+/* Stop reasons / countries */
+.fp-reasons, .fp-countries {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fp-reasons-title {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4a5568;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.fp-reason-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  padding: 2px 0;
+}
+.fp-reason-text {
+  color: #a0aec0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 80%;
+}
+.fp-reason-count {
+  color: #718096;
+  font-weight: 600;
+  font-size: 0.65rem;
+}
+
+/* Empty / Loading / Error states */
+.fp-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: #718096;
+}
+.fp-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+.fp-empty-text { font-size: 0.85rem; margin-bottom: 8px; }
+.fp-empty-hint {
+  font-size: 0.72rem;
+  color: #4a5568;
+}
+.fp-empty-hint em { color: #63b3ed; font-style: normal; }
+
+.fp-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  color: #718096;
+  font-size: 0.82rem;
+}
+.fp-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(99, 179, 237, 0.2);
+  border-top-color: #63b3ed;
+  border-radius: 50%;
+  animation: fp-spin 0.8s linear infinite;
+}
+@keyframes fp-spin { to { transform: rotate(360deg); } }
+
+.fp-error {
+  text-align: center;
+  padding: 24px;
+  color: #f6ad55;
+  font-size: 0.82rem;
+}

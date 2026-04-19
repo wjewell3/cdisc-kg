@@ -20,6 +20,7 @@ const MODE_MAP = {
   "milestone-funnel": "/api/milestone-funnel",
   "results-readiness": "/api/results-readiness",
   "trial-complexity": "/api/trial-complexity",
+  "profile-cohort": "/api/profile-cohort",
 };
 
 export default async function handler(req, res) {
