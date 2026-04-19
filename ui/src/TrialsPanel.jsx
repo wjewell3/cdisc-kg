@@ -134,6 +134,7 @@ export default function TrialsPanel() {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
   const [okpiView, setOkpiView] = useState(null); // controlled by AskBar → OperationalKPIs
+  const [subView, setSubView] = useState("overview"); // sub-tab: overview | condition | sponsor | browse
   const okpiRef = useRef(null);
 
   const currentAgg = chartAggData || aggData;
@@ -483,6 +484,25 @@ export default function TrialsPanel() {
         onScrollToOkpi={handleAskScrollOkpi}
       />
 
+      {/* ── Sub-tab navigation ─────────────────────────────────── */}
+      <div className="sub-tab-bar">
+        {[
+          { key: "overview",  label: "Overview",          icon: "📊" },
+          { key: "condition", label: "Assess Condition",  icon: "🧬" },
+          { key: "sponsor",   label: "Assess Sponsor",    icon: "🏢" },
+          { key: "browse",    label: "Browse Trials",     icon: "📋" },
+        ].map(t => (
+          <button
+            key={t.key}
+            className={`sub-tab${subView === t.key ? " sub-tab-active" : ""}`}
+            onClick={() => setSubView(t.key)}
+          >
+            <span className="sub-tab-icon">{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="trials-body">
 
         {/* Active filter pills */}
@@ -549,8 +569,9 @@ export default function TrialsPanel() {
                   </span>
                 </div>
               <div className="results-layout">
-                {/* ── Knowledge Graph Exploration ──────────────────── */}
-                <StrategicKGQuestions />
+                {/* ── Overview sub-tab ──────────────────────────────── */}
+                {subView === "overview" && (<>
+                <StrategicKGQuestions showOnly={["kq3","kq4"]} hideHeader />
 
                 {/* Charts — full width above results */}
                 <TrialsCharts
@@ -582,13 +603,26 @@ export default function TrialsPanel() {
                     setChartFilters(prev => prev.filter(f => f.field !== "country"));
                   }}
                 />
+                </>)}
 
-                {/* ── Operational KPIs ─────────────────────────────── */}
+                {/* ── Assess Condition sub-tab ──────────────────────── */}
+                {subView === "condition" && (<>
+                <StrategicKGQuestions showOnly={["eq2","path"]} hideHeader />
                 <div ref={okpiRef}>
-                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
+                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} showViews={["failure","enrollment","geography"]} />
                 </div>
+                </>)}
 
-                {/* ── Results list + detail panel row ──────────────────── */}
+                {/* ── Assess Sponsor sub-tab ────────────────────────── */}
+                {subView === "sponsor" && (<>
+                <StrategicKGQuestions showOnly={["eq1","eq3"]} hideHeader />
+                <div ref={okpiRef}>
+                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} showViews={["sponsors"]} />
+                </div>
+                </>)}
+
+                {/* ── Browse Trials sub-tab ─────────────────────────── */}
+                {subView === "browse" && (<>
                 <div className="results-and-detail">
                 <div className="results-list">
                   {filteredTrials.slice(0, displayCount).map((trial) => (
@@ -874,6 +908,7 @@ export default function TrialsPanel() {
                   </div>
                 )}
                 </div>{/* closes results-and-detail */}
+                </>)}
               </div>
               </>
             )}

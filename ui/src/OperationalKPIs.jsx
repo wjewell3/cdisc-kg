@@ -371,8 +371,9 @@ const VIEWS = [
   { key: "geography", label: "Geography", icon: "🌍", question: "Where are the geographic concentrations and gaps in site activation?" },
 ];
 
-export default function OperationalKPIs({ filterParams, initialView }) {
-  const [activeView, setActiveView] = useState(initialView || "failure");
+export default function OperationalKPIs({ filterParams, initialView, showViews }) {
+  const visibleViews = showViews ? VIEWS.filter(v => showViews.includes(v.key)) : VIEWS;
+  const [activeView, setActiveView] = useState(initialView || visibleViews[0]?.key || "failure");
 
   // Sync with external initialView prop changes
   useEffect(() => {
@@ -382,7 +383,7 @@ export default function OperationalKPIs({ filterParams, initialView }) {
   return (
     <div className="okpi-container">
       <div className="okpi-tabs">
-        {VIEWS.map(v => (
+        {visibleViews.map(v => (
           <button
             key={v.key}
             className={`okpi-tab ${activeView === v.key ? "okpi-tab-active" : ""}`}
@@ -395,7 +396,7 @@ export default function OperationalKPIs({ filterParams, initialView }) {
         ))}
       </div>
       <div className="okpi-question-hint">
-        {VIEWS.find(v => v.key === activeView)?.question}
+        {visibleViews.find(v => v.key === activeView)?.question}
       </div>
       {activeView === "failure" && <FailureAnalysis filterParams={filterParams} />}
       {activeView === "sponsors" && <SponsorPerformance filterParams={filterParams} />}

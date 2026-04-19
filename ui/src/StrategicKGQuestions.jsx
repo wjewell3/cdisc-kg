@@ -67,7 +67,7 @@ function trialsApiBase() {
   return import.meta.env.VITE_TRIALS_API_BASE || "";
 }
 
-export default function StrategicKGQuestions() {
+export default function StrategicKGQuestions({ showOnly, hideHeader } = {}) {
   const [expanded, setExpanded] = useState(true);
   const [active, setActive] = useState(null);
   const [data, setData] = useState(null);
@@ -166,18 +166,25 @@ export default function StrategicKGQuestions() {
     }
   }, [entityInputs, entityLoading]);
 
+  const filteredKG = showOnly ? KG_QUESTIONS.filter(q => showOnly.includes(q.id)) : KG_QUESTIONS;
+  const filteredEntity = showOnly ? ENTITY_QUESTIONS.filter(q => showOnly.includes(q.id)) : ENTITY_QUESTIONS;
+  const showPath = !showOnly || showOnly.includes("path");
+
   return (
     <div className="skg-section">
+      {!hideHeader && (
       <div className="skg-header skg-header-toggle" onClick={() => setExpanded(e => !e)} role="button" tabIndex={0} onKeyDown={e => e.key === "Enter" && setExpanded(x => !x)}>
         <span className="skg-badge">KG</span>
         <span className="skg-title">Knowledge Graph Exploration</span>
         <span className="skg-subtitle">Strategic questions powered by relationship traversal across trials, sponsors, conditions, and interventions</span>
         <span className={`skg-chevron${expanded ? " skg-chevron-open" : ""}`}>▸</span>
       </div>
+      )}
 
       {expanded && (<>
+      {filteredKG.length > 0 && (
       <div className="skg-buttons">
-        {KG_QUESTIONS.map((q) => (
+        {filteredKG.map((q) => (
           <button
             key={q.id}
             className={`skg-btn${active === q.id ? " skg-btn-active" : ""}`}
@@ -190,8 +197,10 @@ export default function StrategicKGQuestions() {
           </button>
         ))}
       </div>
+      )}
 
       {/* ── Path Explorer — the path IS the insight ──────────────── */}
+      {showPath && (
       <div className="skg-path-explorer">
         <form className="skg-path-form" onSubmit={runPath}>
           <span className="skg-path-icon">⤳</span>
@@ -217,10 +226,12 @@ export default function StrategicKGQuestions() {
           Spelling must be exact (e.g. &quot;Alzheimer Disease&quot;, not &quot;Alzheimer&apos;s&quot;).
         </div>
       </div>
+      )}
 
       {/* ── Entity-input launchers ──────────────────────────── */}
+      {filteredEntity.length > 0 && (
       <div className="skg-entity-launchers">
-        {ENTITY_QUESTIONS.map((eq) => (
+        {filteredEntity.map((eq) => (
           <div key={eq.id} className={`skg-entity-launcher${active === eq.id ? " skg-entity-active" : ""}`}>
             <div className="skg-entity-launcher-header">
               <span className="skg-entity-icon">{eq.icon}</span>
@@ -253,6 +264,7 @@ export default function StrategicKGQuestions() {
           </div>
         ))}
       </div>
+      )}
 
       {(loading || pathLoading || entityLoading) && (
         <div className="skg-loading">
