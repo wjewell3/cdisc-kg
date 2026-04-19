@@ -63,7 +63,7 @@ function trialsApiBase() {
 }
 
 export default function StrategicKGQuestions() {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [active, setActive] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);

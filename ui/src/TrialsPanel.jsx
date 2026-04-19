@@ -580,13 +580,13 @@ export default function TrialsPanel() {
                   }
                 />
 
+                {/* ── Knowledge Graph Exploration ──────────────────── */}
+                <StrategicKGQuestions />
+
                 {/* ── Operational KPIs ─────────────────────────────── */}
                 <div ref={okpiRef}>
                   <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
                 </div>
-
-                {/* ── Knowledge Graph Exploration ──────────────────── */}
-                <StrategicKGQuestions />
 
                 {/* ── Results list + detail panel row ──────────────────── */}
                 <div className="results-and-detail">
