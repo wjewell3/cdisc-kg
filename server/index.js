@@ -3220,44 +3220,53 @@ app.get("/api/safety-signals", async (req, res) => {
     if (intervention) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${p})`); params.push(`%${intervention}%`); p++; }
     const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // Total trials with reported events in cohort
-    const countSql = `SELECT COUNT(DISTINCT re.nct_id)::int AS trials_with_events,
+    // Two-step: first get matching nct_ids, then query reported_events only for those
+    // This avoids massive JOINs on the 6.5M row table
+    const cohortCte = `WITH cohort AS (SELECT s.nct_id FROM studies s ${wc})`;
+
+    const countSql = `${cohortCte}
+      SELECT COUNT(DISTINCT re.nct_id)::int AS trials_with_events,
       SUM(re.subjects_affected)::int AS total_affected,
       SUM(re.subjects_at_risk)::int AS total_at_risk
-      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id ${wc}`;
-    const { rows: [summary] } = await pool.query(countSql, params);
+      FROM reported_events re WHERE re.nct_id IN (SELECT nct_id FROM cohort)`;
 
-    // SAE vs other breakdown
-    const typeSql = `SELECT re.event_type, COUNT(DISTINCT re.nct_id)::int AS trials,
+    const typeSql = `${cohortCte}
+      SELECT re.event_type, COUNT(DISTINCT re.nct_id)::int AS trials,
       SUM(re.subjects_affected)::int AS affected
-      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id ${wc}
+      FROM reported_events re WHERE re.nct_id IN (SELECT nct_id FROM cohort)
       GROUP BY re.event_type ORDER BY affected DESC`;
-    const { rows: byType } = await pool.query(typeSql, params);
 
-    // Top organ systems by adverse events
-    const organSql = `SELECT re.organ_system, SUM(re.subjects_affected)::int AS affected,
+    const organSql = `${cohortCte}
+      SELECT re.organ_system, SUM(re.subjects_affected)::int AS affected,
       COUNT(DISTINCT re.nct_id)::int AS trials
-      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id
-      ${wc ? wc + " AND" : "WHERE"} re.organ_system IS NOT NULL
+      FROM reported_events re WHERE re.nct_id IN (SELECT nct_id FROM cohort)
+      AND re.organ_system IS NOT NULL
       GROUP BY re.organ_system ORDER BY affected DESC LIMIT 15`;
-    const { rows: byOrgan } = await pool.query(organSql, params);
 
-    // Top adverse event terms (serious only)
-    const saeSql = `SELECT re.adverse_event_term AS term, SUM(re.subjects_affected)::int AS affected,
+    const saeSql = `${cohortCte}
+      SELECT re.adverse_event_term AS term, SUM(re.subjects_affected)::int AS affected,
       COUNT(DISTINCT re.nct_id)::int AS trials
-      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id
-      ${wc ? wc + " AND" : "WHERE"} re.event_type = 'serious'
-      AND re.adverse_event_term IS NOT NULL
+      FROM reported_events re WHERE re.nct_id IN (SELECT nct_id FROM cohort)
+      AND re.event_type = 'serious' AND re.adverse_event_term IS NOT NULL
       GROUP BY re.adverse_event_term ORDER BY affected DESC LIMIT 20`;
-    const { rows: topSAEs } = await pool.query(saeSql, params);
 
-    // SAE rate by top conditions
-    const condSaeSql = `SELECT c2.name AS condition, COUNT(DISTINCT re.nct_id)::int AS trials,
+    const condSaeSql = `${cohortCte}
+      SELECT c2.name AS condition, COUNT(DISTINCT re.nct_id)::int AS trials,
       SUM(re.subjects_affected)::int AS affected, SUM(re.subjects_at_risk)::int AS at_risk
-      FROM reported_events re JOIN studies s ON s.nct_id = re.nct_id
-      JOIN conditions c2 ON c2.nct_id = s.nct_id
-      ${wc ? wc + " AND" : "WHERE"} re.event_type = 'serious'
+      FROM reported_events re
+      JOIN conditions c2 ON c2.nct_id = re.nct_id
+      WHERE re.nct_id IN (SELECT nct_id FROM cohort) AND re.event_type = 'serious'
       GROUP BY c2.name HAVING COUNT(DISTINCT re.nct_id) >= 10
+      ORDER BY SUM(re.subjects_affected)::float / NULLIF(SUM(re.subjects_at_risk), 0) DESC LIMIT 15`;
+
+    const [{ rows: [summary] }, { rows: byType }, { rows: byOrgan }, { rows: topSAEs }, { rows: condSAE }] =
+      await Promise.all([
+        pool.query(countSql, params),
+        pool.query(typeSql, params),
+        pool.query(organSql, params),
+        pool.query(saeSql, params),
+        pool.query(condSaeSql, params),
+      ]);
       ORDER BY SUM(re.subjects_affected)::float / NULLIF(SUM(re.subjects_at_risk), 0) DESC LIMIT 15`;
     const { rows: condSAE } = await pool.query(condSaeSql, params);
 
@@ -3292,26 +3301,27 @@ app.get("/api/milestone-funnel", async (req, res) => {
     if (sponsor) { where.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${p})`); params.push(`%${sponsor}%`); p++; }
     if (intervention) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${p})`); params.push(`%${intervention}%`); p++; }
     const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const cohortCte = `WITH cohort AS (SELECT s.nct_id FROM studies s ${wc})`;
 
-    // Aggregate milestones: avg participants at each stage (STARTED, COMPLETED, NOT COMPLETED)
-    const funnelSql = `SELECT m.title, SUM(m.count)::int AS total_participants,
+    const funnelSql = `${cohortCte}
+      SELECT m.title, SUM(m.count)::int AS total_participants,
       COUNT(DISTINCT m.nct_id)::int AS trials
-      FROM milestones m JOIN studies s ON s.nct_id = m.nct_id ${wc}
+      FROM milestones m WHERE m.nct_id IN (SELECT nct_id FROM cohort)
       GROUP BY m.title ORDER BY total_participants DESC LIMIT 10`;
     const { rows: funnel } = await pool.query(funnelSql, params);
 
-    // Dropout reasons from drop_withdrawals aggregated across cohort
-    const dropSql = `SELECT dw.reason, SUM(dw.count)::int AS total,
+    const dropSql = `${cohortCte}
+      SELECT dw.reason, SUM(dw.count)::int AS total,
       COUNT(DISTINCT dw.nct_id)::int AS trials
-      FROM drop_withdrawals dw JOIN studies s ON s.nct_id = dw.nct_id
-      ${wc ? wc + " AND" : "WHERE"} dw.count > 0 AND dw.reason IS NOT NULL
+      FROM drop_withdrawals dw WHERE dw.nct_id IN (SELECT nct_id FROM cohort)
+      AND dw.count > 0 AND dw.reason IS NOT NULL
       GROUP BY dw.reason ORDER BY total DESC LIMIT 15`;
     const { rows: dropReasons } = await pool.query(dropSql, params);
 
-    // Trials with milestones vs total
-    const coverageSql = `SELECT COUNT(DISTINCT m.nct_id)::int AS with_milestones,
-      (SELECT COUNT(*)::int FROM studies s ${wc}) AS total_trials
-      FROM milestones m JOIN studies s ON s.nct_id = m.nct_id ${wc}`;
+    const coverageSql = `${cohortCte}
+      SELECT COUNT(DISTINCT m.nct_id)::int AS with_milestones,
+      (SELECT COUNT(*) FROM cohort)::int AS total_trials
+      FROM milestones m WHERE m.nct_id IN (SELECT nct_id FROM cohort)`;
     const { rows: [coverage] } = await pool.query(coverageSql, params);
 
     res.json({
@@ -3392,10 +3402,10 @@ app.get("/api/results-readiness", async (req, res) => {
     // Statistical significance: p-value distribution
     const pvalSql = `SELECT
       COUNT(*)::int AS total_analyses,
-      SUM(CASE WHEN oa.p_value::float < 0.05 THEN 1 ELSE 0 END)::int AS significant,
-      SUM(CASE WHEN oa.p_value::float >= 0.05 THEN 1 ELSE 0 END)::int AS not_significant
+      SUM(CASE WHEN oa.p_value::text ~ '^[0-9]' AND oa.p_value::float < 0.05 THEN 1 ELSE 0 END)::int AS significant,
+      SUM(CASE WHEN oa.p_value::text ~ '^[0-9]' AND oa.p_value::float >= 0.05 THEN 1 ELSE 0 END)::int AS not_significant
       FROM outcome_analyses oa JOIN studies s ON s.nct_id = oa.nct_id
-      ${wc ? wc + " AND" : "WHERE"} oa.p_value IS NOT NULL AND oa.p_value ~ '^[0-9]'`;
+      ${wc ? wc + " AND" : "WHERE"} oa.p_value IS NOT NULL`;
     const { rows: [pvals] } = await pool.query(pvalSql, params);
 
     res.json({
