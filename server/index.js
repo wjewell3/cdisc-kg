@@ -3267,8 +3267,6 @@ app.get("/api/safety-signals", async (req, res) => {
         pool.query(saeSql, params),
         pool.query(condSaeSql, params),
       ]);
-      ORDER BY SUM(re.subjects_affected)::float / NULLIF(SUM(re.subjects_at_risk), 0) DESC LIMIT 15`;
-    const { rows: condSAE } = await pool.query(condSaeSql, params);
 
     res.json({
       trials_with_events: summary?.trials_with_events || 0,
