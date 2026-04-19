@@ -3752,6 +3752,99 @@ app.get("/api/profile-cohort", async (req, res) => {
   }
 });
 
+// ── Complexity → Readiness Correlation ───────────────────────────────────────
+app.get("/api/complexity-readiness", async (req, res) => {
+  const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
+
+  // ── SQLite path ──
+  if (db) {
+    try {
+      const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention });
+      const completedWhere = where ? where + " AND s.overall_status = 'COMPLETED'" : "WHERE s.overall_status = 'COMPLETED'";
+
+      // Arm complexity → reporting time
+      const byArms = db.prepare(`
+        SELECT
+          CASE
+            WHEN dg.arm_count = 1 THEN '1 arm'
+            WHEN dg.arm_count = 2 THEN '2 arms'
+            WHEN dg.arm_count BETWEEN 3 AND 4 THEN '3-4 arms'
+            ELSE '5+ arms'
+          END AS bucket,
+          COUNT(*) AS trials,
+          ROUND(AVG(cv.months_to_report_results), 1) AS avg_months,
+          ROUND(AVG(cv.actual_duration), 1) AS avg_duration
+        FROM studies s
+        JOIN calculated_values cv ON cv.nct_id = s.nct_id
+        JOIN (SELECT nct_id, COUNT(*) AS arm_count FROM design_groups GROUP BY nct_id) dg ON dg.nct_id = s.nct_id
+        ${completedWhere} AND cv.months_to_report_results IS NOT NULL AND cv.months_to_report_results > 0
+        GROUP BY bucket ORDER BY MIN(dg.arm_count)
+      `).all(...params);
+
+      // Outcome complexity → reporting time
+      const byOutcomes = db.prepare(`
+        SELECT
+          CASE
+            WHEN oc.outcome_count <= 2 THEN '1-2 outcomes'
+            WHEN oc.outcome_count BETWEEN 3 AND 5 THEN '3-5 outcomes'
+            WHEN oc.outcome_count BETWEEN 6 AND 10 THEN '6-10 outcomes'
+            ELSE '11+ outcomes'
+          END AS bucket,
+          COUNT(*) AS trials,
+          ROUND(AVG(cv.months_to_report_results), 1) AS avg_months,
+          ROUND(AVG(cv.actual_duration), 1) AS avg_duration
+        FROM studies s
+        JOIN calculated_values cv ON cv.nct_id = s.nct_id
+        JOIN (SELECT nct_id, COUNT(*) AS outcome_count FROM design_outcomes GROUP BY nct_id) oc ON oc.nct_id = s.nct_id
+        ${completedWhere} AND cv.months_to_report_results IS NOT NULL AND cv.months_to_report_results > 0
+        GROUP BY bucket ORDER BY MIN(oc.outcome_count)
+      `).all(...params);
+
+      // Masking complexity → reporting time
+      const byMasking = db.prepare(`
+        SELECT COALESCE(d.masking, 'Unknown') AS bucket,
+          COUNT(*) AS trials,
+          ROUND(AVG(cv.months_to_report_results), 1) AS avg_months
+        FROM studies s
+        JOIN calculated_values cv ON cv.nct_id = s.nct_id
+        JOIN designs d ON d.nct_id = s.nct_id
+        ${completedWhere} AND cv.months_to_report_results IS NOT NULL AND cv.months_to_report_results > 0
+        GROUP BY d.masking HAVING COUNT(*) >= 5 ORDER BY avg_months DESC
+      `).all(...params);
+
+      return res.json({ by_arms: byArms, by_outcomes: byOutcomes, by_masking: byMasking });
+    } catch (e) {
+      console.error("[complexity-readiness] sqlite:", e.message);
+    }
+  }
+
+  // ── PG fallback ──
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "Database unavailable" });
+  try {
+    const params = []; const where = []; let p = 1;
+    if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
+    if (phase) { where.push(`s.phase = $${p}`); params.push(phase); p++; }
+    if (sponsor) { where.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${p})`); params.push(`%${sponsor}%`); p++; }
+    if (intervention) { where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${p})`); params.push(`%${intervention}%`); p++; }
+    const wc = where.length ? `WHERE ${where.join(" AND ")} AND` : "WHERE";
+
+    const { rows: byArms } = await pool.query({ text: `SELECT CASE WHEN dg.arm_count = 1 THEN '1 arm' WHEN dg.arm_count = 2 THEN '2 arms' WHEN dg.arm_count BETWEEN 3 AND 4 THEN '3-4 arms' ELSE '5+ arms' END AS bucket, COUNT(*)::int AS trials, ROUND(AVG(cv.months_to_report_results)::numeric, 1) AS avg_months, ROUND(AVG(cv.actual_duration)::numeric, 1) AS avg_duration FROM studies s JOIN calculated_values cv ON cv.nct_id = s.nct_id JOIN (SELECT nct_id, COUNT(*)::int AS arm_count FROM design_groups GROUP BY nct_id) dg ON dg.nct_id = s.nct_id ${wc} s.overall_status = 'COMPLETED' AND cv.months_to_report_results IS NOT NULL AND cv.months_to_report_results > 0 GROUP BY bucket ORDER BY MIN(dg.arm_count)`, values: params, statement_timeout: 60000 });
+    const { rows: byOutcomes } = await pool.query({ text: `SELECT CASE WHEN oc.outcome_count <= 2 THEN '1-2 outcomes' WHEN oc.outcome_count BETWEEN 3 AND 5 THEN '3-5 outcomes' WHEN oc.outcome_count BETWEEN 6 AND 10 THEN '6-10 outcomes' ELSE '11+ outcomes' END AS bucket, COUNT(*)::int AS trials, ROUND(AVG(cv.months_to_report_results)::numeric, 1) AS avg_months, ROUND(AVG(cv.actual_duration)::numeric, 1) AS avg_duration FROM studies s JOIN calculated_values cv ON cv.nct_id = s.nct_id JOIN (SELECT nct_id, COUNT(*)::int AS outcome_count FROM design_outcomes GROUP BY nct_id) oc ON oc.nct_id = s.nct_id ${wc} s.overall_status = 'COMPLETED' AND cv.months_to_report_results IS NOT NULL AND cv.months_to_report_results > 0 GROUP BY bucket ORDER BY MIN(oc.outcome_count)`, values: params, statement_timeout: 60000 });
+    const { rows: byMasking } = await pool.query({ text: `SELECT COALESCE(d.masking, 'Unknown') AS bucket, COUNT(*)::int AS trials, ROUND(AVG(cv.months_to_report_results)::numeric, 1) AS avg_months FROM studies s JOIN calculated_values cv ON cv.nct_id = s.nct_id JOIN designs d ON d.nct_id = s.nct_id ${wc} s.overall_status = 'COMPLETED' AND cv.months_to_report_results IS NOT NULL AND cv.months_to_report_results > 0 GROUP BY d.masking HAVING COUNT(*) >= 5 ORDER BY avg_months DESC`, values: params, statement_timeout: 60000 });
+
+    const pf = (v) => v !== null && v !== undefined ? parseFloat(v) : null;
+    res.json({
+      by_arms: byArms.map(r => ({ ...r, avg_months: pf(r.avg_months), avg_duration: pf(r.avg_duration) })),
+      by_outcomes: byOutcomes.map(r => ({ ...r, avg_months: pf(r.avg_months), avg_duration: pf(r.avg_duration) })),
+      by_masking: byMasking.map(r => ({ ...r, avg_months: pf(r.avg_months) })),
+    });
+  } catch (e) {
+    console.error("[complexity-readiness] pg:", e.message);
+    res.status(500).json({ error: "Query failed" });
+  }
+});
+
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });

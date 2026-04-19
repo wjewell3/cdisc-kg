@@ -7,9 +7,8 @@ import OperationalKPIs from "./OperationalKPIs";
 import StrategicKGQuestions from "./StrategicKGQuestions";
 import MonitorRisk from "./MonitorRisk";
 import CloseTrial from "./CloseTrial";
-import PlanComplexity from "./PlanComplexity";
+import ComplexityReadiness from "./ComplexityReadiness";
 import TrialsMap from "./TrialsMap";
-import AskBar from "./AskBar";
 import ProfileBuilder, { EMPTY_PROFILE } from "./ProfileBuilder";
 import ForecastPriors, { ForecastPriorsDisplay } from "./ForecastPriors";
 import "./OperationalKPIs.css";
@@ -138,11 +137,10 @@ export default function TrialsPanel() {
   const [intelStep, setIntelStep] = useState(0);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
-  const [okpiView, setOkpiView] = useState(null); // controlled by AskBar → OperationalKPIs
   const [subView, setSubView] = useState("plan"); // sub-tab: plan | monitor | close | browse
   const okpiRef = useRef(null);
   const [profile, setProfile] = useState({ ...EMPTY_PROFILE });
-  const { data: cohortData, loading: cohortLoading, error: cohortError, fetchCohort } = ForecastPriors({ profile });
+  const { data: cohortData, benchmarkData, milestoneData, loading: cohortLoading, error: cohortError, fetchCohort } = ForecastPriors({ profile });
 
   const currentAgg = chartAggData || aggData;
   const panelStats = useMemo(() => computeStats(currentAgg), [currentAgg]);
@@ -455,20 +453,7 @@ export default function TrialsPanel() {
     setInsightTarget({ type, name });
   }, []);
 
-  // AskBar callbacks: apply extracted filters and navigate to OKPI tab
-  const handleAskFilters = useCallback((filters) => {
-    const newFilters = [];
-    for (const [field, value] of Object.entries(filters)) {
-      if (value) newFilters.push({ field, value });
-    }
-    if (newFilters.length) setChartFilters(newFilters);
-    setStep("results");
-  }, []);
 
-  const handleAskOkpi = useCallback((view) => setOkpiView(view), []);
-  const handleAskScrollOkpi = useCallback(() => {
-    setTimeout(() => okpiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-  }, []);
 
   return (
     <>
@@ -491,13 +476,6 @@ export default function TrialsPanel() {
           <span className="sdtm-badge">580k studies</span>
         </div>
       </div>
-
-      {/* ── Unified Smart Intake ───────────────────────────────── */}
-      <AskBar
-        onFiltersExtracted={handleAskFilters}
-        onOkpiView={handleAskOkpi}
-        onScrollToOkpi={handleAskScrollOkpi}
-      />
 
       {/* ── Profile Builder (persists across tabs) ────────────────── */}
       <ProfileBuilder
@@ -598,7 +576,7 @@ export default function TrialsPanel() {
                   <div className="ptb-product">📈 Clinical Trial Forecasting Suite</div>
                   <div className="ptb-desc">Historical evidence base for enrollment forecasting, site selection, and milestone prediction — distribution priors computed over trials matching your profile.</div>
                 </div>
-                <ForecastPriorsDisplay data={cohortData} loading={cohortLoading} error={cohortError} />
+                <ForecastPriorsDisplay data={cohortData} benchmarkData={benchmarkData} milestoneData={milestoneData} loading={cohortLoading} error={cohortError} />
                 </>)}
 
                 {/* ── Risk & Decisioning ───────────────────────────────── */}
@@ -616,7 +594,6 @@ export default function TrialsPanel() {
                 ) : (<>
                 <MonitorRisk filterParams={profileFilterParams} />
                 <OperationalKPIs filterParams={profileFilterParams} showViews={["failure"]} />
-                <OperationalKPIs filterParams={profileFilterParams} showViews={["sponsors"]} />
                 </>)}
                 </>)}
 
@@ -634,7 +611,7 @@ export default function TrialsPanel() {
                   </div>
                 ) : (<>
                 <CloseTrial filterParams={profileFilterParams} />
-                <PlanComplexity filterParams={profileFilterParams} />
+                <ComplexityReadiness filterParams={profileFilterParams} />
                 </>)}
                 </>)}
 
@@ -669,7 +646,7 @@ export default function TrialsPanel() {
                 />
                 <StrategicKGQuestions showOnly={["eq2","eq3","path"]} hideHeader />
                 <div ref={okpiRef}>
-                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView || "enrollment"} />
+                  <OperationalKPIs filterParams={okpiFilterParams} initialView={"enrollment"} />
                 </div>
                 <div className="results-and-detail">
                 <div className="results-list">

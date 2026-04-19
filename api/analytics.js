@@ -21,6 +21,7 @@ const MODE_MAP = {
   "results-readiness": "/api/results-readiness",
   "trial-complexity": "/api/trial-complexity",
   "profile-cohort": "/api/profile-cohort",
+  "complexity-readiness": "/api/complexity-readiness",
 };
 
 export default async function handler(req, res) {

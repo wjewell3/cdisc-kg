@@ -55,7 +55,7 @@ function EnrollmentPanel({ data }) {
     <div className="fp-panel">
       <div className="fp-panel-header">
         <span className="fp-panel-icon">👥</span>
-        <h4>Enrollment</h4>
+        <h4>Enrollment Distribution</h4>
         <span className="fp-panel-n">{data.n?.toLocaleString()} trials</span>
       </div>
       <div className="fp-headline">
@@ -93,26 +93,47 @@ function DurationPanel({ data }) {
   );
 }
 
-function TerminationPanel({ data }) {
-  if (!data) return <div className="fp-panel fp-panel-empty"><span className="fp-panel-icon">🚫</span><div>No termination data</div></div>;
+function AmbitionPanel({ data }) {
+  if (!data) return <div className="fp-panel fp-panel-empty"><span className="fp-panel-icon">🎯</span><div>No ambition vs actual data</div></div>;
+  const { anticipated, actual, gap_pct } = data;
+  const gapColor = gap_pct > 0 ? "#f6ad55" : "#48bb78";
+  const gapLabel = gap_pct > 0
+    ? `${gap_pct}% over-ambitious` : gap_pct < 0
+    ? `${Math.abs(gap_pct)}% under target` : "On target";
   return (
     <div className="fp-panel">
       <div className="fp-panel-header">
-        <span className="fp-panel-icon">🚫</span>
-        <h4>Early Termination</h4>
-        <span className="fp-panel-n">{data.terminated_count?.toLocaleString()} terminated</span>
+        <span className="fp-panel-icon">🎯</span>
+        <h4>Enrollment Ambition vs Actual</h4>
       </div>
-      <div className="fp-headline">
-        <span className={`fp-headline-val${data.rate_pct > 20 ? " fp-val-warn" : ""}`}>{data.rate_pct}%</span>
-        <span className="fp-headline-unit">termination rate</span>
+      <div className="fp-headline-row">
+        <div className="fp-headline">
+          <span className="fp-headline-val" style={{ fontSize: "1.2rem" }}>{fmt(anticipated?.avg)}</span>
+          <span className="fp-headline-unit">avg anticipated</span>
+        </div>
+        <div className="fp-headline">
+          <span className="fp-headline-val" style={{ fontSize: "1.2rem" }}>{fmt(actual?.avg)}</span>
+          <span className="fp-headline-unit">avg actual</span>
+        </div>
       </div>
-      {data.top_reasons?.length > 0 && (
-        <div className="fp-reasons">
-          <div className="fp-reasons-title">Top stop reasons</div>
-          {data.top_reasons.slice(0, 5).map((r, i) => (
-            <div key={i} className="fp-reason-row">
-              <span className="fp-reason-text">{r.reason?.length > 60 ? r.reason.slice(0, 58) + "…" : r.reason}</span>
-              <span className="fp-reason-count">{r.count}</span>
+      <div className="fp-ambition-gap" style={{ color: gapColor }}>
+        <span className="fp-ambition-gap-val">{gapLabel}</span>
+      </div>
+      <div className="fp-stat-row">
+        <span>Anticipated: {anticipated?.count?.toLocaleString()} trials</span>
+        <span>Actual: {actual?.count?.toLocaleString()} trials</span>
+      </div>
+      {data.by_allocation?.length > 0 && (
+        <div className="fp-ambition-bars">
+          <div className="fp-reasons-title">By allocation design</div>
+          {data.by_allocation.map((d, i) => (
+            <div key={i} className="fp-ambition-row">
+              <span className="fp-reason-text">{d.design}</span>
+              <span className="fp-ambition-pair">
+                <span className="fp-amb-ant" title="Anticipated">{fmt(d.anticipated)}</span>
+                <span className="fp-amb-arrow">→</span>
+                <span className="fp-amb-act" title="Actual">{fmt(d.actual)}</span>
+              </span>
             </div>
           ))}
         </div>
@@ -159,27 +180,140 @@ function SitePanel({ data }) {
   );
 }
 
-/* ── Main component ──────────────────────────────────────────────────── */
+function MilestonePanel({ data }) {
+  if (!data) return <div className="fp-panel fp-panel-empty"><span className="fp-panel-icon">📅</span><div>No milestone data available</div></div>;
+  const coverage = data.total_trials > 0
+    ? ((data.trials_with_milestones / data.total_trials) * 100).toFixed(0) : 0;
+  return (
+    <div className="fp-panel fp-panel-wide">
+      <div className="fp-panel-header">
+        <span className="fp-panel-icon">📅</span>
+        <h4>Milestone Funnel</h4>
+        <span className="fp-panel-n">{coverage}% have milestone data</span>
+      </div>
+      {data.funnel?.length > 0 ? (
+        <div className="fp-funnel">
+          {data.funnel.slice(0, 8).map((m, i) => {
+            const maxP = data.funnel[0]?.total_participants || 1;
+            const pct = Math.max((m.total_participants / maxP) * 100, 5);
+            return (
+              <div key={i} className="fp-funnel-row">
+                <span className="fp-funnel-label">{m.title?.length > 35 ? m.title.slice(0, 33) + "…" : m.title}</span>
+                <div className="fp-funnel-track">
+                  <div className="fp-funnel-fill" style={{ width: `${pct}%` }} />
+                </div>
+                <span className="fp-funnel-val">{m.total_participants?.toLocaleString()} <span className="fp-funnel-trials">({m.trials} trials)</span></span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="fp-stat-row" style={{ color: "#4a5568" }}>No funnel data for this cohort</div>
+      )}
+      {data.drop_reasons?.length > 0 && (
+        <div className="fp-reasons" style={{ marginTop: 12 }}>
+          <div className="fp-reasons-title">Top withdrawal reasons</div>
+          {data.drop_reasons.slice(0, 5).map((r, i) => (
+            <div key={i} className="fp-reason-row">
+              <span className="fp-reason-text">{r.reason?.length > 50 ? r.reason.slice(0, 48) + "…" : r.reason}</span>
+              <span className="fp-reason-count">{r.total?.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Main component (used as hook) ───────────────────────────────────── */
 export default function ForecastPriors({ profile }) {
   const [data, setData] = useState(null);
+  const [benchmarkData, setBenchmarkData] = useState(null);
+  const [milestoneData, setMilestoneData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchCohort = useCallback(async () => {
     if (!profile || (!profile.condition && !profile.phase && !profile.intervention_type)) {
       setData(null);
+      setBenchmarkData(null);
+      setMilestoneData(null);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(buildUrl(profile));
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}));
-        throw new Error(e.error || `HTTP ${r.status}`);
+      // Fetch all three in parallel
+      const cohortUrl = buildUrl(profile);
+
+      const benchBase = API_BASE
+        ? `${API_BASE}/api/enrollment-benchmark`
+        : `/api/analytics?mode=enrollment-benchmark`;
+      const benchUrl = new URL(benchBase, window.location.origin);
+      if (profile.condition) benchUrl.searchParams.set("condition", profile.condition);
+      if (profile.phase) benchUrl.searchParams.set("phase", profile.phase);
+      if (profile.allocation) benchUrl.searchParams.set("allocation", profile.allocation);
+      if (profile.masking) benchUrl.searchParams.set("masking", profile.masking);
+      if (profile.intervention_model) benchUrl.searchParams.set("intervention_model", profile.intervention_model);
+
+      const msBase = API_BASE
+        ? `${API_BASE}/api/milestone-funnel`
+        : `/api/analytics?mode=milestone-funnel`;
+      const msUrl = new URL(msBase, window.location.origin);
+      if (profile.condition) msUrl.searchParams.set("condition", profile.condition);
+      if (profile.phase) msUrl.searchParams.set("phase", profile.phase);
+
+      const [cohortRes, benchRes, msRes] = await Promise.all([
+        fetch(cohortUrl),
+        fetch(benchUrl.toString()),
+        fetch(msUrl.toString()),
+      ]);
+
+      if (!cohortRes.ok) {
+        const e = await cohortRes.json().catch(() => ({}));
+        throw new Error(e.error || `HTTP ${cohortRes.status}`);
       }
-      const d = await r.json();
+      const d = await cohortRes.json();
       setData(d);
+
+      // Process benchmark
+      if (benchRes.ok) {
+        const bd = await benchRes.json();
+        const anticipated = bd.summary?.find(s => s.enrollment_type === "Anticipated");
+        const actual = bd.summary?.find(s => s.enrollment_type === "Actual");
+        const gapPct = anticipated?.avg_enrollment && actual?.avg_enrollment
+          ? parseFloat((((anticipated.avg_enrollment - actual.avg_enrollment) / actual.avg_enrollment) * 100).toFixed(0))
+          : 0;
+        const byAlloc = [];
+        if (bd.by_allocation) {
+          const grouped = {};
+          for (const r of bd.by_allocation) {
+            if (!grouped[r.design_val]) grouped[r.design_val] = {};
+            grouped[r.design_val][r.enrollment_type] = r.avg_enrollment;
+          }
+          for (const [design, vals] of Object.entries(grouped)) {
+            if (vals.Anticipated || vals.Actual) {
+              byAlloc.push({ design, anticipated: vals.Anticipated || null, actual: vals.Actual || null });
+            }
+          }
+        }
+        setBenchmarkData({
+          anticipated: anticipated ? { avg: anticipated.avg_enrollment, count: anticipated.trial_count } : null,
+          actual: actual ? { avg: actual.avg_enrollment, count: actual.trial_count } : null,
+          gap_pct: gapPct,
+          by_allocation: byAlloc,
+        });
+      } else {
+        setBenchmarkData(null);
+      }
+
+      // Process milestones
+      if (msRes.ok) {
+        const md = await msRes.json();
+        setMilestoneData(md);
+      } else {
+        setMilestoneData(null);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -192,11 +326,11 @@ export default function ForecastPriors({ profile }) {
     if (profile?._trigger) fetchCohort();
   }, [profile?._trigger, fetchCohort]);
 
-  return { data, loading, error, fetchCohort };
+  return { data, benchmarkData, milestoneData, loading, error, fetchCohort };
 }
 
 /* ── Display component ───────────────────────────────────────────────── */
-export function ForecastPriorsDisplay({ data, loading, error }) {
+export function ForecastPriorsDisplay({ data, benchmarkData, milestoneData, loading, error }) {
   if (loading) {
     return (
       <div className="fp-loading">
@@ -237,10 +371,11 @@ export function ForecastPriorsDisplay({ data, loading, error }) {
       </div>
       <div className="fp-panels">
         <EnrollmentPanel data={data.enrollment} />
+        <AmbitionPanel data={benchmarkData} />
         <DurationPanel data={data.duration_months} />
-        <TerminationPanel data={data.termination} />
         <SitePanel data={data.site_footprint} />
       </div>
+      <MilestonePanel data={milestoneData} />
     </div>
   );
 }
