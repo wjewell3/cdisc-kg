@@ -296,16 +296,20 @@ async function pgSearch({ q, condition, intervention, phase, status, sponsor, li
 async function pgStats({ q, condition, intervention, phase, status, sponsor }) {
   const pool = getPgPool();
   const { whereClause, params } = buildPgWhere({ q, condition, intervention, phase, status, sponsor });
+  const { whereClause: condWhere, params: condParams } = buildPgWhere({ q, condition: "", intervention, phase, status, sponsor });
+  const { whereClause: intWhere, params: intParams } = buildPgWhere({ q, condition, intervention: "", phase, status, sponsor });
   const enrollWhere = whereClause ? `${whereClause} AND s.enrollment IS NOT NULL` : "WHERE s.enrollment IS NOT NULL";
-  const [phaseRes, statusRes, sponsorRes, enrollRes, countRes] = await Promise.all([
+  const [phaseRes, statusRes, sponsorRes, condRes, intRes, enrollRes, countRes] = await Promise.all([
     pool.query(`SELECT COALESCE(s.phase,'Unknown') AS val, COUNT(*)::int AS count FROM studies s ${whereClause} GROUP BY 1 ORDER BY count DESC`, params),
     pool.query(`SELECT COALESCE(s.overall_status,'Unknown') AS val, COUNT(*)::int AS count FROM studies s ${whereClause} GROUP BY 1 ORDER BY count DESC`, params),
     pool.query(`SELECT sp2.name AS val, COUNT(*)::int AS count FROM studies s JOIN sponsors sp2 ON sp2.nct_id=s.nct_id AND sp2.lead_or_collaborator='lead' ${whereClause} GROUP BY sp2.name ORDER BY count DESC LIMIT 20`, params),
+    pool.query(`SELECT c.name AS val, COUNT(DISTINCT s.nct_id)::int AS count FROM studies s JOIN conditions c ON c.nct_id=s.nct_id ${condWhere} GROUP BY c.name ORDER BY count DESC LIMIT 20`, condParams),
+    pool.query(`SELECT i.name AS val, COUNT(DISTINCT s.nct_id)::int AS count FROM studies s JOIN interventions i ON i.nct_id=s.nct_id ${intWhere} GROUP BY i.name ORDER BY count DESC LIMIT 20`, intParams),
     pool.query(`SELECT CASE WHEN s.enrollment<100 THEN '< 100' WHEN s.enrollment<500 THEN '100–499' WHEN s.enrollment<1000 THEN '500–999' WHEN s.enrollment<5000 THEN '1k–4.9k' WHEN s.enrollment<20000 THEN '5k–19k' ELSE '≥ 20k' END AS val, COUNT(*)::int AS count FROM studies s ${enrollWhere} GROUP BY 1 ORDER BY MIN(s.enrollment)`, params),
     pool.query(`SELECT COUNT(*)::int AS total FROM studies s ${whereClause}`, params),
   ]);
   const toObj = (rows) => Object.fromEntries(rows.map((r) => [r.val, r.count]));
-  return { total: countRes.rows[0]?.total || 0, phase: toObj(phaseRes.rows), status: toObj(statusRes.rows), sponsor: sponsorRes.rows.map((r) => [r.val, r.count]), enrollment: toObj(enrollRes.rows) };
+  return { total: countRes.rows[0]?.total || 0, phase: toObj(phaseRes.rows), status: toObj(statusRes.rows), sponsor: sponsorRes.rows.map((r) => [r.val, r.count]), condition: condRes.rows.map((r) => [r.val, r.count]), intervention: intRes.rows.map((r) => [r.val, r.count]), enrollment: toObj(enrollRes.rows) };
 }
 
 // ── shared ────────────────────────────────────────────────────────────────────
