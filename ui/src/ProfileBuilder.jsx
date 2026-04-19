@@ -14,60 +14,61 @@ const PHASES = [
 
 const ALLOCATIONS = [
   { value: "", label: "Any" },
-  { value: "Randomized", label: "Randomized" },
-  { value: "Non-Randomized", label: "Non-Randomized" },
-  { value: "N/A", label: "N/A (single-arm)" },
+  { value: "RANDOMIZED", label: "Randomized" },
+  { value: "NON_RANDOMIZED", label: "Non-Randomized" },
+  { value: "NA", label: "N/A (single-arm)" },
 ];
 
 const MASKINGS = [
   { value: "", label: "Any" },
-  { value: "None", label: "Open Label" },
-  { value: "Single", label: "Single Blind" },
-  { value: "Double", label: "Double Blind" },
-  { value: "Triple", label: "Triple Blind" },
-  { value: "Quadruple", label: "Quadruple Blind" },
+  { value: "NONE", label: "Open Label" },
+  { value: "SINGLE", label: "Single Blind" },
+  { value: "DOUBLE", label: "Double Blind" },
+  { value: "TRIPLE", label: "Triple Blind" },
+  { value: "QUADRUPLE", label: "Quadruple Blind" },
 ];
 
 const INTERVENTION_MODELS = [
   { value: "", label: "Any" },
-  { value: "Parallel Assignment", label: "Parallel" },
-  { value: "Single Group Assignment", label: "Single Group" },
-  { value: "Crossover Assignment", label: "Crossover" },
-  { value: "Factorial Assignment", label: "Factorial" },
-  { value: "Sequential Assignment", label: "Sequential" },
+  { value: "PARALLEL", label: "Parallel" },
+  { value: "SINGLE_GROUP", label: "Single Group" },
+  { value: "CROSSOVER", label: "Crossover" },
+  { value: "FACTORIAL", label: "Factorial" },
+  { value: "SEQUENTIAL", label: "Sequential" },
 ];
 
 const PRIMARY_PURPOSES = [
   { value: "", label: "Any" },
-  { value: "Treatment", label: "Treatment" },
-  { value: "Prevention", label: "Prevention" },
-  { value: "Diagnostic", label: "Diagnostic" },
-  { value: "Supportive Care", label: "Supportive Care" },
-  { value: "Screening", label: "Screening" },
-  { value: "Health Services Research", label: "Health Services Research" },
-  { value: "Basic Science", label: "Basic Science" },
-  { value: "Device Feasibility", label: "Device Feasibility" },
+  { value: "TREATMENT", label: "Treatment" },
+  { value: "PREVENTION", label: "Prevention" },
+  { value: "DIAGNOSTIC", label: "Diagnostic" },
+  { value: "SUPPORTIVE_CARE", label: "Supportive Care" },
+  { value: "SCREENING", label: "Screening" },
+  { value: "HEALTH_SERVICES_RESEARCH", label: "Health Services Research" },
+  { value: "BASIC_SCIENCE", label: "Basic Science" },
+  { value: "DEVICE_FEASIBILITY", label: "Device Feasibility" },
 ];
 
 const INTERVENTION_TYPES = [
   { value: "", label: "Any" },
-  { value: "Drug", label: "Drug" },
-  { value: "Biological", label: "Biological" },
-  { value: "Device", label: "Device" },
-  { value: "Procedure", label: "Procedure" },
-  { value: "Behavioral", label: "Behavioral" },
-  { value: "Radiation", label: "Radiation" },
-  { value: "Dietary Supplement", label: "Dietary Supplement" },
-  { value: "Genetic", label: "Genetic" },
-  { value: "Diagnostic Test", label: "Diagnostic Test" },
-  { value: "Other", label: "Other" },
+  { value: "DRUG", label: "Drug" },
+  { value: "BIOLOGICAL", label: "Biological" },
+  { value: "DEVICE", label: "Device" },
+  { value: "PROCEDURE", label: "Procedure" },
+  { value: "BEHAVIORAL", label: "Behavioral" },
+  { value: "RADIATION", label: "Radiation" },
+  { value: "DIETARY_SUPPLEMENT", label: "Dietary Supplement" },
+  { value: "GENETIC", label: "Genetic" },
+  { value: "DIAGNOSTIC_TEST", label: "Diagnostic Test" },
+  { value: "COMBINATION_PRODUCT", label: "Combination Product" },
+  { value: "OTHER", label: "Other" },
 ];
 
 const GENDERS = [
   { value: "", label: "Any" },
-  { value: "All", label: "All" },
-  { value: "Female", label: "Female Only" },
-  { value: "Male", label: "Male Only" },
+  { value: "ALL", label: "All" },
+  { value: "FEMALE", label: "Female Only" },
+  { value: "MALE", label: "Male Only" },
 ];
 
 const AGE_GROUPS = [
@@ -91,8 +92,8 @@ const MULTI_SITES = [
 
 const HEALTHY_VOLS = [
   { value: "", label: "Any" },
-  { value: "Yes", label: "Yes" },
-  { value: "No", label: "No" },
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" },
 ];
 
 const EMPTY_PROFILE = {

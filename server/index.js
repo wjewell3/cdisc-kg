@@ -3614,11 +3614,14 @@ app.get("/api/profile-cohort", async (req, res) => {
         params.push(...phases);
       }
       if (allocation) { where.push(`d.allocation = ?`); params.push(allocation); }
-      if (masking) { where.push(`d.masking LIKE ?`); params.push(`%${masking}%`); }
+      if (masking) { where.push(`d.masking = ?`); params.push(masking); }
       if (intervention_model) { where.push(`d.intervention_model = ?`); params.push(intervention_model); }
       if (primary_purpose) { where.push(`d.primary_purpose = ?`); params.push(primary_purpose); }
-      if (gender && gender !== "All") { where.push(`e.gender = ?`); params.push(gender); }
-      if (healthy_volunteers) { where.push(`e.healthy_volunteers = ?`); params.push(healthy_volunteers); }
+      if (gender && gender !== "ALL") { where.push(`e.gender = ?`); params.push(gender); }
+      if (healthy_volunteers) {
+        where.push(`e.healthy_volunteers = ?`);
+        params.push(healthy_volunteers === "true" ? 1 : 0);
+      }
       if (age_group) {
         if (age_group === "child") where.push(`e.child = 1`);
         else if (age_group === "adult") where.push(`e.adult = 1`);
@@ -3706,11 +3709,11 @@ app.get("/api/profile-cohort", async (req, res) => {
     if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
     if (phase) { where.push(`s.phase = $${p}`); params.push(phase); p++; }
     if (allocation) { where.push(`d.allocation = $${p}`); params.push(allocation); p++; }
-    if (masking) { where.push(`d.masking ILIKE $${p}`); params.push(`%${masking}%`); p++; }
+    if (masking) { where.push(`d.masking = $${p}`); params.push(masking); p++; }
     if (intervention_model) { where.push(`d.intervention_model = $${p}`); params.push(intervention_model); p++; }
     if (primary_purpose) { where.push(`d.primary_purpose = $${p}`); params.push(primary_purpose); p++; }
-    if (gender && gender !== "All") { where.push(`e.gender = $${p}`); params.push(gender); p++; }
-    if (healthy_volunteers) { where.push(`e.healthy_volunteers = $${p}`); params.push(healthy_volunteers); p++; }
+    if (gender && gender !== "ALL") { where.push(`e.gender = $${p}`); params.push(gender); p++; }
+    if (healthy_volunteers) { where.push(`e.healthy_volunteers = $${p}`); params.push(healthy_volunteers === "true"); p++; }
     if (age_group === "child") where.push(`e.child = true`);
     else if (age_group === "adult") where.push(`e.adult = true`);
     else if (age_group === "older_adult") where.push(`e.older_adult = true`);
