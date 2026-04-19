@@ -3,6 +3,7 @@
   "outputDirectory": "ui/dist",
   "functions": {
     "api/intelligence.js": { "maxDuration": 60 },
+    "api/analytics.js": { "maxDuration": 60 },
     "api/dq.js": { "maxDuration": 30 },
     "api/graph-query.js": { "maxDuration": 45 },
     "api/query.js": { "maxDuration": 45 }

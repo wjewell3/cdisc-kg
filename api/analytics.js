@@ -33,13 +33,13 @@ export default async function handler(req, res) {
   try {
     const url = new URL(`${OKE_BASE}${path}`);
 
-    // /api/ask is POST — forward the body as JSON
+    // /api/ask is POST — forward the body as JSON (2 LLM calls + KG query → needs longer timeout)
     if (mode === "ask") {
       const upstream = await fetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req.body || {}),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(55000),
       });
       const body = await upstream.json();
       return res.status(upstream.status).json(body);
