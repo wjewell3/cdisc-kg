@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     for (const [k, v] of Object.entries(rest)) {
       url.searchParams.set(k, v);
     }
-    const timeout = mode === "geographic" ? 30000 : 15000;
+    const timeout = mode === "geographic" ? 30000 : 30000;
     const upstream = await fetch(url.toString(), { signal: AbortSignal.timeout(timeout) });
     const body = await upstream.json();
     return res.status(upstream.status).json(body);

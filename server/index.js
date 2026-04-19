@@ -2291,10 +2291,10 @@ app.get("/api/failure-analysis", async (req, res) => {
 
     const { rows: [counts] } = await pool.query(`
       SELECT COUNT(*) AS total,
-        SUM(CASE WHEN s.overall_status = 'Completed'  THEN 1 ELSE 0 END) AS completed,
-        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END) AS terminated,
-        SUM(CASE WHEN s.overall_status = 'Withdrawn'  THEN 1 ELSE 0 END) AS withdrawn,
-        SUM(CASE WHEN s.overall_status = 'Suspended'  THEN 1 ELSE 0 END) AS suspended
+        SUM(CASE WHEN s.overall_status = 'COMPLETED'  THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated,
+        SUM(CASE WHEN s.overall_status = 'WITHDRAWN'  THEN 1 ELSE 0 END) AS withdrawn,
+        SUM(CASE WHEN s.overall_status = 'SUSPENDED'  THEN 1 ELSE 0 END) AS suspended
       FROM studies s ${pgWhere}
     `, pgParams);
 
@@ -2315,8 +2315,8 @@ app.get("/api/failure-analysis", async (req, res) => {
     const { rows: byCondition } = await pool.query(`
       SELECT c.name AS condition_name,
         COUNT(DISTINCT s.nct_id)::int AS total,
-        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END)::int AS terminated,
-        SUM(CASE WHEN s.overall_status = 'Completed' THEN 1 ELSE 0 END)::int AS completed
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END)::int AS terminated,
+        SUM(CASE WHEN s.overall_status = 'COMPLETED' THEN 1 ELSE 0 END)::int AS completed
       FROM studies s
       JOIN conditions c ON c.nct_id = s.nct_id
       ${pgWhere}
@@ -2340,8 +2340,8 @@ app.get("/api/failure-analysis", async (req, res) => {
     const { rows: byPhase } = await pool.query(`
       SELECT COALESCE(s.phase, 'Unknown') AS phase,
         COUNT(*)::int AS total,
-        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END)::int AS terminated,
-        SUM(CASE WHEN s.overall_status = 'Completed' THEN 1 ELSE 0 END)::int AS completed
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END)::int AS terminated,
+        SUM(CASE WHEN s.overall_status = 'COMPLETED' THEN 1 ELSE 0 END)::int AS completed
       FROM studies s ${pgWhere}
       GROUP BY 1
       ORDER BY COUNT(*) DESC
@@ -2433,9 +2433,9 @@ app.get("/api/sponsor-performance", async (req, res) => {
     const { rows } = await pool.query(`
       SELECT sp.name AS sponsor,
         COUNT(DISTINCT s.nct_id)::int AS total,
-        SUM(CASE WHEN s.overall_status = 'Completed' THEN 1 ELSE 0 END)::int AS completed,
-        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END)::int AS terminated,
-        ROUND(AVG(CASE WHEN s.enrollment_type = 'Actual' THEN s.enrollment::numeric END), 0) AS avg_enrollment
+        SUM(CASE WHEN s.overall_status = 'COMPLETED' THEN 1 ELSE 0 END)::int AS completed,
+        SUM(CASE WHEN s.overall_status = 'TERMINATED' THEN 1 ELSE 0 END)::int AS terminated,
+        ROUND(AVG(CASE WHEN s.enrollment_type = 'ACTUAL' THEN s.enrollment::numeric END), 0) AS avg_enrollment
       FROM studies s
       JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
       ${pgWhere}
