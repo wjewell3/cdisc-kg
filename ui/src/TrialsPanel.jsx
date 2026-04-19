@@ -549,6 +549,9 @@ export default function TrialsPanel() {
                   </span>
                 </div>
               <div className="results-layout">
+                {/* ── Knowledge Graph Exploration ──────────────────── */}
+                <StrategicKGQuestions />
+
                 {/* Charts — full width above results */}
                 <TrialsCharts
                   trials={(results || baseResults).results}
@@ -564,24 +567,21 @@ export default function TrialsPanel() {
                   fetchConditions={fetchConditions}
                   fetchInterventions={fetchInterventions}
                   normalizeAggData={normalizeAggData}
-                  mapSlot={
-                    <TrialsMap
-                      filterParams={geoFilterParams}
-                      onCountryFilter={(country) => {
-                        setChartFilters(prev => {
-                          const without = prev.filter(f => f.field !== "country");
-                          return [...without, { field: "country", value: country }];
-                        });
-                      }}
-                      onCountryClear={() => {
-                        setChartFilters(prev => prev.filter(f => f.field !== "country"));
-                      }}
-                    />
-                  }
                 />
 
-                {/* ── Knowledge Graph Exploration ──────────────────── */}
-                <StrategicKGQuestions />
+                {/* ── Geographic Map ───────────────────────────────── */}
+                <TrialsMap
+                  filterParams={geoFilterParams}
+                  onCountryFilter={(country) => {
+                    setChartFilters(prev => {
+                      const without = prev.filter(f => f.field !== "country");
+                      return [...without, { field: "country", value: country }];
+                    });
+                  }}
+                  onCountryClear={() => {
+                    setChartFilters(prev => prev.filter(f => f.field !== "country"));
+                  }}
+                />
 
                 {/* ── Operational KPIs ─────────────────────────────── */}
                 <div ref={okpiRef}>

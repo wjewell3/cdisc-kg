@@ -369,7 +369,7 @@ function StatsBanner({ stats, baseline, hasFilters }) {
 
 export { computeStats };
 
-export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter, onEntityInsight, stats, baselineStats, hasFilteredStats, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData, mapSlot }) {
+export default function TrialsCharts({ trials, aggData, baseAggData, activeFilters = [], onFilter, onEntityInsight, stats, baselineStats, hasFilteredStats, fetchSponsors, fetchConditions, fetchInterventions, normalizeAggData }) {
   const getActiveVals = (field) => new Set(activeFilters.filter((f) => f.field === field).map((f) => f.value));
 
   // Sponsor search state — async, queries all sponsors on the server
@@ -590,7 +590,6 @@ export default function TrialsCharts({ trials, aggData, baseAggData, activeFilte
             />
           </div>
         )}
-        {mapSlot && <div className="trials-map-grid-cell">{mapSlot}</div>}
       </div>
     </div>
   );
