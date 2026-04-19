@@ -487,13 +487,18 @@ export default function TrialsPanel() {
         onScrollToOkpi={handleAskScrollOkpi}
       />
 
+      {/* ── Product-suite narrative ──────────────────────────────── */}
+      <div className="product-suite-banner">
+        <span className="psb-text">Historical trial-data priors across 580k+ studies, organized by three capability areas PPD commercializes as digital products.</span>
+      </div>
+
       {/* ── Sub-tab navigation ─────────────────────────────────── */}
       <div className="sub-tab-bar">
         {[
-          { key: "plan",    label: "Plan Trial",    icon: "🎯" },
-          { key: "monitor", label: "Monitor Risk",  icon: "⚠️" },
-          { key: "close",   label: "Close Trial",   icon: "✅" },
-          { key: "browse",  label: "Browse Trials",  icon: "📋" },
+          { key: "plan",    label: "Forecast & Feasibility", icon: "📈" },
+          { key: "monitor", label: "Risk & Decisioning",     icon: "⚠️" },
+          { key: "close",   label: "Data Readiness",         icon: "✅" },
+          { key: "browse",  label: "Browse Trials",          icon: "📋" },
         ].map(t => (
           <button
             key={t.key}
@@ -572,9 +577,14 @@ export default function TrialsPanel() {
                   </span>
                 </div>
               <div className="results-layout">
-                {/* ── Plan Trial sub-tab ────────────────────────────── */}
+                {/* ── Forecast & Feasibility (mirrors Clinical Trial Forecasting Suite) ── */}
                 {subView === "plan" && (<>
-                <StrategicKGQuestions showOnly={["kq3","kq4","eq2","eq1","eq3","path"]} hideHeader />
+                <div className="product-tab-banner forecast-banner">
+                  <div className="ptb-product">📈 Clinical Trial Forecasting Suite</div>
+                  <div className="ptb-desc">Historical evidence base for enrollment forecasting, site selection, and milestone prediction — the trial-data priors that feed forecasting models.</div>
+                </div>
+
+                <StrategicKGQuestions showOnly={["eq1","eq2","eq3","path"]} hideHeader />
 
                 {/* Charts — full width above results */}
                 <TrialsCharts
@@ -593,7 +603,7 @@ export default function TrialsPanel() {
                   normalizeAggData={normalizeAggData}
                 />
 
-                {/* ── Geographic Map ───────────────────────────────── */}
+                {/* ── Geographic Map + Site Selection ───────────────── */}
                 <TrialsMap
                   filterParams={geoFilterParams}
                   onCountryFilter={(country) => {
@@ -607,18 +617,28 @@ export default function TrialsPanel() {
                   }}
                 />
 
-                {/* Feasibility & complexity */}
+                {/* Design complexity & feasibility */}
                 <PlanComplexity filterParams={okpiFilterParams} />
 
-                {/* Operational KPIs (all views) */}
+                {/* Enrollment Benchmark + Geography/Site Selection */}
                 <div ref={okpiRef}>
-                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView} />
+                  <OperationalKPIs filterParams={okpiFilterParams} initialView={okpiView || "enrollment"} showViews={["enrollment", "geography"]} />
                 </div>
                 </>)}
 
-                {/* ── Monitor Risk sub-tab ──────────────────────────── */}
+                {/* ── Risk & Decisioning (mirrors Clinical Decision Suite) ───── */}
                 {subView === "monitor" && (<>
+                <div className="product-tab-banner risk-banner">
+                  <div className="ptb-product">⚠️ Clinical Decision Suite</div>
+                  <div className="ptb-desc">Risk prediction and operational oversight aligned with ICH E6(R3) risk-based quality management — the intelligence layer behind real-time decisioning.</div>
+                </div>
+
+                <StrategicKGQuestions showOnly={["kq3","kq4"]} hideHeader />
+
                 <MonitorRisk filterParams={okpiFilterParams} />
+
+                {/* Failure Analysis + Sponsor Performance */}
+                <OperationalKPIs filterParams={okpiFilterParams} showViews={["failure", "sponsors"]} />
 
                 {/* Roadmap gap callout */}
                 <div className="monitor-gap-callout">
@@ -629,12 +649,17 @@ export default function TrialsPanel() {
                     <span className="gap-item">Protocol deviations (EDC)</span>
                     <span className="gap-item">Site activation timeline (CTMS)</span>
                   </div>
-                  <div className="gap-callout-note">Registry data provides retrospective risk signals. Live monitoring requires EDC/CTMS integration — scoped as external data partnership workstream.</div>
+                  <div className="gap-callout-note">Registry data provides retrospective risk signals. Live monitoring requires EDC/CTMS integration — scoped as external data partnership workstream for the DDM to own.</div>
                 </div>
                 </>)}
 
-                {/* ── Close Trial sub-tab ───────────────────────────── */}
+                {/* ── Data Readiness (mirrors Intelligent Clinical Suite) ──── */}
                 {subView === "close" && (<>
+                <div className="product-tab-banner readiness-banner">
+                  <div className="ptb-product">✅ Intelligent Clinical Suite</div>
+                  <div className="ptb-desc">Predictors of database lock readiness — historical reporting patterns that inform data management workflows and accelerate time from LPLV to DB lock.</div>
+                </div>
+
                 <CloseTrial filterParams={okpiFilterParams} />
                 </>)}
 
