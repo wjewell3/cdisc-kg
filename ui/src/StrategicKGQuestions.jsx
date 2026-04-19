@@ -7,22 +7,6 @@ const LABEL_COLORS = {
 
 const KG_QUESTIONS = [
   {
-    id: "kq1",
-    label: "Most-Connected Conditions",
-    question: "Which conditions attract the most diverse sponsors?",
-    description: "Ranks conditions by how many different sponsors fund trials in that area. High connectivity = broad industry investment.",
-    endpoint: "centrality",
-    params: { type: "condition", limit: "15" },
-  },
-  {
-    id: "kq2",
-    label: "Most-Connected Sponsors",
-    question: "Which sponsors research the most therapeutic areas?",
-    description: "Ranks sponsors by how many different conditions they run trials for. High connectivity = diversified portfolio.",
-    endpoint: "centrality",
-    params: { type: "sponsor", limit: "15" },
-  },
-  {
     id: "kq3",
     label: "Therapeutic Clusters",
     question: "Which conditions share drug pipelines?",
@@ -235,41 +219,6 @@ function PathResult({ data, from, to }) {
 // ── Result renderers ────────────────────────────────────────────────────
 function SKGResult({ data }) {
   const { question, result } = data;
-
-  if (question.endpoint === "centrality" && result.items) {
-    const maxScore = Math.max(...result.items.map((i) => i.bridge_score));
-    return (
-      <div className="skg-result">
-        <div className="skg-result-title">
-          {result.type === "condition" ? "🧬" : "🏢"} {question.question}
-        </div>
-        <div className="skg-result-subtitle">{result.description}</div>
-        <div className="skg-result-algo">Source: knowledge graph — {result.algorithm}</div>
-        <div className="skg-result-body">
-          {result.items.map((item, i) => (
-            <div key={i} className="skg-row">
-              <span className="skg-rank">{i + 1}</span>
-              <span className="skg-entity" title={item.entity}>
-                {item.entity.length > 35 ? item.entity.slice(0, 33) + "…" : item.entity}
-              </span>
-              <div className="skg-bar-track">
-                <div
-                  className="skg-bar-fill"
-                  style={{ width: `${Math.max((item.bridge_score / maxScore) * 100, 2)}%` }}
-                />
-              </div>
-              <span className="skg-metric">{item.bridge_score.toLocaleString()} connections</span>
-              <span className="skg-metric-sub">
-                {item.trials.toLocaleString()} trials · {result.type === "condition"
-                  ? `${item.sponsor_count} sponsors`
-                  : `${item.condition_count} conditions`}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   if (question.endpoint === "communities" && result.communities) {
     return (
