@@ -395,8 +395,8 @@ function GraphCentralityView() {
   return (
     <div style={{ padding: "16px" }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>Graph Bridge Centrality</span>
-        <span style={{ fontSize: 11, color: "#8b949e", flex: 1 }}>Entities that bridge distinct clusters — multi-hop graph reasoning</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>Most-Connected Entities</span>
+        <span style={{ fontSize: 11, color: "#8b949e", flex: 1 }}>Which conditions and sponsors have the broadest research networks?</span>
         <div className="okpi-toggle-group">
           {["condition", "sponsor"].map(t => (
             <button
@@ -417,7 +417,7 @@ function GraphCentralityView() {
       {data?.items && !loading && (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 100px 90px 90px", gap: 6, padding: "4px 0", borderBottom: "1px solid #30363d", marginBottom: 4 }}>
-            {["#","Entity","Bridge Score","Trials", entityType === "condition" ? "Sponsors" : "Conditions"].map(h => (
+            {["#","Entity","Connectivity","Trials", entityType === "condition" ? "Sponsors" : "Conditions"].map(h => (
               <span key={h} style={{ fontSize: 10, color: "#8b949e", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h}</span>
             ))}
           </div>
@@ -451,7 +451,7 @@ const VIEWS = [
   { key: "sponsors", label: "Sponsor Performance", icon: "🏆", question: "Which sponsors have the best completion rates?" },
   { key: "enrollment", label: "Enrollment Benchmark", icon: "📊", question: "How does enrollment ambition compare to actuals?" },
   { key: "geography", label: "Geography", icon: "🌍", question: "Where are the geographic concentrations and gaps in site activation?" },
-  { key: "graph", label: "Graph Analytics", icon: "🕸", question: "Which entities are most connected in the knowledge graph?" },
+  { key: "graph", label: "Connectivity", icon: "🔗", question: "Which conditions and sponsors have the broadest research networks?" },
 ];
 
 export default function OperationalKPIs({ filterParams, initialView }) {

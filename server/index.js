@@ -1226,6 +1226,10 @@ function nInt(v) {
   return typeof v.toNumber === "function" ? v.toNumber() : Number(v);
 }
 
+// ── Graph result cache (10 min TTL — data changes only on graph reload) ──
+const GRAPH_CACHE_TTL = 10 * 60 * 1000;
+const graphCache = {};
+
 // ── Graph endpoints ──────────────────────────────────────────────────────
 
 /**
@@ -1887,7 +1891,7 @@ app.get("/api/graph/trials-like", async (req, res) => {
            shared_conditions + shared_interventions AS total_overlap,
            shared_conditions, shared_interventions,
            CASE WHEN t2.phase = t.phase THEN 1 ELSE 0 END AS same_phase
-      RETURN t2.nct_id AS nct_id, t2.brief_title AS title, t2.phase AS phase,
+      RETURN t2.nct_id AS nct_id, t2.title AS title, t2.phase AS phase,
              t2.status AS status, t2.enrollment AS enrollment,
              shared_conditions, shared_interventions,
              total_overlap + same_phase AS similarity_score
@@ -1920,50 +1924,37 @@ app.get("/api/graph/centrality", async (req, res) => {
   const { type = "condition", limit = "20" } = req.query;
   if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
 
+  // Check cache (results change only when Neo4j data changes, which is rare)
+  const cacheKey = `centrality:${type}:${limit}`;
+  if (graphCache[cacheKey] && Date.now() - graphCache[cacheKey].ts < GRAPH_CACHE_TTL) {
+    return res.json(graphCache[cacheKey].data);
+  }
+
   try {
     let records;
     if (type === "condition") {
-      // Bridge score: how many distinct sponsor-pairs does this condition connect?
-      // High bridge score = condition sits at intersection of multiple sponsor programs.
-      // Secondary: 2nd-degree reach = distinct conditions reachable in 2 hops via shared interventions.
+      // Connectivity score: how many distinct sponsors fund trials for this condition?
+      // Uses math (n*(n-1)/2) instead of cartesian UNWIND for speed.
       records = await cypher(`
         MATCH (c:Condition)<-[:TREATS]-(t:Trial)<-[:RUNS]-(s:Sponsor)
-        WITH c, COLLECT(DISTINCT s) AS sponsors, COUNT(DISTINCT t) AS trials
-        WHERE SIZE(sponsors) >= 3
-        WITH c, trials, SIZE(sponsors) AS sponsor_count, sponsors
-        // Bridge score: count distinct sponsor pairs connected through this condition
-        UNWIND sponsors AS s1
-        UNWIND sponsors AS s2
-        WITH c, trials, sponsor_count, s1, s2
-        WHERE id(s1) < id(s2)
-        WITH c.name AS entity, trials, sponsor_count,
-             COUNT(*) AS bridge_score
-        // 2nd-degree reach: conditions reachable via shared interventions (2-hop)
-        MATCH (src:Condition {name: entity})<-[:TREATS]-(t2:Trial)-[:USES]->(i:Intervention)
-        WITH entity, trials, sponsor_count, bridge_score,
-             COUNT(DISTINCT i) AS unique_interventions
-        RETURN entity, trials, sponsor_count, bridge_score, unique_interventions
+        WITH c.name AS entity,
+             COUNT(DISTINCT t) AS trials,
+             COUNT(DISTINCT s) AS sponsor_count
+        WHERE sponsor_count >= 3
+        RETURN entity, trials, sponsor_count,
+               sponsor_count * (sponsor_count - 1) / 2 AS bridge_score
         ORDER BY bridge_score DESC
         LIMIT toInteger($limit)
       `, { limit });
     } else if (type === "sponsor") {
-      // For sponsors: how many distinct condition-pairs does this sponsor bridge?
-      // High score = sponsor operates across diverse therapeutic areas.
       records = await cypher(`
         MATCH (s:Sponsor)-[:RUNS]->(t:Trial)-[:TREATS]->(c:Condition)
-        WITH s, COLLECT(DISTINCT c) AS conditions, COUNT(DISTINCT t) AS trials
-        WHERE SIZE(conditions) >= 3
-        WITH s, trials, SIZE(conditions) AS condition_count, conditions
-        UNWIND conditions AS c1
-        UNWIND conditions AS c2
-        WITH s, trials, condition_count, c1, c2
-        WHERE id(c1) < id(c2)
-        WITH s.name AS entity, trials, condition_count,
-             COUNT(*) AS bridge_score
-        MATCH (src:Sponsor {name: entity})-[:RUNS]->(t2:Trial)-[:USES]->(i:Intervention)
-        WITH entity, trials, condition_count, bridge_score,
-             COUNT(DISTINCT i) AS unique_interventions
-        RETURN entity, trials, condition_count, bridge_score, unique_interventions
+        WITH s.name AS entity,
+             COUNT(DISTINCT t) AS trials,
+             COUNT(DISTINCT c) AS condition_count
+        WHERE condition_count >= 3
+        RETURN entity, trials, condition_count,
+               condition_count * (condition_count - 1) / 2 AS bridge_score
         ORDER BY bridge_score DESC
         LIMIT toInteger($limit)
       `, { limit });
@@ -1976,7 +1967,6 @@ app.get("/api/graph/centrality", async (req, res) => {
         entity: r.get("entity"),
         trials: nInt(r.get("trials")),
         bridge_score: nInt(r.get("bridge_score")),
-        unique_interventions: nInt(r.get("unique_interventions")),
       };
       if (type === "condition") {
         obj.sponsor_count = nInt(r.get("sponsor_count"));
@@ -1986,14 +1976,15 @@ app.get("/api/graph/centrality", async (req, res) => {
       return obj;
     });
 
-    res.json({
+    const result = {
       type,
-      algorithm: "multi-hop bridge score (3-hop sponsor-condition-sponsor paths)",
       description: type === "condition"
-        ? "Conditions that bridge the most distinct sponsor programs — hub positions in the clinical trial network"
-        : "Sponsors that bridge the most distinct therapeutic areas — diversified portfolio leaders",
+        ? "Conditions researched by the most diverse set of sponsors — high connectivity means many independent organizations are investing in this area"
+        : "Sponsors active across the most therapeutic areas — high connectivity means broad research portfolios",
       items,
-    });
+    };
+    graphCache[cacheKey] = { ts: Date.now(), data: result };
+    res.json(result);
   } catch (e) {
     console.error("[graph/centrality]", e.message);
     res.status(500).json({ error: e.message });
@@ -2009,6 +2000,11 @@ app.get("/api/graph/centrality", async (req, res) => {
 app.get("/api/graph/communities", async (req, res) => {
   const { min_shared = "3", limit = "60" } = req.query;
   if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  const cacheKey = `communities:${min_shared}:${limit}`;
+  if (graphCache[cacheKey] && Date.now() - graphCache[cacheKey].ts < GRAPH_CACHE_TTL) {
+    return res.json(graphCache[cacheKey].data);
+  }
 
   try {
     // Phase 1: Build overlay graph — intervention-centric approach.
@@ -2102,14 +2098,16 @@ app.get("/api/graph/communities", async (req, res) => {
       .sort((a, b) => b.size - a.size)
       .slice(0, parseInt(limit));
 
-    res.json({
+    const data = {
       algorithm: "label propagation over condition-condition overlay graph (2-hop via shared interventions)",
-      description: "Communities emerge from graph structure — conditions clustered by shared drug pipelines, not predefined categories",
+      description: "Therapeutic communities that emerge from shared drug pipelines — conditions clustered because they share treatments, not because someone categorized them",
       min_shared_interventions: parseInt(min_shared),
       total_conditions: allNodes.length,
       total_communities: result.length,
       communities: result,
-    });
+    };
+    graphCache[cacheKey] = { ts: Date.now(), data };
+    res.json(data);
   } catch (e) {
     console.error("[graph/communities]", e.message);
     res.status(500).json({ error: e.message });

@@ -8,33 +8,33 @@ const LABEL_COLORS = {
 const KG_QUESTIONS = [
   {
     id: "kq1",
-    label: "Hub Conditions",
-    question: "Which conditions bridge the most sponsor programs?",
-    description: "3-hop bridge score: Sponsor → Trial → Condition → Trial → different Sponsor. Cannot be replicated with SQL GROUP BY.",
+    label: "Most-Connected Conditions",
+    question: "Which conditions attract the most diverse sponsors?",
+    description: "Ranks conditions by how many different sponsors fund trials in that area. High connectivity = broad industry investment.",
     endpoint: "centrality",
     params: { type: "condition", limit: "15" },
   },
   {
     id: "kq2",
-    label: "Hub Sponsors",
-    question: "Which sponsors bridge the most therapeutic areas?",
-    description: "3-hop bridge score: Condition → Trial → Sponsor → Trial → different Condition. Multi-hop graph reasoning.",
+    label: "Most-Connected Sponsors",
+    question: "Which sponsors research the most therapeutic areas?",
+    description: "Ranks sponsors by how many different conditions they run trials for. High connectivity = diversified portfolio.",
     endpoint: "centrality",
     params: { type: "sponsor", limit: "15" },
   },
   {
     id: "kq3",
-    label: "Condition Communities",
-    question: "What therapeutic communities emerge from the graph?",
-    description: "Label propagation over condition-condition overlay graph (2-hop via shared interventions). Emergent structure, not predefined categories.",
+    label: "Therapeutic Clusters",
+    question: "Which conditions share drug pipelines?",
+    description: "Finds clusters of conditions that are treated by the same drugs — they emerge naturally from the data, not from pre-defined categories.",
     endpoint: "communities",
     params: { min_shared: "3", limit: "20" },
   },
   {
     id: "kq4",
-    label: "Sponsor Completion (KG)",
-    question: "Which sponsors have the best completion rates? (via graph traversal)",
-    description: "Same insight as SQL leaderboard, but computed by traversing Sponsor → Trial edges in Neo4j. The KG is the semantic layer.",
+    label: "Sponsor Completion Rates",
+    question: "Which sponsors have the best completion rates?",
+    description: "Completion rates computed by following sponsor → trial relationships in the knowledge graph.",
     endpoint: "sponsor-completion",
     params: { min_trials: "20", limit: "20" },
   },
@@ -110,8 +110,8 @@ export default function StrategicKGQuestions() {
     <div className="skg-section">
       <div className="skg-header">
         <span className="skg-badge">KG</span>
-        <span className="skg-title">Strategic Graph Questions</span>
-        <span className="skg-subtitle">Questions only a knowledge graph can answer — multi-hop reasoning, emergent structure, path narratives</span>
+        <span className="skg-title">Strategic Questions</span>
+        <span className="skg-subtitle">Questions answered by traversing relationships between trials, sponsors, conditions, and interventions</span>
       </div>
 
       <div className="skg-buttons">
@@ -150,8 +150,8 @@ export default function StrategicKGQuestions() {
           </button>
         </form>
         <div className="skg-path-hint">
-          Finds the shortest graph walk between two conditions — the path narrative explains <em>why</em> they&apos;re connected.
-          Uses Neo4j <code>shortestPath</code> — impossible in SQL.
+          Finds the shortest chain of relationships connecting two conditions — shows <em>what trials and drugs link them</em>.
+          Spelling must be exact (e.g. &quot;Alzheimer Disease&quot;, not &quot;Alzheimer&apos;s&quot;).
         </div>
       </div>
 
@@ -244,7 +244,7 @@ function SKGResult({ data }) {
           {result.type === "condition" ? "🧬" : "🏢"} {question.question}
         </div>
         <div className="skg-result-subtitle">{result.description}</div>
-        <div className="skg-result-algo">Algorithm: {result.algorithm}</div>
+        <div className="skg-result-algo">Source: knowledge graph — {result.algorithm}</div>
         <div className="skg-result-body">
           {result.items.map((item, i) => (
             <div key={i} className="skg-row">
@@ -258,7 +258,7 @@ function SKGResult({ data }) {
                   style={{ width: `${Math.max((item.bridge_score / maxScore) * 100, 2)}%` }}
                 />
               </div>
-              <span className="skg-metric">{item.bridge_score.toLocaleString()} bridges</span>
+              <span className="skg-metric">{item.bridge_score.toLocaleString()} connections</span>
               <span className="skg-metric-sub">
                 {item.trials.toLocaleString()} trials · {result.type === "condition"
                   ? `${item.sponsor_count} sponsors`
@@ -276,17 +276,17 @@ function SKGResult({ data }) {
       <div className="skg-result">
         <div className="skg-result-title">🧩 {question.question}</div>
         <div className="skg-result-subtitle">{result.description}</div>
-        <div className="skg-result-algo">Algorithm: {result.algorithm}</div>
+        <div className="skg-result-algo">Source: knowledge graph — conditions clustered by shared treatments</div>
         <div className="skg-result-subtitle">
-          {result.total_conditions} conditions → {result.total_communities} emergent communities (min {result.min_shared_interventions} shared interventions)
+          {result.total_conditions} conditions → {result.total_communities} clusters (min {result.min_shared_interventions} shared interventions)
         </div>
         <div className="skg-clusters">
           {result.communities.map((cluster, ci) => (
             <div key={ci} className="skg-cluster">
               <div className="skg-cluster-header">
-                <span className="skg-cluster-label">Community #{ci + 1}</span>
+                <span className="skg-cluster-label">Cluster #{ci + 1}</span>
                 <span className="skg-cluster-count">
-                  {cluster.size} conditions · {cluster.total_trials.toLocaleString()} trials · {cluster.internal_edges} internal edges
+                  {cluster.size} conditions · {cluster.total_trials.toLocaleString()} trials
                 </span>
               </div>
               <div className="skg-cluster-items">
@@ -312,7 +312,7 @@ function SKGResult({ data }) {
       <div className="skg-result">
         <div className="skg-result-title">🏢 {question.question}</div>
         <div className="skg-result-subtitle">{result.description}</div>
-        <div className="skg-result-algo">Source: {result.source} (not SQL)</div>
+        <div className="skg-result-algo">Source: knowledge graph (not SQL)</div>
         <div className="skg-result-body">
           <div className="skg-sponsor-table">
             <div className="skg-sponsor-header">
