@@ -2011,12 +2011,18 @@ app.get("/api/graph/communities", async (req, res) => {
   if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
 
   try {
-    // Phase 1: Build the overlay graph — condition pairs with shared intervention count
-    // This is a 2-hop traversal: Condition₁ ← TREATS ← Trial → USES → Intervention ← USES ← Trial → TREATS → Condition₂
+    // Phase 1: Build overlay graph — intervention-centric approach.
+    // For each intervention, collect the conditions it treats (via Trial links).
+    // Then expand pairs from that set. This avoids the 4-hop cartesian explosion.
     const records = await cypher(`
-      MATCH (c1:Condition)<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
-      WHERE id(c1) < id(c2)
-      WITH c1.name AS cond1, c2.name AS cond2, COUNT(DISTINCT i) AS shared_interventions
+      MATCH (c:Condition)<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)
+      WITH i, COLLECT(DISTINCT c.name) AS conditions, COUNT(DISTINCT t) AS tc
+      WHERE tc >= 5 AND SIZE(conditions) >= 2 AND SIZE(conditions) <= 50
+      UNWIND conditions AS c1
+      UNWIND conditions AS c2
+      WITH c1 AS cond1, c2 AS cond2
+      WHERE cond1 < cond2
+      WITH cond1, cond2, COUNT(*) AS shared_interventions
       WHERE shared_interventions >= toInteger($min_shared)
       RETURN cond1, cond2, shared_interventions
       ORDER BY shared_interventions DESC
@@ -2177,9 +2183,11 @@ app.get("/api/graph/sponsor-completion", async (req, res) => {
 // ── Failure Analysis ─────────────────────────────────────────────────────────
 // Returns termination rate + clustered why_stopped reasons for a filtered cohort.
 // Answers: "What's the real termination rate for Phase 3 oncology trials, and why?"
-app.get("/api/failure-analysis", (req, res) => {
-  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+app.get("/api/failure-analysis", async (req, res) => {
   const { condition = "", phase = "", sponsor = "", intervention = "", min_enrollment = "", max_enrollment = "" } = req.query;
+
+  // ── SQLite path ─────────────────────────────────────────────────────
+  if (db) {
   try {
     const { where, params } = buildSqliteWhere({ condition, phase, sponsor, intervention, min_enrollment, max_enrollment });
 
@@ -2253,7 +2261,7 @@ app.get("/api/failure-analysis", (req, res) => {
       };
     });
 
-    res.json({
+    return res.json({
       counts,
       termination_rate_pct,
       stop_reasons: stopReasons.map(r => ({ reason: r.reason, count: r.count })),
@@ -2261,18 +2269,117 @@ app.get("/api/failure-analysis", (req, res) => {
       by_phase: phaseRates,
     });
   } catch (e) {
-    console.error("[failure-analysis]", e.message);
-    res.status(500).json({ error: "Query failed", detail: e.message });
+    console.error("[failure-analysis] sqlite:", e.message);
+    // fall through to PG
+  }
+  }
+
+  // ── PostgreSQL fallback ────────────────────────────────────────────
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "SQLite snapshot rebuilding and no AACT credentials for live fallback." });
+  try {
+    const pgClauses = [];
+    const pgParams = [];
+    let idx = 1;
+    if (condition) { pgClauses.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${idx})`); pgParams.push(`%${condition}%`); idx++; }
+    if (phase) { pgClauses.push(`s.phase = $${idx}`); pgParams.push(phase); idx++; }
+    if (sponsor) { pgClauses.push(`EXISTS (SELECT 1 FROM sponsors sp WHERE sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead' AND sp.name ILIKE $${idx})`); pgParams.push(`%${sponsor}%`); idx++; }
+    if (intervention) { pgClauses.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${idx})`); pgParams.push(`%${intervention}%`); idx++; }
+    if (min_enrollment) { pgClauses.push(`s.enrollment >= $${idx}`); pgParams.push(parseInt(min_enrollment)); idx++; }
+    if (max_enrollment && parseInt(max_enrollment) < 999999999) { pgClauses.push(`s.enrollment <= $${idx}`); pgParams.push(parseInt(max_enrollment)); idx++; }
+    const pgWhere = pgClauses.length ? `WHERE ${pgClauses.join(" AND ")}` : "";
+
+    const { rows: [counts] } = await pool.query(`
+      SELECT COUNT(*) AS total,
+        SUM(CASE WHEN s.overall_status = 'Completed'  THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END) AS terminated,
+        SUM(CASE WHEN s.overall_status = 'Withdrawn'  THEN 1 ELSE 0 END) AS withdrawn,
+        SUM(CASE WHEN s.overall_status = 'Suspended'  THEN 1 ELSE 0 END) AS suspended
+      FROM studies s ${pgWhere}
+    `, pgParams);
+
+    const total = parseInt(counts.total);
+    const completed = parseInt(counts.completed);
+    const terminated = parseInt(counts.terminated);
+    const finished = completed + terminated;
+    const termination_rate_pct = finished > 0 ? parseFloat(((terminated / finished) * 100).toFixed(1)) : null;
+
+    const { rows: stopReasons } = await pool.query(`
+      SELECT LOWER(TRIM(s.why_stopped)) AS reason, COUNT(*)::int AS count
+      FROM studies s ${pgWhere ? pgWhere + ' AND' : 'WHERE'} s.why_stopped IS NOT NULL AND s.why_stopped != ''
+      GROUP BY LOWER(TRIM(s.why_stopped))
+      ORDER BY count DESC
+      LIMIT 20
+    `, pgParams);
+
+    const { rows: byCondition } = await pool.query(`
+      SELECT c.name AS condition_name,
+        COUNT(DISTINCT s.nct_id)::int AS total,
+        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END)::int AS terminated,
+        SUM(CASE WHEN s.overall_status = 'Completed' THEN 1 ELSE 0 END)::int AS completed
+      FROM studies s
+      JOIN conditions c ON c.nct_id = s.nct_id
+      ${pgWhere}
+      GROUP BY c.name
+      HAVING COUNT(DISTINCT s.nct_id) >= 20
+      ORDER BY COUNT(DISTINCT s.nct_id) DESC
+      LIMIT 25
+    `, pgParams);
+
+    const conditionRates = byCondition.map(r => {
+      const fin = r.completed + r.terminated;
+      return {
+        condition: r.condition_name,
+        total: r.total,
+        terminated: r.terminated,
+        completed: r.completed,
+        termination_rate_pct: fin > 0 ? parseFloat(((r.terminated / fin) * 100).toFixed(1)) : null,
+      };
+    }).sort((a, b) => (b.termination_rate_pct ?? 0) - (a.termination_rate_pct ?? 0));
+
+    const { rows: byPhase } = await pool.query(`
+      SELECT COALESCE(s.phase, 'Unknown') AS phase,
+        COUNT(*)::int AS total,
+        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END)::int AS terminated,
+        SUM(CASE WHEN s.overall_status = 'Completed' THEN 1 ELSE 0 END)::int AS completed
+      FROM studies s ${pgWhere}
+      GROUP BY 1
+      ORDER BY COUNT(*) DESC
+    `, pgParams);
+
+    const phaseRates = byPhase.map(r => {
+      const fin = r.completed + r.terminated;
+      return {
+        phase: r.phase,
+        total: r.total,
+        terminated: r.terminated,
+        termination_rate_pct: fin > 0 ? parseFloat(((r.terminated / fin) * 100).toFixed(1)) : null,
+      };
+    });
+
+    return res.json({
+      counts: { total, completed, terminated, withdrawn: parseInt(counts.withdrawn), suspended: parseInt(counts.suspended) },
+      termination_rate_pct,
+      stop_reasons: stopReasons.map(r => ({ reason: r.reason, count: r.count })),
+      by_condition: conditionRates,
+      by_phase: phaseRates,
+      source: "live",
+    });
+  } catch (e) {
+    console.error("[failure-analysis] pg:", e.message);
+    return res.status(500).json({ error: "Query failed", detail: e.message });
   }
 });
 
 // ── Sponsor Performance ──────────────────────────────────────────────────────
 // Leaderboard: sponsors ranked by completion rate within a filtered cohort.
 // Answers: "Which sponsors have the best completion rates in my therapeutic area?"
-app.get("/api/sponsor-performance", (req, res) => {
-  if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
+app.get("/api/sponsor-performance", async (req, res) => {
   const { condition = "", phase = "", intervention = "", min_enrollment = "", max_enrollment = "", min_trials = "10" } = req.query;
   const minTrials = parseInt(min_trials) || 10;
+
+  // ── SQLite path ─────────────────────────────────────────────────────
+  if (db) {
   try {
     const { where, params } = buildSqliteWhere({ condition, phase, intervention, min_enrollment, max_enrollment });
 
@@ -2302,10 +2409,57 @@ app.get("/api/sponsor-performance", (req, res) => {
       };
     }).sort((a, b) => (b.completion_rate_pct ?? 0) - (a.completion_rate_pct ?? 0));
 
-    res.json({ sponsors, min_trials: minTrials });
+    return res.json({ sponsors, min_trials: minTrials });
   } catch (e) {
-    console.error("[sponsor-performance]", e.message);
-    res.status(500).json({ error: "Query failed", detail: e.message });
+    console.error("[sponsor-performance] sqlite:", e.message);
+    // fall through to PG
+  }
+  }
+
+  // ── PostgreSQL fallback ────────────────────────────────────────────
+  const pool = getPgPool();
+  if (!pool) return res.status(503).json({ error: "SQLite snapshot rebuilding and no AACT credentials for live fallback." });
+  try {
+    const pgClauses = [];
+    const pgParams = [];
+    let idx = 1;
+    if (condition) { pgClauses.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${idx})`); pgParams.push(`%${condition}%`); idx++; }
+    if (phase) { pgClauses.push(`s.phase = $${idx}`); pgParams.push(phase); idx++; }
+    if (intervention) { pgClauses.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.name ILIKE $${idx})`); pgParams.push(`%${intervention}%`); idx++; }
+    if (min_enrollment) { pgClauses.push(`s.enrollment >= $${idx}`); pgParams.push(parseInt(min_enrollment)); idx++; }
+    if (max_enrollment && parseInt(max_enrollment) < 999999999) { pgClauses.push(`s.enrollment <= $${idx}`); pgParams.push(parseInt(max_enrollment)); idx++; }
+    const pgWhere = pgClauses.length ? `WHERE ${pgClauses.join(" AND ")}` : "";
+
+    const { rows } = await pool.query(`
+      SELECT sp.name AS sponsor,
+        COUNT(DISTINCT s.nct_id)::int AS total,
+        SUM(CASE WHEN s.overall_status = 'Completed' THEN 1 ELSE 0 END)::int AS completed,
+        SUM(CASE WHEN s.overall_status = 'Terminated' THEN 1 ELSE 0 END)::int AS terminated,
+        ROUND(AVG(CASE WHEN s.enrollment_type = 'Actual' THEN s.enrollment::numeric END), 0) AS avg_enrollment
+      FROM studies s
+      JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
+      ${pgWhere}
+      GROUP BY sp.name
+      HAVING COUNT(DISTINCT s.nct_id) >= $${idx}
+      ORDER BY COUNT(DISTINCT s.nct_id) DESC
+    `, [...pgParams, minTrials]);
+
+    const sponsors = rows.map(r => {
+      const fin = r.completed + r.terminated;
+      return {
+        sponsor: r.sponsor,
+        total: r.total,
+        completed: r.completed,
+        terminated: r.terminated,
+        completion_rate_pct: fin > 0 ? parseFloat(((r.completed / fin) * 100).toFixed(1)) : null,
+        avg_enrollment: r.avg_enrollment ? Math.round(parseFloat(r.avg_enrollment)) : null,
+      };
+    }).sort((a, b) => (b.completion_rate_pct ?? 0) - (a.completion_rate_pct ?? 0));
+
+    return res.json({ sponsors, min_trials: minTrials, source: "live" });
+  } catch (e) {
+    console.error("[sponsor-performance] pg:", e.message);
+    return res.status(500).json({ error: "Query failed", detail: e.message });
   }
 });
 

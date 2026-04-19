@@ -32,7 +32,7 @@ export default async function handler(req, res) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 55000);
     const upstream = await fetch(url.toString(), { signal: controller.signal });
     clearTimeout(timeout);
     const data = await upstream.json();
