@@ -139,8 +139,10 @@ cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
 │       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph (+ embedded Q&A), Data Catalog, SDTM Training
-│       ├── TrialsPanel.jsx    # Main search + Question Launcher + cross-filter charts + KPI panels + KG Q&A + entity insight + graph→filter bridge
-│       ├── TrialsCharts.jsx   # SVG bar/donut/histogram charts + StatsBanner (double-click bar → entity insight)
+│       ├── TrialsPanel.jsx    # Main orchestrator — AskBar → KG Exploration → cross-filter charts → geographic map → KPI panels → trial results + entity insight
+│       ├── StrategicKGQuestions.jsx # KG exploration panel — one-click + entity-input strategic questions (gaps, landscape, portfolio, clusters, path explorer)
+│       ├── TrialsCharts.jsx   # 6 SVG bar/donut/histogram charts (phase, status, enrollment, sponsors, conditions, interventions) + StatsBanner
+│       ├── TrialsMap.jsx      # Geographic trial map — country click-to-filter, standalone section below charts
 │       ├── OperationalKPIs.jsx # 4-tab panel: Failure Analysis, Sponsor Performance, Enrollment Benchmark, Geography
 │       ├── GraphViz.jsx       # Cytoscape.js trial-graph visualization (Neo4j → browser)
 │       ├── RulesManager.jsx   # DQ rules: grouping normalization, enrollment bounds
@@ -153,7 +155,7 @@ cdisc-kg/
 ├── api/                       # Vercel serverless functions (HTTPS proxy → OKE, 10 functions for Hobby plan)
 │   ├── trials.js              # /api/trials → OKE server
 │   ├── intelligence.js        # /api/intelligence → trial-intelligence
-│   ├── analytics.js           # /api/analytics?mode=failure-analysis|sponsor-performance|enrollment-benchmark|geographic → OKE
+│   ├── analytics.js           # /api/analytics?mode=ask|failure-analysis|sponsor-performance|enrollment-benchmark|geographic → OKE
 │   ├── entity.js              # /api/entity?mode=insight|intelligence → OKE entity endpoints
 │   ├── site.js                # /api/site?mode=search|profile → OKE site endpoints
 │   ├── trial-risk.js          # /api/trial-risk → OKE
