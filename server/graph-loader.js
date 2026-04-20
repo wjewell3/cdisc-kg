@@ -291,13 +291,8 @@ async function main() {
     FROM facilities WHERE name IS NOT NULL`;
     const siteCypher = `
       UNWIND $batch AS s
-      CREATE (n:Site {
-        key: s.key,
-        name: s.name,
-        city: s.city,
-        state: s.state,
-        country: s.country
-      })
+      MERGE (n:Site {key: s.key})
+      ON CREATE SET n.name = s.name, n.city = s.city, n.state = s.state, n.country = s.country
     `;
 
     if (hasFacilities) {
@@ -323,7 +318,7 @@ async function main() {
       UNWIND $batch AS e
       MATCH (t:Trial {nct_id: e.nct_id})
       MATCH (s:Site {key: e.site_key})
-      CREATE (t)-[:AT]->(s)
+      MERGE (t)-[:AT]->(s)
     `;
 
     if (hasFacilities) {

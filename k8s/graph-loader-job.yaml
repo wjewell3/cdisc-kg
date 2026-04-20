@@ -40,7 +40,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
-              readOnly: true
           resources:
             requests:
               cpu: "500m"
