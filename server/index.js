@@ -1392,10 +1392,16 @@ app.get("/api/graph/condition-landscape", async (req, res) => {
   const { condition, limit = "15" } = req.query;
   if (!condition) return res.status(400).json({ error: "condition required" });
   try {
-    // First: find adjacent conditions
+    // Optimized: cap intermediate fan-out at top-50 interventions to avoid
+    // combinatorial explosion for high-volume conditions (Breast Cancer = 8.6k trials).
+    // First: find adjacent conditions via top interventions
     const adjRecords = await cypher(`
-      MATCH (c:Condition {name: $condition})<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)<-[:USES]-(t2:Trial)-[:TREATS]->(adj:Condition)
-      WHERE c <> adj
+      MATCH (c:Condition {name: $condition})<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)
+      WITH i, COUNT(t1) AS usage ORDER BY usage DESC LIMIT 50
+      WITH COLLECT(i) AS topDrugs
+      UNWIND topDrugs AS i
+      MATCH (i)<-[:USES]-(t2:Trial)-[:TREATS]->(adj:Condition)
+      WHERE adj.name <> $condition
       WITH adj, COUNT(DISTINCT i) AS shared_drugs
       RETURN adj.name AS condition, shared_drugs
       ORDER BY shared_drugs DESC
@@ -1442,9 +1448,16 @@ app.get("/api/graph/therapeutic-adjacency", async (req, res) => {
   const { condition, limit = "15" } = req.query;
   if (!condition) return res.status(400).json({ error: "condition required" });
   try {
+    // Optimized: cap intermediate fan-out at top-50 interventions.
+    // Without this, high-volume conditions (8k+ trials) produce a Cartesian
+    // explosion across millions of intermediate paths (33s → <1s).
     const records = await cypher(`
-      MATCH (c1:Condition {name: $condition})<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
-      WHERE c1 <> c2
+      MATCH (c1:Condition {name: $condition})<-[:TREATS]-(t1:Trial)-[:USES]->(i:Intervention)
+      WITH i, COUNT(t1) AS usage ORDER BY usage DESC LIMIT 50
+      WITH COLLECT(i) AS topDrugs
+      UNWIND topDrugs AS i
+      MATCH (i)<-[:USES]-(t2:Trial)-[:TREATS]->(c2:Condition)
+      WHERE c2.name <> $condition
       WITH c2, COUNT(DISTINCT i) AS shared_interventions,
            COLLECT(DISTINCT i.name)[0..3] AS example_drugs
       RETURN c2.name AS condition, shared_interventions, example_drugs
