@@ -742,8 +742,8 @@ export default function TrialsPanel() {
         <div className="trials-header-left">
           <div className="trials-logo">🌐</div>
           <div>
-            <h1 className="trials-title">Cross-Trial Intelligence</h1>
-            <p className="trials-subtitle">580k+ ClinicalTrials.gov studies — search, filter, explore</p>
+            <h1 className="trials-title">Trial Intelligence</h1>
+            <p className="trials-subtitle">580k+ ClinicalTrials.gov studies · KG-powered insights</p>
           </div>
         </div>
         <div className="trials-badge-row">

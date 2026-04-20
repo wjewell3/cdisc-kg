@@ -1,4 +1,4 @@
-# Clinical Trials Knowledge Graph
+# Trials-Intel
 
 A knowledge-graph-powered operational intelligence platform for clinical trials, built on 580k+ studies from [AACT](https://aact.ctti-clinicaltrials.org/) (ClinicalTrials.gov). Live at **[trials-intel.vercel.app](https://trials-intel.vercel.app)**.
 

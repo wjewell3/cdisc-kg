@@ -312,8 +312,8 @@ function App() {
         <button className="hamburger" onClick={() => setSidebarOpen((o) => !o)} aria-label="Toggle sidebar">
           ☰
         </button>
-        <h1>Clinical Trials Knowledge Graph</h1>
-        <span className="subtitle">580 k Trials · SDTM IG v3.4 · Neo4j + GPT-4.1</span>
+        <h1>Trials-Intel</h1>
+        <span className="subtitle">580 k Trials · Neo4j KG · SDTM IG v3.4 · GPT-4.1</span>
         <div className="tab-bar">
           <button
             className={`tab-btn tab-btn-trials ${activePanel === "trials" ? "active" : ""}`}
