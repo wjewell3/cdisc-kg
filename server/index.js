@@ -1091,17 +1091,30 @@ app.post("/api/dq/canonical", (req, res) => {
 app.post("/api/dq/canonical/rebuild", async (req, res) => {
   const { GITHUB_COPILOT_TOKEN } = process.env;
   if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured" });
-  if (!db) return res.status(503).json({ error: "SQLite snapshot unavailable" });
 
   const { fields = ["phase", "stop_reason", "withdrawal_reason"], limit = 300 } = req.body || {};
   const lim = Math.min(500, Math.max(20, parseInt(limit, 10) || 300));
 
-  // Distinct-value queries per supported field
+  // Distinct-value queries per supported field — SQLite preferred, PG fallback
   const fetchers = {
-    phase: () => db.prepare(`SELECT COALESCE(phase,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(phase,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c]),
-    stop_reason: () => db.prepare(`SELECT LOWER(TRIM(why_stopped)) AS v, COUNT(*) AS c FROM studies WHERE why_stopped IS NOT NULL AND TRIM(why_stopped) != '' GROUP BY LOWER(TRIM(why_stopped)) ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c]),
-    withdrawal_reason: () => db.prepare(`SELECT reason AS v, COUNT(*) AS c FROM drop_withdrawals WHERE reason IS NOT NULL AND TRIM(reason) != '' GROUP BY reason ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c]),
-    status: () => db.prepare(`SELECT COALESCE(overall_status,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(overall_status,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c]),
+    phase: () => db
+      ? db.prepare(`SELECT COALESCE(phase,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(phase,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c])
+      : getAactPool().then(pool => pool.query(`SELECT COALESCE(phase,'') AS v, COUNT(*)::int AS c FROM studies GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).then(r => r.rows.map(r => [r.v || "(blank)", r.c])),
+    stop_reason: () => db
+      ? db.prepare(`SELECT LOWER(TRIM(why_stopped)) AS v, COUNT(*) AS c FROM studies WHERE why_stopped IS NOT NULL AND TRIM(why_stopped) != '' GROUP BY LOWER(TRIM(why_stopped)) ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c])
+      : getAactPool().then(pool => pool.query(`SELECT LOWER(TRIM(why_stopped)) AS v, COUNT(*)::int AS c FROM studies WHERE why_stopped IS NOT NULL AND TRIM(why_stopped) != '' GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).then(r => r.rows.map(r => [r.v, r.c])),
+    withdrawal_reason: async () => {
+      if (db) {
+        try { return db.prepare(`SELECT reason AS v, COUNT(*) AS c FROM drop_withdrawals WHERE reason IS NOT NULL AND TRIM(reason) != '' GROUP BY reason ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c]); }
+        catch (_) { /* table may not exist in snapshot — fall through to PG */ }
+      }
+      const pool = await getAactPool();
+      const { rows } = await pool.query(`SELECT reason AS v, COUNT(*)::int AS c FROM drop_withdrawals WHERE reason IS NOT NULL AND TRIM(reason) != '' GROUP BY reason ORDER BY c DESC LIMIT $1`, [lim]);
+      return rows.map(r => [r.v, r.c]);
+    },
+    status: () => db
+      ? db.prepare(`SELECT COALESCE(overall_status,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(overall_status,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c])
+      : getAactPool().then(pool => pool.query(`SELECT COALESCE(overall_status,'') AS v, COUNT(*)::int AS c FROM studies GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).then(r => r.rows.map(r => [r.v || "(blank)", r.c])),
   };
 
   const report = {};
@@ -1112,7 +1125,7 @@ app.post("/api/dq/canonical/rebuild", async (req, res) => {
     const fetcher = fetchers[field];
     if (!fetcher) { report[field] = { error: "unsupported field" }; continue; }
     try {
-      const distinct = fetcher();
+      const distinct = await Promise.resolve(fetcher());
       if (distinct.length === 0) { report[field] = { error: "no values" }; continue; }
       const existingGroups = nextCatalog[field] || [];
       const groups = await rebuildField(field, distinct, GITHUB_COPILOT_TOKEN, existingGroups);

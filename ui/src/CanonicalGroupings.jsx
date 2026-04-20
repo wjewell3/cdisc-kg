@@ -64,7 +64,7 @@ export default function CanonicalGroupings() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       setCatalog(j.catalog); setDraft(JSON.parse(JSON.stringify(j.catalog)));
-      const summary = Object.entries(j.report || {}).map(([f, v]) => v.error ? `${f}: ${v.error}` : `${f}: ${v.groups} groups from ${v.raw_values_clustered} values`).join(" · ");
+      const summary = Object.entries(j.report || {}).map(([f, v]) => v.error ? `${f}: ${v.error}` : `${f}: ${v.groups} groups, ${v.new_values_added || 0} new values added (${v.raw_values_total} total)`).join(" · ");
       setNotice(`AI rebuild complete — ${summary}`);
     } catch (e) { setError(e.message); }
     finally { setRebuilding(false); }
