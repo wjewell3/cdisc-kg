@@ -24,7 +24,7 @@ const {
   DB_PATH = "/data/aact.db",
   PORT = "3001",
   CORS_ORIGIN = "*",
-  STALE_HOURS = "48",
+  STALE_HOURS = "720",
   AACT_USER,
   AACT_PASSWORD,
   AACT_HOST = "aact-db.ctti-clinicaltrials.org",
@@ -50,6 +50,9 @@ function openDb() {
       console.warn(`[server] SQLite snapshot is ${ageHours.toFixed(1)}h old — falling back to live AACT`);
       d.close();
       return null;
+    }
+    if (ageHours > 48) {
+      console.warn(`[server] SQLite snapshot is ${ageHours.toFixed(1)}h old — stale but usable (CronJob may need attention)`);
     }
     console.log(`[server] Using SQLite snapshot from ${snapshotAge}`);
 
@@ -105,7 +108,10 @@ function getPgPool() {
     host: AACT_HOST, port: 5432, database: "aact",
     user: AACT_USER.trim(), password: AACT_PASSWORD.trim(),
     ssl: { rejectUnauthorized: false },
-    max: 3, idleTimeoutMillis: 10000, connectionTimeoutMillis: 8000,
+    max: 3, idleTimeoutMillis: 10000, connectionTimeoutMillis: 15000,
+  });
+  pgPool.on("error", (err) => {
+    console.error("[pg-pool] idle client error:", err.message);
   });
   return pgPool;
 }

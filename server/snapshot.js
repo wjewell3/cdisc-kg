@@ -75,12 +75,22 @@ async function main() {
     password: AACT_PASSWORD.trim(),
     ssl: { rejectUnauthorized: false },
     max: 4,
-    connectionTimeoutMillis: 30000,
+    connectionTimeoutMillis: 60000,
     statement_timeout: 600000, // 10 min for large tables
   });
-  // quick connectivity check
-  await pool.query("SELECT 1");
-  console.log(`[snapshot] connected to AACT in ${elapsed(t0)}`);
+
+  // Retry initial connection (AACT PG has intermittent availability)
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await pool.query("SELECT 1");
+      console.log(`[snapshot] connected to AACT in ${elapsed(t0)} (attempt ${attempt})`);
+      break;
+    } catch (e) {
+      console.warn(`[snapshot] PG connect attempt ${attempt}/5 failed: ${e.message}`);
+      if (attempt === 5) throw e;
+      await new Promise(r => setTimeout(r, attempt * 10000)); // 10s, 20s, 30s, 40s backoff
+    }
+  }
 
   // Write to a temp file, then rename — so the running server sees an atomic swap
   const TMP_PATH = DB_PATH + ".tmp";
