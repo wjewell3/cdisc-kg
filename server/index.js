@@ -384,6 +384,8 @@ app.get("/api/trials", async (req, res) => {
         `).all(...wParams, ...likeParams);
         return res.json({ sponsors: rows });
       } else {
+        const pool = getPgPool();
+        if (!pool) return res.status(503).json({ error: "No data source available" });
         const pgParams = [];
         let pgWhere = "WHERE sp.lead_or_collaborator = 'lead'";
         if (sponsor_q) { pgParams.push(`%${sponsor_q}%`); pgWhere += ` AND LOWER(sp.name) LIKE LOWER($${pgParams.length})`; }
@@ -414,6 +416,8 @@ app.get("/api/trials", async (req, res) => {
         `).all(...wParams, ...likeParams);
         return res.json({ conditions: rows });
       } else {
+        const pool = getPgPool();
+        if (!pool) return res.status(503).json({ error: "No data source available" });
         const pgParams = [];
         let pgWhere = "";
         if (q_cond) { pgParams.push(`%${q_cond}%`); pgWhere = `WHERE LOWER(c.name) LIKE LOWER($${pgParams.length})`; }
@@ -444,6 +448,8 @@ app.get("/api/trials", async (req, res) => {
         `).all(...wParams, ...likeParams);
         return res.json({ interventions: rows });
       } else {
+        const pool = getPgPool();
+        if (!pool) return res.status(503).json({ error: "No data source available" });
         const pgParams = [];
         let pgWhere = "";
         if (q_int) { pgParams.push(`%${q_int}%`); pgWhere = `WHERE LOWER(i.name) LIKE LOWER($${pgParams.length})`; }
