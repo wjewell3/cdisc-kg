@@ -103,6 +103,30 @@ async function runBatch(cypher, rows, batchSize = 5000) {
   }
 }
 
+// Stream SQLite rows directly to Neo4j in chunks (bounded memory for large tables)
+async function sqliteStreamToNeo4j(sql, cypherTemplate, neoBatch = 3000, chunkSize = 50000) {
+  let total = 0;
+  let offset = 0;
+  const countSql = `SELECT COUNT(*) AS cnt FROM (${sql})`;
+  const totalRows = db.prepare(countSql).get()?.cnt || 0;
+  log(`  total rows to stream: ${totalRows.toLocaleString()}`);
+  while (true) {
+    const chunk = db.prepare(`${sql} LIMIT ${chunkSize} OFFSET ${offset}`).all();
+    if (chunk.length === 0) break;
+    for (let i = 0; i < chunk.length; i += neoBatch) {
+      const batch = chunk.slice(i, i + neoBatch);
+      const session = driver.session();
+      try { await session.run(cypherTemplate, { batch }); }
+      finally { await session.close(); }
+    }
+    total += chunk.length;
+    log(`  ... streamed ${total.toLocaleString()}/${totalRows.toLocaleString()} rows to Neo4j`);
+    if (chunk.length < chunkSize) break;
+    offset += chunkSize;
+  }
+  return total;
+}
+
 async function main() {
   log("Starting graph load");
   const t0 = Date.now();
@@ -277,9 +301,9 @@ async function main() {
     `;
 
     if (hasFacilities) {
-      const sites = db.prepare(sitesSql).all();
-      log(`  ${sites.length} unique sites from SQLite`);
-      await runBatch(siteCypher, sites, 3000);
+      log(`  Streaming site nodes from SQLite (chunked)...`);
+      const siteCount = await sqliteStreamToNeo4j(sitesSql, siteCypher, 3000, 50000);
+      log(`  ${siteCount.toLocaleString()} unique sites from SQLite`);
     } else {
       const count = await pgStreamToNeo4j(sitesSql, siteCypher, 3000);
       log(`  ${count} unique sites from PG (streamed)`);
@@ -303,9 +327,9 @@ async function main() {
     `;
 
     if (hasFacilities) {
-      const atEdges = db.prepare(atSql).all();
-      log(`  Loading ${atEdges.length} AT edges...`);
-      await runBatch(atCypher, atEdges, 3000);
+      log(`  Streaming AT edges from SQLite (chunked)...`);
+      const atCount = await sqliteStreamToNeo4j(atSql, atCypher, 3000, 50000);
+      log(`  ${atCount.toLocaleString()} AT edges from SQLite`);
     } else {
       log(`  Loading AT edges from PG (streamed)...`);
       const atCount = await pgStreamToNeo4j(atSql, atCypher, 3000);
@@ -313,6 +337,70 @@ async function main() {
     }
     log(`  Site nodes and AT edges created`);
   } else { log("Skipping Sites (facilities table missing, no PG fallback)"); }
+
+  // ── ATC Drug Classification enrichment ──
+  log("Enriching Interventions with ATC drug classes...");
+  try {
+    const { readFileSync } = await import("fs");
+    const { dirname, join } = await import("path");
+    const { fileURLToPath } = await import("url");
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const atcData = JSON.parse(readFileSync(join(__dirname, "atc-map.json"), "utf8"));
+    const drugMap = atcData.drugs;
+
+    // Collect unique classes and sub-classes
+    const classSet = new Map(); // class → Set<sub>
+    const drugMappings = []; // { drug, atc, className, subClass }
+    for (const [drug, info] of Object.entries(drugMap)) {
+      if (!info) continue; // skip placebo etc.
+      if (!classSet.has(info.class)) classSet.set(info.class, new Set());
+      classSet.get(info.class).add(info.sub);
+      drugMappings.push({ drug, atc: info.atc, className: info.class, subClass: info.sub });
+    }
+
+    // Create DrugClass nodes (therapeutic class + sub-class)
+    await run("CREATE CONSTRAINT drug_class_name IF NOT EXISTS FOR (d:DrugClass) REQUIRE d.name IS UNIQUE");
+    const classNodes = [];
+    for (const [cls, subs] of classSet) {
+      classNodes.push({ name: cls, level: "therapeutic_class" });
+      for (const sub of subs) {
+        classNodes.push({ name: sub, level: "sub_class", parent: cls });
+      }
+    }
+    await runBatch(`
+      UNWIND $batch AS c
+      MERGE (d:DrugClass {name: c.name})
+      SET d.level = c.level
+    `, classNodes);
+
+    // Link sub-classes to parent classes
+    const subClassLinks = classNodes.filter(c => c.parent);
+    if (subClassLinks.length > 0) {
+      await runBatch(`
+        UNWIND $batch AS c
+        MATCH (sub:DrugClass {name: c.name})
+        MATCH (parent:DrugClass {name: c.parent})
+        MERGE (sub)-[:BELONGS_TO]->(parent)
+      `, subClassLinks);
+    }
+
+    // Match Intervention nodes to ATC mappings (case-insensitive)
+    let matched = 0;
+    for (const mapping of drugMappings) {
+      const result = await run(`
+        MATCH (i:Intervention)
+        WHERE toLower(i.name) = $drug OR toLower(i.name) CONTAINS $drug
+        WITH i LIMIT 1
+        MATCH (d:DrugClass {name: $subClass})
+        MERGE (i)-[:CLASSIFIED_AS]->(d)
+        RETURN COUNT(*) AS cnt
+      `, { drug: mapping.drug, subClass: mapping.subClass });
+      matched += result.records[0]?.get("cnt")?.toNumber?.() || 0;
+    }
+    log(`  ${classNodes.length} DrugClass nodes, ${matched} CLASSIFIED_AS edges`);
+  } catch (e) {
+    log(`  ATC enrichment failed (non-fatal): ${e.message}`);
+  }
 
   // ── Summary ──
   const counts = await run(`

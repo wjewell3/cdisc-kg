@@ -297,6 +297,38 @@
 }
 .strategy-banner .ptb-product { color: #c39bd3; }
 
+/* KG card timing badge */
+.kg-timing {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: #4a5568;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+/* Site Feasibility card styles */
+.site-feas-row {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.site-feas-row:hover { background: rgba(255,255,255,0.04); }
+.site-feas-name { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.site-feas-loc { font-size: 0.7rem; color: #718096; }
+.site-feas-stats { display: flex; gap: 12px; font-size: 0.72rem; margin-bottom: 2px; }
+.site-feas-stat { white-space: nowrap; }
+.site-feas-adj { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.site-feas-adj-tag {
+  font-size: 0.65rem;
+  color: #39d2c0;
+  background: rgba(57,210,192,0.08);
+  border: 1px solid rgba(57,210,192,0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
 /* Product-tab user-question chips */
 .ptb-questions {
   display: flex;

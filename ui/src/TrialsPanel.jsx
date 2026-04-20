@@ -81,9 +81,10 @@ function FeasibilityIntel({ condition }) {
         <span className="fp-panel-icon">⬡</span>
         <span className="fp-panel-title">Site Selection Intelligence</span>
         <span className="tl-kg-badge" style={{ marginLeft: 6 }}>KG</span>
+        {data?.query_ms && <span className="kg-timing">{data.sponsors?.length || 0} sponsors · {data.countries?.length || 0} countries · {data.query_ms}ms</span>}
       </div>
       <div className="fp-panel-desc" style={{ fontSize: "0.75rem", color: "#718096", marginBottom: 4 }}>
-        Sponsors and countries with the deepest trial portfolios in <strong>{condition}</strong> — traversed from the knowledge graph for feasibility planning.
+        Sponsors and countries with the deepest trial portfolios in <strong>{condition}</strong> — via <code>Condition ←TREATS← Trial ←RUNS← Sponsor</code> + <code>→CONDUCTED_IN→ Country</code>.
       </div>
       {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Querying knowledge graph…</span></div>}
       {error && <div className="tl-error" style={{ fontSize: "0.78rem", color: "#ed8936" }}>⚠ {error}</div>}
@@ -124,6 +125,73 @@ function FeasibilityIntel({ condition }) {
   );
 }
 
+// ── KG Integration — Site Feasibility card (Forecast tab) ───────────────────
+// "Which sites have run trials in this condition?" — the core PPD feasibility question
+// KG traversal: Condition ←TREATS← Trial →AT→ Site
+function SiteFeasibility({ condition }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!condition) { setData(null); return; }
+    let cancelled = false;
+    setLoading(true); setError(null);
+    const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+    const url = base
+      ? `${base}/api/graph/site-feasibility?condition=${encodeURIComponent(condition)}&limit=12`
+      : `/api/graph?path=site-feasibility&condition=${encodeURIComponent(condition)}&limit=12`;
+    fetch(url, { signal: AbortSignal.timeout(20000) })
+      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error || "Failed")))
+      .then(d => { if (!cancelled) setData(d); })
+      .catch(e => { if (!cancelled) setError(e?.message || String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [condition]);
+
+  if (!condition) return null;
+
+  return (
+    <div className="fp-panel" style={{ gridColumn: "1 / -1" }}>
+      <div className="fp-panel-header">
+        <span className="fp-panel-icon">⬡</span>
+        <span className="fp-panel-title">Site Feasibility</span>
+        <span className="tl-kg-badge" style={{ marginLeft: 6 }}>KG</span>
+        {data?.query_ms && <span className="kg-timing">{data.sites?.length} sites · {data.query_ms}ms traversal</span>}
+      </div>
+      <div className="fp-panel-desc" style={{ fontSize: "0.75rem", color: "#718096", marginBottom: 4 }}>
+        Sites with the deepest <strong>{condition}</strong> trial experience — discovered via <code>Condition ←TREATS← Trial →AT→ Site</code> graph traversal.
+      </div>
+      {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Traversing site network…</span></div>}
+      {error && <div className="tl-error" style={{ fontSize: "0.78rem", color: "#ed8936" }}>⚠ {error}</div>}
+      {data && data.sites?.length === 0 && <div style={{ fontSize: "0.78rem", color: "#4a5568" }}>No Site nodes in graph — run graph-loader to populate.</div>}
+      {data && data.sites?.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {data.sites.map((s, i) => (
+            <div key={i} className="site-feas-row">
+              <div className="site-feas-name">
+                <span style={{ color: "#e2e8f0", fontWeight: 500 }}>{s.site}</span>
+                <span className="site-feas-loc">{[s.city, s.country].filter(Boolean).join(", ")}</span>
+              </div>
+              <div className="site-feas-stats">
+                <span className="site-feas-stat" style={{ color: "#58a6ff" }}>{s.trials} trials</span>
+                {s.completion_rate != null && <span className="site-feas-stat" style={{ color: s.completion_rate >= 70 ? "#48bb78" : "#ed8936" }}>{s.completion_rate}% completed</span>}
+              </div>
+              {s.adjacent_conditions?.length > 0 && (
+                <div className="site-feas-adj">
+                  {s.adjacent_conditions.map((a, j) => (
+                    <span key={j} className="site-feas-adj-tag">{a.condition} ({a.trials})</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── KG Integration — Therapeutic Adjacency card (Strategy tab) ──────────────
 function TherapeuticAdjacency({ condition }) {
   const [data, setData] = useState(null);
@@ -147,6 +215,7 @@ function TherapeuticAdjacency({ condition }) {
   }, [condition]);
 
   if (!condition) return null;
+  const items = data?.results || (Array.isArray(data) ? data : []);
 
   return (
     <div className="fp-panel" style={{ gridColumn: "1 / -1" }}>
@@ -154,16 +223,17 @@ function TherapeuticAdjacency({ condition }) {
         <span className="fp-panel-icon">⬡</span>
         <span className="fp-panel-title">Therapeutic Adjacency</span>
         <span className="tl-kg-badge" style={{ marginLeft: 6 }}>KG</span>
+        {data?.query_ms && <span className="kg-timing">{items.length} conditions · {data.query_ms}ms · 4-hop traversal</span>}
       </div>
       <div className="fp-panel-desc" style={{ fontSize: "0.75rem", color: "#718096", marginBottom: 4 }}>
-        Conditions that share drug pipelines with <strong>{condition}</strong> — discovered via graph traversal, not predefined categories.
+        Conditions that share drug pipelines with <strong>{condition}</strong> — discovered via <code>Condition ←TREATS← Trial →USES→ Drug ←USES← Trial →TREATS→ Adjacent</code>.
       </div>
       {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Querying knowledge graph…</span></div>}
       {error && <div className="tl-error" style={{ fontSize: "0.78rem", color: "#ed8936" }}>⚠ Graph query timed out — adjacency data unavailable right now.</div>}
-      {data && data.length === 0 && <div style={{ fontSize: "0.78rem", color: "#4a5568" }}>No adjacent conditions found.</div>}
-      {data && data.length > 0 && (
+      {items.length === 0 && data && <div style={{ fontSize: "0.78rem", color: "#4a5568" }}>No adjacent conditions found.</div>}
+      {items.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {data.map((d, i) => (
+          {items.map((d, i) => (
             <div key={i} className="kg-adj-pill">
               <span className="kg-adj-name">{d.condition}</span>
               <span className="kg-adj-count">{d.shared_interventions} shared drugs</span>
@@ -208,9 +278,10 @@ function CompetitiveLandscape({ condition }) {
         <span className="fp-panel-icon">⬡</span>
         <span className="fp-panel-title">Competitive Landscape</span>
         <span className="tl-kg-badge" style={{ marginLeft: 6 }}>KG</span>
+        {data?.query_ms && <span className="kg-timing">{data.adjacent_conditions?.length || 0} adj. areas · {data.landscape_sponsors?.length || 0} sponsors · {data.query_ms}ms</span>}
       </div>
       <div className="fp-panel-desc" style={{ fontSize: "0.75rem", color: "#718096", marginBottom: 4 }}>
-        Sponsors most active across <strong>{condition}</strong> and its therapeutically adjacent conditions — via 3-hop graph traversal.
+        Sponsors most active across <strong>{condition}</strong> and its therapeutically adjacent conditions — via <code>Condition ←→ Drug ←→ Adjacent → Sponsor</code> 3-hop traversal.
       </div>
       {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Traversing sponsor network…</span></div>}
       {error && <div className="tl-error" style={{ fontSize: "0.78rem", color: "#ed8936" }}>⚠ Graph query timed out — landscape data unavailable right now.</div>}
@@ -285,20 +356,23 @@ function TrialsLikeThis({ nctId }) {
     if (!open && !data && !loading) load();
   };
 
+  const items = data?.results || (Array.isArray(data) ? data : []);
+
   return (
     <div className="trials-like-section">
       <button className="trials-like-toggle" onClick={toggle}>
         <span className="tl-kg-badge">KG</span>
         {open ? "▾" : "▸"} Similar Trials via Knowledge Graph
-        {data ? <span className="tl-count"> ({data.length})</span> : null}
+        {items.length > 0 && <span className="tl-count"> ({items.length})</span>}
+        {data?.query_ms && <span className="kg-timing" style={{ marginLeft: "auto" }}>{data.query_ms}ms</span>}
       </button>
 
       {open && (
         <div className="trials-like-body">
           {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Querying graph…</span></div>}
           {error && <div className="tl-error">⚠ {error}</div>}
-          {data && data.length === 0 && <div className="tl-empty">No similar trials found in the knowledge graph.</div>}
-          {data && data.map((t, i) => (
+          {data && items.length === 0 && <div className="tl-empty">No similar trials found in the knowledge graph.</div>}
+          {items.map((t, i) => (
             <div key={t.nct_id} className="tl-row">
               <div className="tl-row-top">
                 <a href={`https://clinicaltrials.gov/study/${t.nct_id}`} target="_blank" rel="noreferrer" className="tl-nct-link">
@@ -784,6 +858,7 @@ export default function TrialsPanel() {
                 </div>
                 <ForecastPriorsDisplay data={cohortData} benchmarkData={benchmarkData} milestoneData={milestoneData} loading={cohortLoading} error={cohortError} />
                 <FeasibilityIntel condition={profile.condition} />
+                <SiteFeasibility condition={profile.condition} />
                 </>)}
 
                 {/* ── Risk & Decisioning ───────────────────────────────── */}

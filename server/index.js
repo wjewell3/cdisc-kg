@@ -1391,6 +1391,7 @@ app.get("/api/graph/repurposing-path", async (req, res) => {
 app.get("/api/graph/condition-landscape", async (req, res) => {
   const { condition, limit = "15" } = req.query;
   if (!condition) return res.status(400).json({ error: "condition required" });
+  const t0 = Date.now();
   try {
     // Optimized: cap intermediate fan-out at top-50 interventions to avoid
     // combinatorial explosion for high-volume conditions (Breast Cancer = 8.6k trials).
@@ -1421,8 +1422,11 @@ app.get("/api/graph/condition-landscape", async (req, res) => {
       LIMIT toInteger($limit)
     `, { adjNames, limit });
 
+    const ms = Date.now() - t0;
     res.json({
       condition,
+      query_ms: ms,
+      traversal: "Condition ←TREATS← Trial →USES→ Intervention ←USES← Trial →TREATS→ Adjacent + Sponsor",
       adjacent_conditions: adjRecords.map(r => ({
         condition: r.get("condition"),
         shared_drugs: nInt(r.get("shared_drugs")),
@@ -1447,6 +1451,7 @@ app.get("/api/graph/condition-landscape", async (req, res) => {
 app.get("/api/graph/therapeutic-adjacency", async (req, res) => {
   const { condition, limit = "15" } = req.query;
   if (!condition) return res.status(400).json({ error: "condition required" });
+  const t0 = Date.now();
   try {
     // Optimized: cap intermediate fan-out at top-50 interventions.
     // Without this, high-volume conditions (8k+ trials) produce a Cartesian
@@ -1464,11 +1469,16 @@ app.get("/api/graph/therapeutic-adjacency", async (req, res) => {
       ORDER BY shared_interventions DESC
       LIMIT toInteger($limit)
     `, { condition, limit });
-    res.json(records.map(r => ({
-      condition: r.get("condition"),
-      shared_interventions: nInt(r.get("shared_interventions")),
-      example_drugs: r.get("example_drugs"),
-    })));
+    const ms = Date.now() - t0;
+    res.json({
+      query_ms: ms,
+      traversal: "Condition ←TREATS← Trial →USES→ Intervention ←USES← Trial →TREATS→ Adjacent",
+      results: records.map(r => ({
+        condition: r.get("condition"),
+        shared_interventions: nInt(r.get("shared_interventions")),
+        example_drugs: r.get("example_drugs"),
+      })),
+    });
   } catch (e) {
     console.error("[graph/therapeutic-adjacency]", e.message);
     res.status(500).json({ error: e.message });
@@ -1484,6 +1494,7 @@ app.get("/api/graph/therapeutic-adjacency", async (req, res) => {
 app.get("/api/graph/condition-feasibility", async (req, res) => {
   const { condition } = req.query;
   if (!condition) return res.status(400).json({ error: "condition required" });
+  const t0 = Date.now();
   try {
     const sponsorRecords = await cypher(`
       MATCH (c:Condition {name: $condition})<-[:TREATS]-(t:Trial)<-[:RUNS]-(sp:Sponsor)
@@ -1500,8 +1511,11 @@ app.get("/api/graph/condition-feasibility", async (req, res) => {
       RETURN country, trials
     `, { condition });
 
+    const ms = Date.now() - t0;
     res.json({
       condition,
+      query_ms: ms,
+      traversal: "Condition ←TREATS← Trial ←RUNS← Sponsor + →CONDUCTED_IN→ Country",
       sponsors: sponsorRecords.map(r => ({
         sponsor: r.get("sponsor"),
         trials: nInt(r.get("trials")),
@@ -1514,6 +1528,72 @@ app.get("/api/graph/condition-feasibility", async (req, res) => {
     });
   } catch (e) {
     console.error("[graph/condition-feasibility]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/graph/site-feasibility?condition=Breast+Cancer&limit=15
+ * Sites experienced in the given condition, with trial counts, completion rates,
+ * and conditions they've also treated (adjacent expertise).
+ * KG traversal: Condition ←TREATS← Trial →AT→ Site
+ */
+app.get("/api/graph/site-feasibility", async (req, res) => {
+  const { condition, limit = "15" } = req.query;
+  if (!condition) return res.status(400).json({ error: "condition required" });
+  const t0 = Date.now();
+  try {
+    // Top sites for this condition by trial volume + completion rate
+    const siteRecords = await cypher(`
+      MATCH (c:Condition {name: $condition})<-[:TREATS]-(t:Trial)-[:AT]->(s:Site)
+      WITH s,
+           COUNT(DISTINCT t) AS trials,
+           SUM(CASE WHEN t.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN t.status = 'TERMINATED' THEN 1 ELSE 0 END) AS terminated
+      WHERE trials >= 3
+      RETURN s.name AS site, s.country AS country, s.city AS city,
+             trials, completed, terminated,
+             CASE WHEN completed + terminated > 0
+               THEN ROUND(100.0 * completed / (completed + terminated), 1)
+               ELSE null END AS completion_rate
+      ORDER BY trials DESC
+      LIMIT toInteger($limit)
+    `, { condition, limit });
+
+    // For each top site, what adjacent conditions they've treated
+    const topSiteKeys = siteRecords.map(r => r.get("site"));
+    let adjacentMap = {};
+    if (topSiteKeys.length > 0) {
+      const adjRecords = await cypher(`
+        MATCH (s:Site)<-[:AT]-(t:Trial)-[:TREATS]->(c:Condition)
+        WHERE s.name IN $sites AND c.name <> $condition
+        WITH s.name AS site, c.name AS cond, COUNT(DISTINCT t) AS ct
+        ORDER BY ct DESC
+        WITH site, COLLECT({condition: cond, trials: ct})[..5] AS top
+        RETURN site, top
+      `, { sites: topSiteKeys, condition });
+      for (const r of adjRecords) {
+        adjacentMap[r.get("site")] = r.get("top").map(x => ({ condition: x.condition, trials: x.trials.toNumber ? x.trials.toNumber() : x.trials }));
+      }
+    }
+
+    const ms = Date.now() - t0;
+    res.json({
+      condition,
+      query_ms: ms,
+      sites: siteRecords.map(r => ({
+        site: r.get("site"),
+        country: r.get("country"),
+        city: r.get("city"),
+        trials: nInt(r.get("trials")),
+        completed: nInt(r.get("completed")),
+        terminated: nInt(r.get("terminated")),
+        completion_rate: nInt(r.get("completion_rate")),
+        adjacent_conditions: adjacentMap[r.get("site")] || [],
+      })),
+    });
+  } catch (e) {
+    console.error("[graph/site-feasibility]", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1972,7 +2052,7 @@ app.get("/api/graph/trials-like", async (req, res) => {
   const { nct_id, limit = "10" } = req.query;
   if (!nct_id) return res.status(400).json({ error: "nct_id required" });
   if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
-
+  const t0 = Date.now();
   try {
     const records = await cypher(`
       MATCH (t:Trial {nct_id: $nct_id})-[:TREATS]->(c:Condition),
@@ -1999,16 +2079,20 @@ app.get("/api/graph/trials-like", async (req, res) => {
       LIMIT toInteger($limit)
     `, { nct_id, limit });
 
-    res.json(records.map(r => ({
-      nct_id: r.get("nct_id"),
-      title: r.get("title"),
-      phase: r.get("phase"),
-      status: r.get("status"),
-      enrollment: nInt(r.get("enrollment")),
-      shared_conditions: nInt(r.get("shared_conditions")),
-      shared_interventions: nInt(r.get("shared_interventions")),
-      similarity_score: nInt(r.get("similarity_score")),
-    })));
+    const ms = Date.now() - t0;
+    res.json({
+      query_ms: ms,
+      results: records.map(r => ({
+        nct_id: r.get("nct_id"),
+        title: r.get("title"),
+        phase: r.get("phase"),
+        status: r.get("status"),
+        enrollment: nInt(r.get("enrollment")),
+        shared_conditions: nInt(r.get("shared_conditions")),
+        shared_interventions: nInt(r.get("shared_interventions")),
+        similarity_score: nInt(r.get("similarity_score")),
+      })),
+    });
   } catch (e) {
     console.error("[graph/trials-like]", e.message);
     res.status(500).json({ error: e.message });

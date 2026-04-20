@@ -17,7 +17,7 @@ spec:
       containers:
         - name: loader
           image: ghcr.io/wjewell3/cdisc-kg-server:latest
-          command: ["node", "graph-loader.js"]
+          command: ["node", "--max-old-space-size=3584", "graph-loader.js"]
           env:
             - name: DB_PATH
               value: /data/aact.db
@@ -47,7 +47,7 @@ spec:
               memory: "1Gi"
             limits:
               cpu: "2"
-              memory: "2Gi"
+              memory: "4Gi"
       volumes:
         - name: data
           persistentVolumeClaim:
