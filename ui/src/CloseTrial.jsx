@@ -90,7 +90,7 @@ export default function CloseTrial({ filterParams }) {
         </div>
         {sig?.total_analyses > 0 && (
           <div className="okpi-kpi">
-            <div className="okpi-kpi-value" style={{ color: "#a371f7" }}>
+            <div className="okpi-kpi-value" style={{ color: "#39d2c0" }}>
               {sig.significance_rate_pct}%
             </div>
             <div className="okpi-kpi-label">Significant (p&lt;0.05)</div>

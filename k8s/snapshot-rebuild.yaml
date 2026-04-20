@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: snapshot-rebuild-3
+  namespace: cdisc-kg
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 18000
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      restartPolicy: Never
+      containers:
+      - name: snapshot
+        image: ghcr.io/wjewell3/cdisc-kg-server:latest
+        command: ["node", "snapshot.js"]
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        env:
+        - name: DB_PATH
+          value: "/data/aact.db"
+        - name: AACT_USER
+          valueFrom:
+            secretKeyRef:
+              name: aact-credentials
+              key: AACT_USER
+        - name: AACT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: aact-credentials
+              key: AACT_PASSWORD
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: aact-data

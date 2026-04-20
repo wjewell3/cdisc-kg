@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import "./InsightPanel.css";
 
-const PALETTE = ["#58a6ff", "#79c0ff", "#d29922", "#ed8936", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
+const PALETTE = ["#58a6ff", "#79c0ff", "#d29922", "#ed8936", "#39d2c0", "#f778ba", "#8b949e", "#c9d1d9"];
 
 function MiniBar({ data, title, palette = PALETTE }) {
   if (!data || !data.length) return null;
@@ -87,7 +87,7 @@ function SimilarEntities({ items, type }) {
           <div className="ip-bar-track">
             <div
               className="ip-bar-fill"
-              style={{ width: `${Math.max((item.similarity_pct / maxSim) * 100, 3)}%`, background: "#a371f7" }}
+              style={{ width: `${Math.max((item.similarity_pct / maxSim) * 100, 3)}%`, background: "#39d2c0" }}
             />
           </div>
           <span className="ip-bar-count">{item.similarity_pct}%</span>

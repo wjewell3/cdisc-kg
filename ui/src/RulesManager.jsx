@@ -1,5 +1,7 @@
 import { useState } from "react";
 import "./RulesManager.css";
+import CanonicalGroupings from "./CanonicalGroupings";
+import "./CanonicalGroupings.css";
 
 const FIELDS = ["intervention", "condition", "sponsor", "status", "phase"];
 
@@ -123,16 +125,29 @@ export default function RulesManager({
   const totalGroupings = (rules.groupings || []).length;
   const totalActive = totalGroupings + (enrollMin !== null || enrollMax !== null ? 1 : 0);
 
+  const [tab, setTab] = useState("canonical");
+
   return (
     <div className="rm-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="rm-drawer slide-in">
         <div className="rm-header">
           <h2>⚙ Data Quality Rules</h2>
-          <span className="rm-header-sub">{totalActive} rule{totalActive !== 1 ? "s" : ""} active</span>
+          <span className="rm-header-sub">{totalActive} custom rule{totalActive !== 1 ? "s" : ""} active</span>
           <button className="rm-close" onClick={onClose}>×</button>
         </div>
 
+        <div className="rm-tab-bar">
+          <button className={`rm-tab${tab === "canonical" ? " rm-tab-active" : ""}`} onClick={() => setTab("canonical")}>
+            🧠 Canonical Groupings (AI)
+          </button>
+          <button className={`rm-tab${tab === "custom" ? " rm-tab-active" : ""}`} onClick={() => setTab("custom")}>
+            ⚙ Custom Rules
+          </button>
+        </div>
+
         <div className="rm-body">
+        {tab === "canonical" && <CanonicalGroupings />}
+        {tab === "custom" && (<>
 
           {/* ── Ask AI ── */}
           <div className="rm-section">
@@ -392,6 +407,7 @@ export default function RulesManager({
             </div>
           </div>
 
+        </>)}
         </div>
       </div>
     </div>

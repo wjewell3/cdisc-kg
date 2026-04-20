@@ -58,7 +58,7 @@
 .ql-failure:hover { border-color: #ed8936; }
 .ql-sponsors:hover { border-color: #d29922; }
 .ql-enrollment:hover { border-color: #58a6ff; }
-.ql-geo:hover { border-color: #a371f7; }
+.ql-geo:hover { border-color: #39d2c0; }
 
 /* KG Q&A bar */
 .ql-kg-form {
@@ -204,9 +204,9 @@
   font-size: 11px;
   font-weight: 700;
   padding: 4px 10px;
-  background: rgba(163, 113, 247, 0.15);
-  color: #a371f7;
-  border: 1px solid rgba(163, 113, 247, 0.3);
+  background: rgba(57, 210, 192, 0.15);
+  color: #39d2c0;
+  border: 1px solid rgba(57, 210, 192, 0.3);
   border-radius: 12px;
   letter-spacing: 0.02em;
 }
@@ -287,10 +287,10 @@
 }
 .risk-banner .ptb-product { color: #d29922; }
 .readiness-banner {
-  background: linear-gradient(135deg, rgba(163,113,247,0.08) 0%, rgba(57,210,192,0.06) 100%);
-  border-color: rgba(163,113,247,0.2);
+  background: linear-gradient(135deg, rgba(57,210,192,0.08) 0%, rgba(88,166,255,0.06) 100%);
+  border-color: rgba(57,210,192,0.2);
 }
-.readiness-banner .ptb-product { color: #a371f7; }
+.readiness-banner .ptb-product { color: #39d2c0; }
 .strategy-banner {
   background: linear-gradient(135deg, rgba(195,155,211,0.08) 0%, rgba(88,166,255,0.06) 100%);
   border-color: rgba(195,155,211,0.2);
@@ -1046,11 +1046,11 @@
 }
 
 .phase-1  { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
-.phase-2  { background: rgba(163, 113, 247, 0.15); color: #a371f7; }
+.phase-2  { background: rgba(121, 192, 255, 0.15); color: #79c0ff; }
 .phase-3  { background: rgba(57, 210, 192, 0.15); color: #39d2c0; }
 .phase-4  { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
 .phase-12 { background: rgba(88, 166, 255, 0.12); color: #58a6ff; }
-.phase-23 { background: rgba(163, 113, 247, 0.12); color: #a371f7; }
+.phase-23 { background: rgba(121, 192, 255, 0.12); color: #79c0ff; }
 .phase-na { background: #21262d; color: #8b949e; }
 
 /* ── Detail panel ── */

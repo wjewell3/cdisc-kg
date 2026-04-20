@@ -163,6 +163,13 @@
   .pb-group-label { writing-mode: horizontal-tb; transform: none; }
 }
 
+/* Condition: typeahead on desktop, native select on mobile */
+.pb-condition-select { display: none; }
+@media (max-width: 640px) {
+  .pb-condition-typeahead { display: none; }
+  .pb-condition-select { display: block; }
+}
+
 /* ── Condition Typeahead ────────────────────────────────────────────── */
 .pb-typeahead {
   position: relative;

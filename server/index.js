@@ -19,6 +19,7 @@ import Database from "better-sqlite3";
 import { existsSync, statSync } from "fs";
 import pg from "pg";
 import neo4jDriver from "neo4j-driver";
+import { canonicalize, mergeByCanonical, getCatalog, save as saveCatalog, rebuildField, reload as reloadCatalog } from "./canonical.js";
 
 const {
   DB_PATH = "/data/aact.db",
@@ -894,7 +895,8 @@ app.get("/api/trial-intelligence", async (req, res) => {
 
   const stopReasons = terminated
     .filter((c) => c.why_stopped)
-    .map((c) => c.why_stopped)
+    .map((c) => canonicalize("stop_reason", c.why_stopped))
+    .filter((v, i, a) => a.indexOf(v) === i)
     .slice(0, 6);
 
   const riskSignals = {
@@ -1062,6 +1064,70 @@ For enrollment range bounds:
   } catch (e) {
     console.error("[dq] parse-rule failed:", e.message);
     return res.status(500).json({ error: "Failed to parse rule", detail: e.message });
+  }
+});
+
+// ── Canonical Groupings Catalog ──────────────────────────────────────────────
+// GET: return current catalog (seed or user-edited, from /data or bundled seed)
+app.get("/api/dq/canonical", (_req, res) => {
+  res.json(getCatalog());
+});
+
+// POST: replace catalog wholesale (from UI edits). Persists to /data/canonical-groupings.json.
+app.post("/api/dq/canonical", (req, res) => {
+  try {
+    const next = req.body;
+    if (!next || typeof next !== "object") return res.status(400).json({ error: "body must be catalog object" });
+    const saved = saveCatalog(next);
+    res.json({ ok: true, catalog: saved });
+  } catch (e) {
+    console.error("[dq] canonical save failed:", e.message);
+    res.status(500).json({ error: "Save failed", detail: e.message });
+  }
+});
+
+// POST: rebuild canonical groupings for one or more fields via LLM clustering.
+// Body: { fields: ["stop_reason","withdrawal_reason","phase", ...], limit?: 300 }
+app.post("/api/dq/canonical/rebuild", async (req, res) => {
+  const { GITHUB_COPILOT_TOKEN } = process.env;
+  if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured" });
+  if (!db) return res.status(503).json({ error: "SQLite snapshot unavailable" });
+
+  const { fields = ["phase", "stop_reason", "withdrawal_reason"], limit = 300 } = req.body || {};
+  const lim = Math.min(500, Math.max(20, parseInt(limit, 10) || 300));
+
+  // Distinct-value queries per supported field
+  const fetchers = {
+    phase: () => db.prepare(`SELECT COALESCE(phase,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(phase,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c]),
+    stop_reason: () => db.prepare(`SELECT LOWER(TRIM(why_stopped)) AS v, COUNT(*) AS c FROM studies WHERE why_stopped IS NOT NULL AND TRIM(why_stopped) != '' GROUP BY LOWER(TRIM(why_stopped)) ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c]),
+    withdrawal_reason: () => db.prepare(`SELECT reason AS v, COUNT(*) AS c FROM drop_withdrawals WHERE reason IS NOT NULL AND TRIM(reason) != '' GROUP BY reason ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c]),
+    status: () => db.prepare(`SELECT COALESCE(overall_status,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(overall_status,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c]),
+  };
+
+  const report = {};
+  const nextCatalog = { ...getCatalog() };
+  nextCatalog._meta = { ...(nextCatalog._meta || {}), version: 1, source: "ai-rebuild", updated: new Date().toISOString() };
+
+  for (const field of fields) {
+    const fetcher = fetchers[field];
+    if (!fetcher) { report[field] = { error: "unsupported field" }; continue; }
+    try {
+      const distinct = fetcher();
+      if (distinct.length === 0) { report[field] = { error: "no values" }; continue; }
+      const groups = await rebuildField(field, distinct, GITHUB_COPILOT_TOKEN);
+      nextCatalog[field] = groups;
+      report[field] = { groups: groups.length, raw_values_clustered: distinct.length };
+    } catch (e) {
+      console.error(`[dq] rebuild ${field} failed:`, e.message);
+      report[field] = { error: e.message };
+    }
+  }
+
+  try {
+    saveCatalog(nextCatalog);
+    res.json({ ok: true, report, catalog: getCatalog() });
+  } catch (e) {
+    res.status(500).json({ ok: false, report, error: e.message });
   }
 });
 
@@ -2452,9 +2518,9 @@ app.get("/api/failure-analysis", async (req, res) => {
     return res.json({
       counts,
       termination_rate_pct,
-      stop_reasons: stopReasons.map(r => ({ reason: r.reason, count: r.count })),
+      stop_reasons: mergeByCanonical("stop_reason", stopReasons.map(r => ({ reason: r.reason, count: r.count })), "reason"),
       by_condition: conditionRates,
-      by_phase: phaseRates,
+      by_phase: mergeByCanonical("phase", phaseRates, "phase"),
     });
   } catch (e) {
     console.error("[failure-analysis] sqlite:", e.message);
@@ -2548,9 +2614,9 @@ app.get("/api/failure-analysis", async (req, res) => {
     return res.json({
       counts: { total, completed, terminated, withdrawn: parseInt(counts.withdrawn), suspended: parseInt(counts.suspended) },
       termination_rate_pct,
-      stop_reasons: stopReasons.map(r => ({ reason: r.reason, count: r.count })),
+      stop_reasons: mergeByCanonical("stop_reason", stopReasons.map(r => ({ reason: r.reason, count: r.count })), "reason"),
       by_condition: conditionRates,
-      by_phase: phaseRates,
+      by_phase: mergeByCanonical("phase", phaseRates, "phase"),
       source: "live",
     });
   } catch (e) {
@@ -3523,7 +3589,7 @@ app.get("/api/milestone-funnel", async (req, res) => {
       return res.json({
         total_trials: coverage?.total_trials || 0,
         trials_with_milestones: coverage?.with_milestones || 0,
-        funnel, drop_reasons: dropReasons,
+        funnel, drop_reasons: mergeByCanonical("withdrawal_reason", dropReasons, "reason", ["total", "trials"]),
       });
     } catch (e) {
       console.error("[milestone-funnel] sqlite:", e.message);
@@ -3618,7 +3684,7 @@ app.get("/api/results-readiness", async (req, res) => {
         reporting_rate_pct: reporting?.total_completed > 0 ? parseFloat(((reporting.results_reported / reporting.total_completed) * 100).toFixed(1)) : null,
         avg_months_to_report: reporting?.avg_months_to_report ?? null,
         median_months_to_report: null, // SQLite lacks PERCENTILE_CONT
-        by_phase: byPhase.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
+        by_phase: mergeByCanonical("phase", byPhase.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })), "phase", ["total", "reported"]),
         by_sponsor: bySponsor.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
         outcomes: {
           trials_with_planned: outcomes?.trials_with_planned || 0,

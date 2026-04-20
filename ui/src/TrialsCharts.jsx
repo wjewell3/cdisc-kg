@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 
-const PALETTE = ["#58a6ff", "#79c0ff", "#d29922", "#ed8936", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
+const PALETTE = ["#58a6ff", "#79c0ff", "#d29922", "#ed8936", "#39d2c0", "#f778ba", "#8b949e", "#c9d1d9"];
 
 const PHASE_ORDER = ["PHASE1", "PHASE2", "PHASE3", "PHASE4", "EARLY_PHASE1", "N/A", "Unknown"];
 const PHASE_DISPLAY = {

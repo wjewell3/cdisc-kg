@@ -97,6 +97,29 @@ const HEALTHY_VOLS = [
   { value: "false", label: "No" },
 ];
 
+const POPULAR_CONDITIONS = [
+  { value: "", label: "Any" },
+  { value: "Breast Cancer", label: "Breast Cancer" },
+  { value: "Lung Cancer", label: "Lung Cancer" },
+  { value: "Ovarian Cancer", label: "Ovarian Cancer" },
+  { value: "Diabetes", label: "Diabetes" },
+  { value: "Heart Failure", label: "Heart Failure" },
+  { value: "Hypertension", label: "Hypertension" },
+  { value: "COVID", label: "COVID-19" },
+  { value: "Depression", label: "Depression" },
+  { value: "Alzheimer", label: "Alzheimer's" },
+  { value: "Schizophrenia", label: "Schizophrenia" },
+  { value: "Parkinson", label: "Parkinson's" },
+  { value: "Multiple Sclerosis", label: "Multiple Sclerosis" },
+  { value: "HIV", label: "HIV/AIDS" },
+  { value: "Rheumatoid Arthritis", label: "Rheumatoid Arthritis" },
+  { value: "Asthma", label: "Asthma" },
+  { value: "Cancer", label: "Cancer (general)" },
+  { value: "NSCLC", label: "NSCLC" },
+  { value: "Lymphoma", label: "Lymphoma" },
+  { value: "Leukemia", label: "Leukemia" },
+];
+
 // ── Condition Typeahead ───────────────────────────────────────────────
 function ConditionTypeahead({ value, onChange, onEnter }) {
   const [query, setQuery] = useState(value);
@@ -272,11 +295,16 @@ export default function ProfileBuilder({ profile, onChange, onApply, loading }) 
       <div className="pb-primary-row">
         <div className="pb-field pb-condition">
           <label>Condition / Disease</label>
-          <ConditionTypeahead
-            value={profile.condition}
-            onChange={v => set("condition", v)}
-            onEnter={() => { if (profile.condition.trim()) onApply(); }}
-          />
+          <div className="pb-condition-typeahead">
+            <ConditionTypeahead
+              value={profile.condition}
+              onChange={v => set("condition", v)}
+              onEnter={() => { if (profile.condition.trim()) onApply(); }}
+            />
+          </div>
+          <select className="pb-condition-select" value={profile.condition} onChange={e => set("condition", e.target.value)}>
+            {POPULAR_CONDITIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
         </div>
         <div className="pb-field">
           <label>Phase</label>

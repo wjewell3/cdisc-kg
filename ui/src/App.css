@@ -123,24 +123,9 @@
 }
 
 .header-kg-key {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   font-size: 11px;
   color: #a371f7;
-  background: #a371f715;
-  padding: 2px 8px;
-  border-radius: 8px;
-  border: 1px solid #a371f730;
   white-space: nowrap;
-}
-
-.header-kg-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  background: #a371f7;
 }
 
 .header-github {

@@ -75,7 +75,7 @@ export default function PlanComplexity({ filterParams }) {
                       background: gt.group_type === "Experimental" ? "#39d2c0"
                         : gt.group_type === "Placebo Comparator" ? "#d29922"
                         : gt.group_type === "Active Comparator" ? "#58a6ff"
-                        : "#a371f7",
+                        : "#39d2c0",
                     }} />
                   </div>
                   <span className="okpi-bar-count">{gt.trials.toLocaleString()}</span>

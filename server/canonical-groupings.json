@@ -1,0 +1,176 @@
+{
+  "_meta": {
+    "version": 1,
+    "source": "seed",
+    "updated": "2026-04-20T00:00:00Z",
+    "note": "Canonical groupings for categorical fields. Raw values are matched case-insensitively after trim. Regenerate via POST /api/dq/canonical/rebuild."
+  },
+  "phase": [
+    {
+      "canonical": "Not Applicable",
+      "rawValues": ["NA", "N/A", "Unknown", "", "Not Applicable"],
+      "note": "Trials without a phase classification (devices, behavioral, observational) grouped with unknowns."
+    }
+  ],
+  "stop_reason": [
+    {
+      "canonical": "Accrual issues",
+      "rawValues": [
+        "slow accrual", "low accrual", "poor accrual", "insufficient accrual",
+        "lack of accrual", "due to poor accrual", "accrual", "accrual issues",
+        "inadequate accrual", "slow enrollment", "low enrollment", "poor enrollment",
+        "insufficient enrollment", "lack of enrollment", "enrollment", "slow recruitment",
+        "insufficient recruitment", "poor recruitment", "low recruitment",
+        "lack of recruitment", "inability to recruit", "unable to recruit",
+        "failure to accrue", "failure to recruit"
+      ],
+      "note": "All accrual/enrollment/recruitment shortfall reasons."
+    },
+    {
+      "canonical": "Funding issues",
+      "rawValues": [
+        "lack of funding", "funding", "funding issues", "no funding",
+        "loss of funding", "funding terminated", "funding withdrawn",
+        "insufficient funding", "financial", "financial reasons", "financial issues",
+        "budget", "budget constraints"
+      ],
+      "note": "Funding or financial reasons."
+    },
+    {
+      "canonical": "Business decision",
+      "rawValues": [
+        "business decision", "sponsor decision", "strategic decision",
+        "company decision", "administrative decision", "administrative",
+        "administrative reasons", "sponsor terminated", "sponsor discontinued",
+        "strategic", "corporate decision", "portfolio decision", "prioritization"
+      ],
+      "note": "Sponsor-initiated business / strategic / administrative decisions."
+    },
+    {
+      "canonical": "Lack of efficacy",
+      "rawValues": [
+        "lack of efficacy", "no efficacy", "insufficient efficacy", "futility",
+        "no benefit", "did not meet primary endpoint", "failed primary endpoint",
+        "efficacy", "poor efficacy", "interim analysis", "futility analysis"
+      ],
+      "note": "Efficacy / futility terminations."
+    },
+    {
+      "canonical": "Safety concerns",
+      "rawValues": [
+        "safety", "safety concerns", "adverse events", "toxicity", "safety issues",
+        "serious adverse events", "safety signal", "safety review", "risk-benefit",
+        "unfavorable risk-benefit", "sae"
+      ],
+      "note": "Safety / toxicity / SAE terminations."
+    },
+    {
+      "canonical": "Study design issues",
+      "rawValues": [
+        "protocol amendment", "protocol change", "design issues", "design flaw",
+        "protocol issues", "study design", "reformulation", "protocol revision"
+      ],
+      "note": "Protocol / design-driven terminations."
+    },
+    {
+      "canonical": "Drug supply issues",
+      "rawValues": [
+        "drug supply", "drug unavailable", "drug shortage", "product unavailable",
+        "manufacturing", "manufacturing issues", "supply issues", "no product",
+        "product withdrawn"
+      ],
+      "note": "Drug / product supply problems."
+    },
+    {
+      "canonical": "COVID-19 impact",
+      "rawValues": [
+        "covid", "covid-19", "covid 19", "pandemic", "coronavirus",
+        "covid-19 pandemic", "due to covid", "covid pandemic"
+      ],
+      "note": "COVID-19 related disruptions."
+    }
+  ],
+  "withdrawal_reason": [
+    {
+      "canonical": "Disease progression",
+      "rawValues": [
+        "Progressive Disease", "Progressive disease", "progressive disease",
+        "Disease progression", "Disease Progression", "disease progression",
+        "PD", "progression of disease", "relapse", "Relapse", "progression"
+      ],
+      "note": "All disease-progression / relapse terminations."
+    },
+    {
+      "canonical": "Subject withdrawal",
+      "rawValues": [
+        "Withdrawal by Subject", "withdrawal by subject", "Withdrawn by Subject",
+        "Subject Withdrew", "subject withdrew", "Withdrawn by subject",
+        "Patient withdrew", "patient withdrawal", "withdrew consent",
+        "consent withdrawn", "Subject withdrew consent", "Withdrew consent",
+        "Withdrawal of consent", "voluntary withdrawal", "Withdrawal"
+      ],
+      "note": "Subject-initiated withdrawal (consent or personal reasons)."
+    },
+    {
+      "canonical": "Adverse event",
+      "rawValues": [
+        "Adverse Event", "adverse event", "Adverse Events", "adverse events",
+        "AE", "SAE", "Serious Adverse Event", "serious adverse event",
+        "toxicity", "Toxicity", "drug-related AE", "treatment-related AE"
+      ],
+      "note": "AE / SAE / toxicity withdrawals."
+    },
+    {
+      "canonical": "Death",
+      "rawValues": ["Death", "death", "Died", "died", "Expired", "Deceased", "Patient died"],
+      "note": "Participant death."
+    },
+    {
+      "canonical": "Lost to follow-up",
+      "rawValues": [
+        "Lost to Follow-up", "lost to follow-up", "Lost to follow up",
+        "lost to follow up", "LTFU", "Lost to Followup", "Lost to FU",
+        "unable to contact", "Patient Lost to Follow-up"
+      ],
+      "note": "Could not contact / track participant."
+    },
+    {
+      "canonical": "Protocol violation / non-compliance",
+      "rawValues": [
+        "Protocol Violation", "protocol violation", "Protocol Deviation",
+        "protocol deviation", "non-compliance", "Noncompliance",
+        "Non-compliance", "noncompliant", "did not meet eligibility",
+        "ineligibility", "screen failure", "Screen Failure"
+      ],
+      "note": "Protocol violations, deviations, and eligibility failures."
+    },
+    {
+      "canonical": "Physician decision",
+      "rawValues": [
+        "Physician Decision", "physician decision", "investigator decision",
+        "Investigator Decision", "MD decision", "medical decision",
+        "clinician decision"
+      ],
+      "note": "Physician / investigator-initiated withdrawal."
+    },
+    {
+      "canonical": "Treatment response (non-progression)",
+      "rawValues": [
+        "Completed treatment", "completed treatment", "End of treatment",
+        "treatment complete", "treatment completed", "end of study treatment",
+        "On study treatment", "on study treatment", "off treatment",
+        "off study", "transplantation", "transplant", "off protocol therapy"
+      ],
+      "note": "End-of-treatment / off-study status that isn't a true dropout."
+    },
+    {
+      "canonical": "Administrative",
+      "rawValues": [
+        "administrative", "Administrative", "Administrative reasons",
+        "site closure", "Site Closure", "study closure", "Study Terminated",
+        "sponsor decision", "no response"
+      ],
+      "note": "Administrative / logistics-driven removals."
+    }
+  ]
+}

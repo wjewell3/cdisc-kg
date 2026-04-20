@@ -1,14 +1,38 @@
 /**
- * Vercel Serverless Function — /api/dq
- * Parses a natural-language DQ rule via GPT-4.1 directly from Vercel.
- * Uses GITHUB_COPILOT_TOKEN from Vercel env vars (not via OKE).
+ * Vercel Serverless Function — /api/dq/*
+ * - POST /api/dq with { text }              → parse NL rule via GPT-4.1 (direct)
+ * - GET  /api/dq?action=canonical           → fetch catalog from OKE
+ * - POST /api/dq?action=canonical           → save catalog to OKE
+ * - POST /api/dq?action=canonical-rebuild   → rebuild catalog via LLM on OKE
  */
+
+const OKE_BASE = process.env.TRIALS_API_BASE || "http://129.80.137.184";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  const action = (req.query?.action || "").toString();
+
+  // ── Canonical catalog: proxy to OKE ─────────────────────────────
+  if (action === "canonical" || action === "canonical-rebuild") {
+    const path = action === "canonical-rebuild" ? "/api/dq/canonical/rebuild" : "/api/dq/canonical";
+    const url = `${OKE_BASE}${path}`;
+    try {
+      const init = { method: req.method, headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(60000) };
+      if (req.method === "POST") init.body = JSON.stringify(req.body || {});
+      const upstream = await fetch(url, init);
+      const data = await upstream.json().catch(() => ({}));
+      return res.status(upstream.status).json(data);
+    } catch (e) {
+      console.error("canonical proxy failed:", e.message);
+      return res.status(502).json({ error: "Upstream failed", detail: e.message });
+    }
+  }
+
+  // ── Default: parse-rule (direct LLM call) ───────────────────────
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { text } = req.body || {};
