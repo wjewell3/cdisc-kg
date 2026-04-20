@@ -369,58 +369,92 @@ app.get("/api/trials", async (req, res) => {
     }
 
     if (mode === "sponsors") {
-      // Return all sponsors matching current filters + optional sponsor name search.
-      // Excludes the sponsor dimension from the WHERE so clicking a sponsor still shows counts.
-      if (!db) return res.status(503).json({ error: "SQLite required" });
-      const { where, params: wParams } = buildSqliteWhere({
-        q, condition, intervention, phase, status, sponsor: "", min_enrollment, max_enrollment,
-      });
-      const likeClause = sponsor_q ? "AND LOWER(sp.name) LIKE LOWER(?)" : "";
-      const likeParams = sponsor_q ? [`%${sponsor_q}%`] : [];
-      const rows = db.prepare(`
-        SELECT sp.name AS val, COUNT(*) AS count
-        FROM studies s
-        JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
-        ${where} ${likeClause}
-        GROUP BY sp.name ORDER BY count DESC LIMIT 100
-      `).all(...wParams, ...likeParams);
-      return res.json({ sponsors: rows });
+      if (db) {
+        const { where, params: wParams } = buildSqliteWhere({
+          q, condition, intervention, phase, status, sponsor: "", min_enrollment, max_enrollment,
+        });
+        const likeClause = sponsor_q ? "AND LOWER(sp.name) LIKE LOWER(?)" : "";
+        const likeParams = sponsor_q ? [`%${sponsor_q}%`] : [];
+        const rows = db.prepare(`
+          SELECT sp.name AS val, COUNT(*) AS count
+          FROM studies s
+          JOIN sponsors sp ON sp.nct_id = s.nct_id AND sp.lead_or_collaborator = 'lead'
+          ${where} ${likeClause}
+          GROUP BY sp.name ORDER BY count DESC LIMIT 100
+        `).all(...wParams, ...likeParams);
+        return res.json({ sponsors: rows });
+      } else {
+        const pgParams = [];
+        let pgWhere = "WHERE sp.lead_or_collaborator = 'lead'";
+        if (sponsor_q) { pgParams.push(`%${sponsor_q}%`); pgWhere += ` AND LOWER(sp.name) LIKE LOWER($${pgParams.length})`; }
+        const { rows } = await pool.query(`
+          SELECT sp.name AS val, COUNT(DISTINCT sp.nct_id)::int AS count
+          FROM sponsors sp
+          ${pgWhere}
+          GROUP BY sp.name ORDER BY count DESC LIMIT 100
+        `, pgParams);
+        return res.json({ sponsors: rows });
+      }
     }
 
     if (mode === "conditions") {
-      if (!db) return res.status(503).json({ error: "SQLite required" });
       const q_cond = req.query.condition_q || "";
-      const { where, params: wParams } = buildSqliteWhere({
-        q, condition: "", intervention, phase, status, sponsor, min_enrollment, max_enrollment,
-      });
-      const likeClause = q_cond ? "AND LOWER(c.name) LIKE LOWER(?)" : "";
-      const likeParams = q_cond ? [`%${q_cond}%`] : [];
-      const rows = db.prepare(`
-        SELECT c.name AS val, COUNT(DISTINCT s.nct_id) AS count
-        FROM studies s
-        JOIN conditions c ON c.nct_id = s.nct_id
-        ${where} ${likeClause}
-        GROUP BY c.name ORDER BY count DESC LIMIT 100
-      `).all(...wParams, ...likeParams);
-      return res.json({ conditions: rows });
+      if (db) {
+        const { where, params: wParams } = buildSqliteWhere({
+          q, condition: "", intervention, phase, status, sponsor, min_enrollment, max_enrollment,
+        });
+        const likeClause = q_cond ? "AND LOWER(c.name) LIKE LOWER(?)" : "";
+        const likeParams = q_cond ? [`%${q_cond}%`] : [];
+        const rows = db.prepare(`
+          SELECT c.name AS val, COUNT(DISTINCT s.nct_id) AS count
+          FROM studies s
+          JOIN conditions c ON c.nct_id = s.nct_id
+          ${where} ${likeClause}
+          GROUP BY c.name ORDER BY count DESC LIMIT 100
+        `).all(...wParams, ...likeParams);
+        return res.json({ conditions: rows });
+      } else {
+        const pgParams = [];
+        let pgWhere = "";
+        if (q_cond) { pgParams.push(`%${q_cond}%`); pgWhere = `WHERE LOWER(c.name) LIKE LOWER($${pgParams.length})`; }
+        const { rows } = await pool.query(`
+          SELECT c.name AS val, COUNT(DISTINCT c.nct_id)::int AS count
+          FROM conditions c
+          ${pgWhere}
+          GROUP BY c.name ORDER BY count DESC LIMIT 100
+        `, pgParams);
+        return res.json({ conditions: rows });
+      }
     }
 
     if (mode === "interventions") {
-      if (!db) return res.status(503).json({ error: "SQLite required" });
       const q_int = req.query.intervention_q || "";
-      const { where, params: wParams } = buildSqliteWhere({
-        q, condition, intervention: "", phase, status, sponsor, min_enrollment, max_enrollment,
-      });
-      const likeClause = q_int ? "AND LOWER(i.name) LIKE LOWER(?)" : "";
-      const likeParams = q_int ? [`%${q_int}%`] : [];
-      const rows = db.prepare(`
-        SELECT i.name AS val, COUNT(DISTINCT s.nct_id) AS count
-        FROM studies s
-        JOIN interventions i ON i.nct_id = s.nct_id
-        ${where} ${likeClause}
-        GROUP BY i.name ORDER BY count DESC LIMIT 100
-      `).all(...wParams, ...likeParams);
-      return res.json({ interventions: rows });
+      if (db) {
+        const { where, params: wParams } = buildSqliteWhere({
+          q, condition, intervention: "", phase, status, sponsor, min_enrollment, max_enrollment,
+        });
+        const likeClause = q_int ? "AND LOWER(i.name) LIKE LOWER(?)" : "";
+        const likeParams = q_int ? [`%${q_int}%`] : [];
+        const rows = db.prepare(`
+          SELECT i.name AS val, COUNT(DISTINCT s.nct_id) AS count
+          FROM studies s
+          JOIN interventions i ON i.nct_id = s.nct_id
+          ${where} ${likeClause}
+          GROUP BY i.name ORDER BY count DESC LIMIT 100
+        `).all(...wParams, ...likeParams);
+        return res.json({ interventions: rows });
+      } else {
+        const pgParams = [];
+        let pgWhere = "";
+        if (q_int) { pgParams.push(`%${q_int}%`); pgWhere = `WHERE LOWER(i.name) LIKE LOWER($${pgParams.length})`; }
+        const { rows } = await pool.query(`
+          SELECT i.name AS val, COUNT(DISTINCT i.nct_id)::int AS count
+          FROM interventions i
+          ${pgWhere}
+          GROUP BY i.name ORDER BY count DESC LIMIT 100
+        `, pgParams);
+        return res.json({ interventions: rows });
+      }
     }
 
     const result = db

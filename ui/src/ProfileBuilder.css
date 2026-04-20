@@ -228,3 +228,12 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+.pb-sug-header {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #4a5568;
+  font-weight: 700;
+  padding: 6px 12px 4px;
+  pointer-events: none;
+}

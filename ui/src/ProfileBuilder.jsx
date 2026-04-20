@@ -101,8 +101,10 @@ const HEALTHY_VOLS = [
 function ConditionTypeahead({ value, onChange, onEnter }) {
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState([]);
+  const [popular, setPopular] = useState([]);   // loaded once on first focus
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  const [loadingPop, setLoadingPop] = useState(false);
   const debounceRef = useRef(null);
   const wrapRef = useRef(null);
 
@@ -120,22 +122,34 @@ function ConditionTypeahead({ value, onChange, onEnter }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const fetch = useCallback((q) => {
+  const fetchSuggestions = useCallback((q) => {
     clearTimeout(debounceRef.current);
-    if (!q || q.length < 2) { setSuggestions([]); setOpen(false); return; }
+    if (!q || q.length < 2) {
+      setSuggestions([]);
+      return;
+    }
     debounceRef.current = setTimeout(async () => {
       const results = await executeConditionSearch({}, q);
       setSuggestions(results.slice(0, 12));
-      setOpen(results.length > 0);
       setActive(-1);
     }, 250);
   }, []);
+
+  const handleFocus = useCallback(async () => {
+    setOpen(true);
+    if (popular.length === 0 && !loadingPop) {
+      setLoadingPop(true);
+      const results = await executeConditionSearch({}, "");
+      setPopular(results.slice(0, 12));
+      setLoadingPop(false);
+    }
+  }, [popular, loadingPop]);
 
   const handleChange = (e) => {
     const q = e.target.value;
     setQuery(q);
     onChange(q);
-    fetch(q);
+    fetchSuggestions(q);
   };
 
   const select = ([val]) => {
@@ -146,20 +160,22 @@ function ConditionTypeahead({ value, onChange, onEnter }) {
     setActive(-1);
   };
 
+  const displayed = query.length >= 2 ? suggestions : popular;
+
   const handleKeyDown = (e) => {
-    if (!open) {
+    if (!open || displayed.length === 0) {
       if (e.key === "Enter") onEnter();
       return;
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive(a => Math.min(a + 1, suggestions.length - 1));
+      setActive(a => Math.min(a + 1, displayed.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActive(a => Math.max(a - 1, -1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (active >= 0) select(suggestions[active]);
+      if (active >= 0) select(displayed[active]);
       else { setOpen(false); onEnter(); }
     } else if (e.key === "Escape") {
       setOpen(false); setActive(-1);
@@ -173,13 +189,16 @@ function ConditionTypeahead({ value, onChange, onEnter }) {
         value={query}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        onFocus={handleFocus}
         placeholder="e.g. Breast Cancer, Diabetes, NSCLC"
         autoComplete="off"
       />
-      {open && (
+      {open && displayed.length > 0 && (
         <ul className="pb-suggestions">
-          {suggestions.map(([val, count], i) => (
+          {query.length < 2 && (
+            <li className="pb-sug-header">Popular conditions</li>
+          )}
+          {displayed.map(([val, count], i) => (
             <li
               key={val}
               className={`pb-suggestion${i === active ? " pb-suggestion-active" : ""}`}
