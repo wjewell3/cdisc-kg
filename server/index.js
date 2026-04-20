@@ -1097,24 +1097,23 @@ app.post("/api/dq/canonical/rebuild", async (req, res) => {
 
   // Distinct-value queries per supported field — SQLite preferred, PG fallback
   const fetchers = {
-    phase: () => db
+    phase: async () => db
       ? db.prepare(`SELECT COALESCE(phase,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(phase,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c])
-      : getAactPool().then(pool => pool.query(`SELECT COALESCE(phase,'') AS v, COUNT(*)::int AS c FROM studies GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).then(r => r.rows.map(r => [r.v || "(blank)", r.c])),
-    stop_reason: () => db
+      : (await getPgPool().query(`SELECT COALESCE(phase,'') AS v, COUNT(*)::int AS c FROM studies GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).rows.map(r => [r.v || "(blank)", r.c]),
+    stop_reason: async () => db
       ? db.prepare(`SELECT LOWER(TRIM(why_stopped)) AS v, COUNT(*) AS c FROM studies WHERE why_stopped IS NOT NULL AND TRIM(why_stopped) != '' GROUP BY LOWER(TRIM(why_stopped)) ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c])
-      : getAactPool().then(pool => pool.query(`SELECT LOWER(TRIM(why_stopped)) AS v, COUNT(*)::int AS c FROM studies WHERE why_stopped IS NOT NULL AND TRIM(why_stopped) != '' GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).then(r => r.rows.map(r => [r.v, r.c])),
+      : (await getPgPool().query(`SELECT LOWER(TRIM(why_stopped)) AS v, COUNT(*)::int AS c FROM studies WHERE why_stopped IS NOT NULL AND TRIM(why_stopped) != '' GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).rows.map(r => [r.v, r.c]),
     withdrawal_reason: async () => {
       if (db) {
         try { return db.prepare(`SELECT reason AS v, COUNT(*) AS c FROM drop_withdrawals WHERE reason IS NOT NULL AND TRIM(reason) != '' GROUP BY reason ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v, r.c]); }
         catch (_) { /* table may not exist in snapshot — fall through to PG */ }
       }
-      const pool = await getAactPool();
-      const { rows } = await pool.query(`SELECT reason AS v, COUNT(*)::int AS c FROM drop_withdrawals WHERE reason IS NOT NULL AND TRIM(reason) != '' GROUP BY reason ORDER BY c DESC LIMIT $1`, [lim]);
+      const { rows } = await getPgPool().query(`SELECT reason AS v, COUNT(*)::int AS c FROM drop_withdrawals WHERE reason IS NOT NULL AND TRIM(reason) != '' GROUP BY reason ORDER BY c DESC LIMIT $1`, [lim]);
       return rows.map(r => [r.v, r.c]);
     },
-    status: () => db
+    status: async () => db
       ? db.prepare(`SELECT COALESCE(overall_status,'') AS v, COUNT(*) AS c FROM studies GROUP BY COALESCE(overall_status,'') ORDER BY c DESC LIMIT ?`).all(lim).map(r => [r.v || "(blank)", r.c])
-      : getAactPool().then(pool => pool.query(`SELECT COALESCE(overall_status,'') AS v, COUNT(*)::int AS c FROM studies GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).then(r => r.rows.map(r => [r.v || "(blank)", r.c])),
+      : (await getPgPool().query(`SELECT COALESCE(overall_status,'') AS v, COUNT(*)::int AS c FROM studies GROUP BY 1 ORDER BY c DESC LIMIT $1`, [lim])).rows.map(r => [r.v || "(blank)", r.c]),
   };
 
   const report = {};
