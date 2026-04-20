@@ -2520,7 +2520,7 @@ app.get("/api/failure-analysis", async (req, res) => {
       termination_rate_pct,
       stop_reasons: mergeByCanonical("stop_reason", stopReasons.map(r => ({ reason: r.reason, count: r.count })), "reason"),
       by_condition: conditionRates,
-      by_phase: mergeByCanonical("phase", phaseRates, "phase"),
+      by_phase: mergeByCanonical("phase", phaseRates, "phase").map(r => { const fin = (r.completed || 0) + (r.terminated || 0); return { ...r, termination_rate_pct: fin > 0 ? parseFloat(((r.terminated / fin) * 100).toFixed(1)) : null }; }),
     });
   } catch (e) {
     console.error("[failure-analysis] sqlite:", e.message);
@@ -2616,7 +2616,7 @@ app.get("/api/failure-analysis", async (req, res) => {
       termination_rate_pct,
       stop_reasons: mergeByCanonical("stop_reason", stopReasons.map(r => ({ reason: r.reason, count: r.count })), "reason"),
       by_condition: conditionRates,
-      by_phase: mergeByCanonical("phase", phaseRates, "phase"),
+      by_phase: mergeByCanonical("phase", phaseRates, "phase").map(r => { const fin = (r.completed || 0) + (r.terminated || 0); return { ...r, termination_rate_pct: fin > 0 ? parseFloat(((r.terminated / fin) * 100).toFixed(1)) : null }; }),
       source: "live",
     });
   } catch (e) {
@@ -3615,7 +3615,7 @@ app.get("/api/milestone-funnel", async (req, res) => {
     res.json({
       total_trials: coverage?.total_trials || 0,
       trials_with_milestones: coverage?.with_milestones || 0,
-      funnel, drop_reasons: dropReasons,
+      funnel, drop_reasons: mergeByCanonical("withdrawal_reason", dropReasons, "reason", ["total", "trials"]),
     });
   } catch (e) {
     console.error("[milestone-funnel] pg:", e.message);
@@ -3684,7 +3684,7 @@ app.get("/api/results-readiness", async (req, res) => {
         reporting_rate_pct: reporting?.total_completed > 0 ? parseFloat(((reporting.results_reported / reporting.total_completed) * 100).toFixed(1)) : null,
         avg_months_to_report: reporting?.avg_months_to_report ?? null,
         median_months_to_report: null, // SQLite lacks PERCENTILE_CONT
-        by_phase: mergeByCanonical("phase", byPhase.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })), "phase", ["total", "reported"]),
+        by_phase: mergeByCanonical("phase", byPhase.map(r => ({ ...r, reporting_rate_pct: null })), "phase", ["total", "reported"]).map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
         by_sponsor: bySponsor.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
         outcomes: {
           trials_with_planned: outcomes?.trials_with_planned || 0,
@@ -3726,7 +3726,7 @@ app.get("/api/results-readiness", async (req, res) => {
       reporting_rate_pct: reporting?.total_completed > 0 ? parseFloat(((reporting.results_reported / reporting.total_completed) * 100).toFixed(1)) : null,
       avg_months_to_report: reporting?.avg_months_to_report ? parseFloat(reporting.avg_months_to_report) : null,
       median_months_to_report: reporting?.median_months_to_report ? parseFloat(parseFloat(reporting.median_months_to_report).toFixed(1)) : null,
-      by_phase: byPhase.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
+      by_phase: mergeByCanonical("phase", byPhase.map(r => ({ ...r, reporting_rate_pct: null })), "phase", ["total", "reported"]).map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
       by_sponsor: bySponsor.map(r => ({ ...r, reporting_rate_pct: r.total > 0 ? parseFloat(((r.reported / r.total) * 100).toFixed(1)) : null })),
       outcomes: { trials_with_planned: 0, avg_planned: null, trials_with_reported: 0, avg_reported: null },
       statistical_significance: {

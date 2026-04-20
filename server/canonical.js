@@ -86,15 +86,20 @@ export function save(nextCatalog) {
 }
 
 export function canonicalize(field, value) {
-  if (value == null) return value;
+  const m = lookup.get(field);
+  if (value == null || value === "") {
+    // null / undefined / empty → look for "" or "unknown" in catalog
+    if (m) {
+      if (m.has("")) return m.get("");
+      if (m.has("unknown")) return m.get("unknown");
+    }
+    return value;
+  }
   const s = String(value).trim();
   if (!s) {
-    // Treat empty as a raw value so seed rules can claim it
-    const m = lookup.get(field);
     if (m && m.has("")) return m.get("");
     return s;
   }
-  const m = lookup.get(field);
   if (!m) return s;
   return m.get(s.toLowerCase()) || s;
 }
