@@ -135,29 +135,53 @@ export function mergeByCanonical(field, rows, keyField, countFields = ["count", 
 }
 
 /**
- * Use LLM to cluster raw values into canonical groups.
+ * Use LLM to classify UNMAPPED raw values into existing canonical groups.
+ * Existing groups are preserved. Only new/long-tail values are sent to the LLM
+ * for classification into the existing buckets (or a new bucket if truly novel).
+ *
  * @param {string} field
  * @param {Array<[string, number]>} distinctValues [label, count] sorted desc
  * @param {string} token GITHUB_COPILOT_TOKEN
- * @returns {Array<{canonical:string, rawValues:string[], note?:string}>}
+ * @param {Array<{canonical:string, rawValues:string[], note?:string}>} existingGroups current groups for this field
+ * @returns {Array<{canonical:string, rawValues:string[], note?:string}>} updated groups (existing + new assignments)
  */
-export async function rebuildField(field, distinctValues, token) {
-  const values = distinctValues.slice(0, 300);
-  const valueList = values.map(([v, c]) => `- "${v}" (n=${c})`).join("\n");
-  const systemPrompt = `You are a clinical-trial data steward. Cluster raw categorical values into canonical groups that merge obvious synonyms, case variants, typos, and near-synonyms with the same operational meaning. Keep distinct meanings separate. Prefer a small number of clear, broad categories (5-15 is ideal).
+export async function rebuildField(field, distinctValues, token, existingGroups = []) {
+  // Build set of already-mapped raw values (lowercase for comparison)
+  const alreadyMapped = new Set();
+  for (const g of existingGroups) {
+    alreadyMapped.add(String(g.canonical).toLowerCase().trim());
+    for (const rv of (g.rawValues || [])) {
+      alreadyMapped.add(String(rv).toLowerCase().trim());
+    }
+  }
+
+  // Filter to unmapped values only
+  const unmapped = distinctValues
+    .filter(([v]) => !alreadyMapped.has(String(v).toLowerCase().trim()))
+    .slice(0, 300);
+
+  if (unmapped.length === 0) {
+    // Everything is already mapped — return existing groups as-is
+    return existingGroups;
+  }
+
+  const existingBuckets = existingGroups.map(g => g.canonical);
+  const bucketList = existingBuckets.map(b => `- "${b}"`).join("\n");
+  const valueList = unmapped.map(([v, c]) => `- "${v}" (n=${c})`).join("\n");
+
+  const systemPrompt = `You are a clinical-trial data steward. You are given a set of EXISTING canonical group names and a list of NEW unmapped raw values. Classify each unmapped value into the most appropriate existing group. Only create a new group if a value truly does not fit any existing group.
 
 Respond with ONLY valid JSON — no markdown, no commentary. Schema:
-{"groups":[{"canonical":"<Title Case label>","rawValues":["<raw1>","<raw2>",...],"note":"<short rationale>"}]}
+{"assignments":[{"canonical":"<existing or new group name>","rawValues":["<raw1>","<raw2>",...],"note":"<short rationale>"}]}
 
 Rules:
-- Include every rawValue from the input exactly once across groups (don't drop any).
-- rawValues must match the input strings exactly (preserve case/spelling so downstream lookup works).
-- Prefer broad operational categories over hyper-specific ones.
-- For the "phase" field, map "Unknown", "NA", "N/A", and empty to a single "Not Applicable" group.
-- For "stop_reason": group all accrual/enrollment/recruitment shortfalls into one "Accrual issues" bucket; group funding/financial together; group business/sponsor/strategic decisions together.
-- For "withdrawal_reason": group all disease-progression variants together; group subject-initiated withdrawals together; group AE/SAE/toxicity together.
+- Every rawValue from the input must appear exactly once (don't drop any).
+- rawValues must match the input strings exactly (preserve case/spelling).
+- STRONGLY prefer assigning to an existing group over creating a new one.
+- If you must create a new group, use Title Case for the canonical name.
+- For ambiguous values, prefer the broadest applicable existing group.
 `;
-  const userPrompt = `Field: ${field}\n\nRaw values (top ${values.length} by frequency):\n${valueList}`;
+  const userPrompt = `Field: ${field}\n\nExisting canonical groups:\n${bucketList}\n\nNew unmapped values to classify (${unmapped.length}):\n${valueList}`;
 
   const res = await fetch("https://models.inference.ai.azure.com/chat/completions", {
     method: "POST",
@@ -180,6 +204,34 @@ Rules:
   const raw = (data.choices?.[0]?.message?.content || "").trim()
     .replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   const parsed = JSON.parse(raw);
-  if (!parsed.groups || !Array.isArray(parsed.groups)) throw new Error("LLM returned no groups");
-  return parsed.groups;
+  const assignments = parsed.assignments || parsed.groups; // support both formats
+  if (!assignments || !Array.isArray(assignments)) throw new Error("LLM returned no assignments");
+
+  // Merge assignments back into existing groups
+  const merged = existingGroups.map(g => ({
+    ...g,
+    rawValues: [...(g.rawValues || [])],
+  }));
+  const byCanonical = new Map();
+  for (const g of merged) byCanonical.set(g.canonical.toLowerCase().trim(), g);
+
+  for (const a of assignments) {
+    const key = String(a.canonical).toLowerCase().trim();
+    if (byCanonical.has(key)) {
+      // Append new raw values to existing group
+      const existing = byCanonical.get(key);
+      for (const rv of (a.rawValues || [])) {
+        if (!existing.rawValues.some(e => String(e).toLowerCase() === String(rv).toLowerCase())) {
+          existing.rawValues.push(rv);
+        }
+      }
+    } else {
+      // Truly new group — add it
+      const newGroup = { canonical: a.canonical, rawValues: a.rawValues || [], note: a.note || "AI-generated" };
+      merged.push(newGroup);
+      byCanonical.set(key, newGroup);
+    }
+  }
+
+  return merged;
 }

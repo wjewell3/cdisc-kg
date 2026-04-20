@@ -1114,9 +1114,13 @@ app.post("/api/dq/canonical/rebuild", async (req, res) => {
     try {
       const distinct = fetcher();
       if (distinct.length === 0) { report[field] = { error: "no values" }; continue; }
-      const groups = await rebuildField(field, distinct, GITHUB_COPILOT_TOKEN);
+      const existingGroups = nextCatalog[field] || [];
+      const groups = await rebuildField(field, distinct, GITHUB_COPILOT_TOKEN, existingGroups);
       nextCatalog[field] = groups;
-      report[field] = { groups: groups.length, raw_values_clustered: distinct.length };
+      // Count how many new raw values were added
+      const existingRawCount = existingGroups.reduce((s, g) => s + (g.rawValues || []).length, 0);
+      const newRawCount = groups.reduce((s, g) => s + (g.rawValues || []).length, 0);
+      report[field] = { groups: groups.length, raw_values_total: newRawCount, new_values_added: newRawCount - existingRawCount };
     } catch (e) {
       console.error(`[dq] rebuild ${field} failed:`, e.message);
       report[field] = { error: e.message };
