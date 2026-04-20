@@ -49,12 +49,137 @@ const PHASE_CLASS = {
   "N/A": "phase-na",
 };
 
-// ── Trials Like This — graph-neighbor similar trials ────────────────────────
-function TrialsLikeThis({ nctId }) {
-  const [open, setOpen] = useState(false);
+// ── KG Integration — Therapeutic Adjacency card (Forecast tab) ──────────────
+function TherapeuticAdjacency({ condition }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!condition) { setData(null); return; }
+    let cancelled = false;
+    setLoading(true); setError(null);
+    const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+    const url = base
+      ? `${base}/api/graph/therapeutic-adjacency?condition=${encodeURIComponent(condition)}&limit=8`
+      : `/api/graph?path=therapeutic-adjacency&condition=${encodeURIComponent(condition)}&limit=8`;
+    fetch(url, { signal: AbortSignal.timeout(20000) })
+      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error || "Failed")))
+      .then(d => { if (!cancelled) setData(d); })
+      .catch(e => { if (!cancelled) setError(e?.message || String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [condition]);
+
+  if (!condition) return null;
+
+  return (
+    <div className="fp-panel" style={{ gridColumn: "1 / -1" }}>
+      <div className="fp-panel-header">
+        <span className="fp-panel-icon">⬡</span>
+        <span className="fp-panel-title">Therapeutic Adjacency</span>
+        <span className="tl-kg-badge" style={{ marginLeft: 6 }}>KG</span>
+      </div>
+      <div className="fp-panel-desc" style={{ fontSize: "0.75rem", color: "#718096", marginBottom: 4 }}>
+        Conditions that share drug pipelines with <strong>{condition}</strong> — discovered via graph traversal, not predefined categories.
+      </div>
+      {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Querying knowledge graph…</span></div>}
+      {error && <div className="tl-error" style={{ fontSize: "0.78rem", color: "#ed8936" }}>⚠ Graph query timed out — adjacency data unavailable right now.</div>}
+      {data && data.length === 0 && <div style={{ fontSize: "0.78rem", color: "#4a5568" }}>No adjacent conditions found.</div>}
+      {data && data.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {data.map((d, i) => (
+            <div key={i} className="kg-adj-pill">
+              <span className="kg-adj-name">{d.condition}</span>
+              <span className="kg-adj-count">{d.shared_interventions} shared drugs</span>
+              {d.example_drugs?.length > 0 && (
+                <span className="kg-adj-drugs">{d.example_drugs.join(", ")}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── KG Integration — Competitive Landscape card (Risk tab) ──────────────────
+function CompetitiveLandscape({ condition }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!condition) { setData(null); return; }
+    let cancelled = false;
+    setLoading(true); setError(null);
+    const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+    const url = base
+      ? `${base}/api/graph/condition-landscape?condition=${encodeURIComponent(condition)}&limit=10`
+      : `/api/graph?path=condition-landscape&condition=${encodeURIComponent(condition)}&limit=10`;
+    fetch(url, { signal: AbortSignal.timeout(20000) })
+      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error || "Failed")))
+      .then(d => { if (!cancelled) setData(d); })
+      .catch(e => { if (!cancelled) setError(e?.message || String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [condition]);
+
+  if (!condition) return null;
+
+  return (
+    <div className="fp-panel" style={{ gridColumn: "1 / -1", marginBottom: 12 }}>
+      <div className="fp-panel-header">
+        <span className="fp-panel-icon">⬡</span>
+        <span className="fp-panel-title">Competitive Landscape</span>
+        <span className="tl-kg-badge" style={{ marginLeft: 6 }}>KG</span>
+      </div>
+      <div className="fp-panel-desc" style={{ fontSize: "0.75rem", color: "#718096", marginBottom: 4 }}>
+        Sponsors most active across <strong>{condition}</strong> and its therapeutically adjacent conditions — via 3-hop graph traversal.
+      </div>
+      {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Traversing sponsor network…</span></div>}
+      {error && <div className="tl-error" style={{ fontSize: "0.78rem", color: "#ed8936" }}>⚠ Graph query timed out — landscape data unavailable right now.</div>}
+      {data && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {data.adjacent_conditions?.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.72rem", color: "#a0aec0", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Adjacent Therapeutic Areas</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {data.adjacent_conditions.slice(0, 8).map((a, i) => (
+                  <span key={i} style={{ background: "rgba(57,210,192,0.1)", border: "1px solid rgba(57,210,192,0.25)", borderRadius: 6, padding: "3px 8px", fontSize: "0.75rem", color: "#39d2c0" }}>
+                    {a.condition} <span style={{ opacity: 0.6 }}>({a.shared_drugs} drugs)</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.landscape_sponsors?.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.72rem", color: "#a0aec0", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Top Sponsors in Neighborhood</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {data.landscape_sponsors.slice(0, 8).map((s, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.78rem" }}>
+                    <span style={{ color: "#e2e8f0", fontWeight: 500, minWidth: 140 }}>{s.sponsor}</span>
+                    <span style={{ color: "#a78bfa", fontSize: "0.72rem" }}>{s.adjacent_conditions} areas</span>
+                    <span style={{ color: "#718096", fontSize: "0.72rem" }}>{s.trials.toLocaleString()} trials</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Trials Like This — graph-neighbor similar trials ────────────────────────
+function TrialsLikeThis({ nctId }) {
+  const [open, setOpen] = useState(true);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const loadedRef = useRef(false);
 
   const load = async () => {
     if (loading || data) return;
@@ -74,6 +199,11 @@ function TrialsLikeThis({ nctId }) {
       setLoading(false);
     }
   };
+
+  // Auto-fetch on mount since panel starts open
+  useEffect(() => {
+    if (!loadedRef.current) { loadedRef.current = true; load(); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = () => {
     setOpen(!open);
@@ -577,6 +707,7 @@ export default function TrialsPanel() {
                   <div className="ptb-desc">Historical evidence base for enrollment forecasting, site selection, and milestone prediction — distribution priors computed over trials matching your profile.</div>
                 </div>
                 <ForecastPriorsDisplay data={cohortData} benchmarkData={benchmarkData} milestoneData={milestoneData} loading={cohortLoading} error={cohortError} />
+                <TherapeuticAdjacency condition={profile.condition} />
                 </>)}
 
                 {/* ── Risk & Decisioning ───────────────────────────────── */}
@@ -592,6 +723,7 @@ export default function TrialsPanel() {
                     <div className="fp-empty-text">Set a trial profile above to see risk analysis for matching trials.</div>
                   </div>
                 ) : (<>
+                <CompetitiveLandscape condition={profile.condition} />
                 <MonitorRisk filterParams={profileFilterParams} />
                 <OperationalKPIs filterParams={profileFilterParams} showViews={["failure"]} />
                 </>)}
@@ -617,6 +749,7 @@ export default function TrialsPanel() {
 
                 {/* ── Browse Trials sub-tab ─────────────────────────── */}
                 {subView === "browse" && (<>
+                <StrategicKGQuestions showOnly={["eq1","eq2","eq3","path"]} />
                 <TrialsCharts
                   trials={(results || baseResults).results}
                   aggData={currentAgg}
@@ -644,7 +777,7 @@ export default function TrialsPanel() {
                     setChartFilters(prev => prev.filter(f => f.field !== "country"));
                   }}
                 />
-                <StrategicKGQuestions showOnly={["eq2","eq3","path"]} hideHeader />
+
                 <div ref={okpiRef}>
                   <OperationalKPIs filterParams={okpiFilterParams} initialView={"enrollment"} />
                 </div>
