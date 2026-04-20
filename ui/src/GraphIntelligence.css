@@ -187,10 +187,10 @@
 /* ── Error ── */
 .kg-error {
   padding: 10px 14px;
-  background: rgba(248, 81, 73, 0.1);
-  border: 1px solid rgba(248, 81, 73, 0.3);
+  background: rgba(237, 137, 54, 0.1);
+  border: 1px solid rgba(237, 137, 54, 0.3);
   border-radius: 6px;
-  color: #f85149;
+  color: #ed8936;
   font-size: 13px;
   margin-bottom: 16px;
 }

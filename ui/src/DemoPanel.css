@@ -118,9 +118,9 @@
 }
 
 .pipeline-step.done .pipeline-dot {
-  background: #238636;
+  background: #1d4b8c;
   color: #fff;
-  border-color: #3fb950;
+  border-color: #58a6ff;
 }
 
 .pipeline-label {
@@ -135,7 +135,7 @@
 }
 
 .pipeline-step.done .pipeline-label {
-  color: #3fb950;
+  color: #58a6ff;
 }
 
 .pipeline-line {
@@ -147,7 +147,7 @@
 }
 
 .pipeline-step.done .pipeline-line {
-  background: #3fb950;
+  background: #58a6ff;
 }
 
 .pipeline-step.animating .pipeline-dot {
@@ -242,7 +242,7 @@
   line-height: 1;
   padding: 0 0 0 2px;
 }
-.demo-kg-pill-remove:hover { color: #f85149; }
+.demo-kg-pill-remove:hover { color: #ed8936; }
 
 /* ── Sections ── */
 .demo-section {
@@ -425,8 +425,8 @@
 .resolution-count {
   margin-left: auto;
   font-size: 12px;
-  color: #3fb950;
-  background: rgba(63, 185, 80, 0.1);
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.1);
   padding: 4px 10px;
   border-radius: 12px;
   font-weight: 600;
@@ -510,8 +510,8 @@
 .res-value {
   font-size: 12px;
   padding: 2px 8px;
-  background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
   border-radius: 4px;
   font-weight: 500;
 }
@@ -612,8 +612,8 @@
 }
 
 .sev-mild {
-  background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
 }
 
 .sev-moderate {
@@ -622,8 +622,8 @@
 }
 
 .sev-severe {
-  background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
+  background: rgba(237, 137, 54, 0.15);
+  color: #ed8936;
 }
 
 .arm-badge {
@@ -732,8 +732,8 @@
 }
 
 .lineage-item.match {
-  border-left-color: #3fb950;
-  background: rgba(63, 185, 80, 0.05);
+  border-left-color: #58a6ff;
+  background: rgba(88, 166, 255, 0.05);
 }
 
 .lineage-layer {
@@ -845,15 +845,15 @@
 
 .filter-reset-btn {
   font-size: 11px;
-  color: #f85149;
-  background: rgba(248, 81, 73, 0.1);
-  border: 1px solid rgba(248, 81, 73, 0.3);
+  color: #ed8936;
+  background: rgba(237, 137, 54, 0.1);
+  border: 1px solid rgba(237, 137, 54, 0.3);
   border-radius: 10px;
   padding: 2px 8px;
   cursor: pointer;
   transition: background 0.15s;
 }
-.filter-reset-btn:hover { background: rgba(248, 81, 73, 0.2); }
+.filter-reset-btn:hover { background: rgba(237, 137, 54, 0.2); }
 
 .insight-grid {
   display: grid;
@@ -923,7 +923,7 @@
 .filter-status strong { color: #f0f6fc; }
 .filter-reset-inline {
   font-size: 11px;
-  color: #f85149;
+  color: #ed8936;
   background: none;
   border: none;
   cursor: pointer;

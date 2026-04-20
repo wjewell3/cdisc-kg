@@ -25,7 +25,7 @@
 .ask-bar-input::placeholder { color: #484f58; }
 
 .ask-bar-submit {
-  background: #238636;
+  background: #1d4b8c;
   color: #fff;
   border: none;
   border-radius: 12px;
@@ -92,11 +92,11 @@
   border-radius: 50%;
   display: inline-block;
 }
-.ask-source-analytics { background: #3fb950; }
+.ask-source-analytics { background: #58a6ff; }
 .ask-source-kg { background: #58a6ff; }
 .ask-source-hybrid { background: #d29922; }
 .ask-source-fallback { background: #8b949e; }
-.ask-source-error { background: #f85149; }
+.ask-source-error { background: #ed8936; }
 
 .ask-intent-label { color: #484f58; }
 
@@ -119,7 +119,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  border-left: 3px solid #3fb950;
+  border-left: 3px solid #58a6ff;
 }
 .ask-card-briefing .ask-card-icon { font-size: 16px; margin-top: 1px; }
 .ask-card-briefing p { margin: 0; font-size: 13px; color: #e6edf3; line-height: 1.5; }
@@ -134,7 +134,7 @@
 }
 .ask-kpi-value { font-size: 24px; font-weight: 700; color: #e6edf3; }
 .ask-kpi-label { font-size: 11px; color: #8b949e; margin-top: 2px; }
-.ask-kpi-red .ask-kpi-value { color: #f85149; }
+.ask-kpi-red .ask-kpi-value { color: #ed8936; }
 .ask-kpi-amber .ask-kpi-value { color: #d29922; }
 
 /* Bar chart card */
@@ -219,7 +219,7 @@
 
 /* Misc */
 .ask-card-suggestion { color: #8b949e; font-size: 13px; }
-.ask-card-error { color: #f85149; font-size: 13px; }
+.ask-card-error { color: #ed8936; font-size: 13px; }
 
 .ask-bar-clear {
   background: none;

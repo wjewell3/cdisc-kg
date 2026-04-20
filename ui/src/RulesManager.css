@@ -107,7 +107,7 @@
 .rm-ai-error {
   margin-top: 8px;
   font-size: 12px;
-  color: #f85149;
+  color: #ed8936;
 }
 
 .rm-ai-result {
@@ -137,7 +137,7 @@
 
 .rm-confirm-btn {
   padding: 6px 14px;
-  background: #238636;
+  background: #1d4b8c;
   border: none;
   border-radius: 6px;
   color: #fff;
@@ -196,7 +196,7 @@
 .rm-add-btn {
   margin-top: 8px;
   padding: 8px 16px;
-  background: #238636;
+  background: #1d4b8c;
   border: none;
   border-radius: 6px;
   color: #fff;
@@ -243,7 +243,7 @@
   font-size: 11px;
   cursor: pointer;
 }
-.rm-clear-bounds-btn:hover { color: #f85149; border-color: #f85149; }
+.rm-clear-bounds-btn:hover { color: #ed8936; border-color: #ed8936; }
 
 /* Active rules list */
 .rm-empty {
@@ -315,7 +315,7 @@
   padding: 0 2px;
   flex-shrink: 0;
 }
-.rm-remove-btn:hover { color: #f85149; }
+.rm-remove-btn:hover { color: #ed8936; }
 
 .rm-rule-actions {
   display: flex;

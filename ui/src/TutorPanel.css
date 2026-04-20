@@ -40,7 +40,7 @@
   width: 100%;
 }
 .tp-card:hover { border-color: #58a6ff; background: #1c2128; }
-.tp-card-done { border-color: #238636; }
+.tp-card-done { border-color: #1d4b8c; }
 .tp-card-icon { font-size: 1.6rem; flex-shrink: 0; margin-top: 2px; }
 .tp-card-body { flex: 1; min-width: 0; }
 .tp-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 3px; }
@@ -58,7 +58,7 @@
   border-radius: 10px; background: #21262d; color: #8b949e;
   font-family: "SFMono-Regular", Consolas, monospace;
 }
-.tp-done-tag { font-size: 0.68rem; color: #3fb950; font-weight: 600; }
+.tp-done-tag { font-size: 0.68rem; color: #58a6ff; font-weight: 600; }
 
 /* ── Walkthrough root ─────────────────────────── */
 .tp-root {
@@ -97,7 +97,7 @@
   font-family: inherit; transition: all 0.15s;
 }
 .tp-dot.active { border-color: #58a6ff; color: #58a6ff; background: #0d419d33; }
-.tp-dot.done { border-color: #238636; color: #3fb950; background: #23863622; }
+.tp-dot.done { border-color: #1d4b8c; color: #58a6ff; background: #1d4b8c22; }
 
 /* ── Body (scrollable step content) ───────────── */
 .tp-body {
@@ -137,7 +137,7 @@
 .tp-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .tp-nav-next { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 .tp-nav-next:hover:not(:disabled) { background: #388bfd; }
-.tp-nav-finish { background: #238636; border-color: #238636; color: #fff; }
+.tp-nav-finish { background: #1d4b8c; border-color: #1d4b8c; color: #fff; }
 .tp-nav-finish:hover { background: #2ea043; }
 
 /* ═══════ Step 0: Story ═══════ */
@@ -218,8 +218,8 @@
   font-size: 0.85rem; transition: border-color 0.12s;
 }
 .tp-quiz-opt:hover:not(:disabled) { border-color: #58a6ff; }
-.tp-quiz-opt.correct { border-color: #3fb950; background: #23863622; }
-.tp-quiz-opt.wrong { border-color: #f85149; background: #f8514922; }
+.tp-quiz-opt.correct { border-color: #58a6ff; background: #1d4b8c22; }
+.tp-quiz-opt.wrong { border-color: #ed8936; background: #ed893622; }
 .tp-quiz-opt.dim { opacity: 0.45; }
 .tp-quiz-exp {
   display: block; margin-top: 6px; font-size: 0.78rem;
@@ -282,7 +282,7 @@
 }
 .tp-map-val {
   flex: 1; font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 0.76rem; color: #3fb950;
+  font-size: 0.76rem; color: #58a6ff;
 }
 .tp-map-xfm {
   width: 120px; flex-shrink: 0; text-align: right;
@@ -319,7 +319,7 @@
   color: #e6edf3;
 }
 .tp-final-tbl th.hl { color: #58a6ff; }
-.tp-final-tbl td.hl { color: #3fb950; background: #23863611; }
+.tp-final-tbl td.hl { color: #58a6ff; background: #1d4b8c11; }
 
 .tp-hl-notes { margin-top: 8px; }
 .tp-hl-notes h4 { margin: 0 0 8px; font-size: 0.82rem; color: #e6edf3; }
@@ -341,7 +341,7 @@
   font-size: 0.88rem; font-weight: 600;
   background: #21262d; border: 1px solid #30363d; color: #e6edf3;
 }
-.tp-score.perfect { border-color: #3fb950; background: #23863622; color: #3fb950; }
+.tp-score.perfect { border-color: #58a6ff; background: #1d4b8c22; color: #58a6ff; }
 
 .tp-rq-block { margin-bottom: 20px; }
 .tp-rq-q { font-size: 0.88rem; font-weight: 500; margin: 0 0 10px; line-height: 1.5; }
@@ -353,8 +353,8 @@
   font-size: 0.82rem; transition: border-color 0.12s;
 }
 .tp-rq-opt:hover:not(:disabled) { border-color: #58a6ff; }
-.tp-rq-opt.correct { border-color: #3fb950; background: #23863622; }
-.tp-rq-opt.wrong { border-color: #f85149; background: #f8514922; }
+.tp-rq-opt.correct { border-color: #58a6ff; background: #1d4b8c22; }
+.tp-rq-opt.wrong { border-color: #ed8936; background: #ed893622; }
 .tp-rq-opt.dim { opacity: 0.4; }
 .tp-rq-exp {
   margin-top: 8px; padding: 8px 12px; border-radius: 6px;

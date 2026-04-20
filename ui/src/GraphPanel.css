@@ -87,7 +87,7 @@
 }
 
 .graph-panel-submit {
-  background: #238636;
+  background: #1d4b8c;
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -192,7 +192,7 @@
 }
 
 .graph-panel-error {
-  color: #f85149;
+  color: #ed8936;
   font-size: 13px;
   padding: 12px;
 }

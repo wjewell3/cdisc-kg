@@ -40,7 +40,7 @@
 
 .si-search-btn {
   padding: 10px 20px;
-  background: #238636;
+  background: #1d4b8c;
   border: none;
   border-radius: 8px;
   color: #fff;
@@ -107,10 +107,10 @@
 
 .si-error {
   font-size: 13px;
-  color: #f85149;
+  color: #ed8936;
   padding: 8px 12px;
   background: #1c1012;
-  border: 1px solid #f8514930;
+  border: 1px solid #ed893630;
   border-radius: 6px;
 }
 
@@ -281,7 +281,7 @@
   letter-spacing: 0.3px;
 }
 
-.si-status-completed { background: #0d2818; color: #3fb950; }
-.si-status-terminated { background: #1c1012; color: #f85149; }
+.si-status-completed { background: #0d2818; color: #58a6ff; }
+.si-status-terminated { background: #1c1012; color: #ed8936; }
 .si-status-recruiting { background: #0c2d48; color: #58a6ff; }
 .si-status-active_not_recruiting { background: #2a1e00; color: #d29922; }
