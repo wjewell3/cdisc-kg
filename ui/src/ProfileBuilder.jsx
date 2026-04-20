@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { executeConditionSearch } from "./trialsEngine";
 import "./ProfileBuilder.css";
 
 const PHASES = [
@@ -96,6 +97,105 @@ const HEALTHY_VOLS = [
   { value: "false", label: "No" },
 ];
 
+// ── Condition Typeahead ───────────────────────────────────────────────
+function ConditionTypeahead({ value, onChange, onEnter }) {
+  const [query, setQuery] = useState(value);
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const debounceRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  // Keep local query in sync if parent resets value
+  useEffect(() => { setQuery(value); }, [value]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false); setActive(-1);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const fetch = useCallback((q) => {
+    clearTimeout(debounceRef.current);
+    if (!q || q.length < 2) { setSuggestions([]); setOpen(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      const results = await executeConditionSearch({}, q);
+      setSuggestions(results.slice(0, 12));
+      setOpen(results.length > 0);
+      setActive(-1);
+    }, 250);
+  }, []);
+
+  const handleChange = (e) => {
+    const q = e.target.value;
+    setQuery(q);
+    onChange(q);
+    fetch(q);
+  };
+
+  const select = ([val]) => {
+    setQuery(val);
+    onChange(val);
+    setSuggestions([]);
+    setOpen(false);
+    setActive(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open) {
+      if (e.key === "Enter") onEnter();
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive(a => Math.min(a + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive(a => Math.max(a - 1, -1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (active >= 0) select(suggestions[active]);
+      else { setOpen(false); onEnter(); }
+    } else if (e.key === "Escape") {
+      setOpen(false); setActive(-1);
+    }
+  };
+
+  return (
+    <div className="pb-typeahead" ref={wrapRef}>
+      <input
+        type="text"
+        value={query}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        placeholder="e.g. Breast Cancer, Diabetes, NSCLC"
+        autoComplete="off"
+      />
+      {open && (
+        <ul className="pb-suggestions">
+          {suggestions.map(([val, count], i) => (
+            <li
+              key={val}
+              className={`pb-suggestion${i === active ? " pb-suggestion-active" : ""}`}
+              onMouseDown={() => select([val, count])}
+              onMouseEnter={() => setActive(i)}
+            >
+              <span className="pb-sug-name">{val}</span>
+              <span className="pb-sug-count">{count?.toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const EMPTY_PROFILE = {
   condition: "", phase: "", allocation: "", masking: "",
   intervention_model: "", primary_purpose: "", intervention_type: "",
@@ -114,10 +214,6 @@ export default function ProfileBuilder({ profile, onChange, onApply, loading }) 
 
   const handleReset = () => {
     onChange({ ...EMPTY_PROFILE });
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && profile.condition.trim()) onApply();
   };
 
   return (
@@ -139,12 +235,10 @@ export default function ProfileBuilder({ profile, onChange, onApply, loading }) 
       <div className="pb-primary-row">
         <div className="pb-field pb-condition">
           <label>Condition / Disease</label>
-          <input
-            type="text"
+          <ConditionTypeahead
             value={profile.condition}
-            onChange={e => set("condition", e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="e.g. Breast Cancer, Diabetes, NSCLC"
+            onChange={v => set("condition", v)}
+            onEnter={() => { if (profile.condition.trim()) onApply(); }}
           />
         </div>
         <div className="pb-field">

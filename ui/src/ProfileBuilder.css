@@ -162,3 +162,69 @@
   .pb-field-group { flex-wrap: wrap; }
   .pb-group-label { writing-mode: horizontal-tb; transform: none; }
 }
+
+/* ── Condition Typeahead ────────────────────────────────────────────── */
+.pb-typeahead {
+  position: relative;
+}
+.pb-typeahead input {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.pb-typeahead input:focus {
+  border-color: rgba(99, 179, 237, 0.4);
+}
+.pb-typeahead input::placeholder { color: #4a5568; }
+
+.pb-suggestions {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  background: #161b22;
+  border: 1px solid rgba(99, 179, 237, 0.25);
+  border-radius: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.pb-suggestion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+  gap: 8px;
+}
+.pb-suggestion:hover,
+.pb-suggestion-active {
+  background: rgba(99, 179, 237, 0.1);
+}
+.pb-sug-name {
+  font-size: 0.78rem;
+  color: #e2e8f0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-sug-count {
+  font-size: 0.65rem;
+  color: #4a5568;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
