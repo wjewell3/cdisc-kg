@@ -1,6 +1,6 @@
 # Clinical Trials Knowledge Graph
 
-A knowledge-graph-powered operational intelligence platform for clinical trials, built on 580k+ studies from [AACT](https://aact.ctti-clinicaltrials.org/) (ClinicalTrials.gov). Live at **[cdisc-kg.vercel.app](https://cdisc-kg.vercel.app)**.
+A knowledge-graph-powered operational intelligence platform for clinical trials, built on 580k+ studies from [AACT](https://aact.ctti-clinicaltrials.org/) (ClinicalTrials.gov). Live at **[trials-intel.vercel.app](https://trials-intel.vercel.app)**.
 
 > **In 60 seconds:** Ask a question like *"What therapeutic gaps does Novartis have?"* — the platform translates it into a Neo4j graph query across 580k trials, returns structured insight cards, and auto-applies filters to 6 cross-filter charts. No SQL, no manual joins. The knowledge graph connects every trial to its sponsor, condition, intervention, country, and operational metrics, so any question slices the entire domain.
 
@@ -49,7 +49,8 @@ AACT PostgreSQL (ClinicalTrials.gov)     ← Authoritative source
   ▼  Graph ETL (580k trials)
  Neo4j 5.26 Knowledge Graph               ← Semantic layer
   │  Trial(580k) + Intervention(512k) + Condition(129k)
-  │  + Sponsor(50k) + Country(225)
+  │  + Sponsor(50k) + Country(225) + Site(874k)
+  │  + DrugClass(118 ATC)
   │
   ├─▶ Cytoscape.js graph visualization    ← Exploration
   ├─▶ NL → Cypher query translation       ← Self-service access
@@ -181,7 +182,7 @@ cdisc-kg/
 ## Server API
 
 Base URL (OKE): `http://129.80.137.184:3001`
-Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
+Proxied via Vercel: `https://trials-intel.vercel.app/api/...`
 
 ### Search & Aggregation
 
@@ -228,6 +229,7 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 | `GET /api/graph/strategic-gaps?sponsor=...` | Therapeutic areas where a sponsor has no trials but competitors do |
 | `GET /api/graph/condition-landscape?condition=...` | All sponsors and interventions for a condition |
 | `GET /api/graph/condition-feasibility?condition=...` | Experienced sponsors (with completion rates) and top countries for a condition — used by Forecast tab's FeasibilityIntel card |
+| `GET /api/graph/site-feasibility?condition=...` | Top sites experienced in a condition — trial volume, completion rate, adjacent-condition expertise. Used by Forecast tab's SiteFeasibility card |
 | `GET /api/graph/therapeutic-adjacency?condition=...` | Conditions that share interventions (potential repurposing signals) |
 | `GET /api/graph/repurposing-path?from=...&to=...` | Shortest graph path between two conditions or interventions |
 | `GET /api/graph/sponsor-network?sponsor=...` | Sponsor relationship network via shared conditions/interventions |
@@ -244,7 +246,7 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 ## Infrastructure
 
 - **OKE**: Single ARM64 node (`VM.Standard.A1.Flex`, 4 OCPU / 24 GB), namespace `cdisc-kg`, LB IP `129.80.137.184`
-- **Neo4j 5.26**: Graph database on OKE — 580k Trial + 512k Intervention + 129k Condition + 50k Sponsor + 225 Country nodes. ClusterIP service, Cypher endpoint for graph queries
+- **Neo4j 5.26**: Graph database on OKE — 580k Trial + 512k Intervention + 129k Condition + 50k Sponsor + 874k Site + 225 Country + 118 DrugClass (ATC) nodes. ClusterIP service, Cypher endpoint for graph queries
 - **SQLite snapshot**: 11 tables on a 50 GB PVC (`/data/aact.db`), refreshed nightly at 2AM UTC (5h timeout). Server falls back to live AACT PostgreSQL if snapshot missing or tables not yet built
 - **CI**: `ubuntu-24.04-arm` GitHub Actions runner — native ARM64 build, ~2.5 min. Auto-triggers on push to `server/**`
 - **Vercel**: Serverless proxy layer + static UI hosting. Deploy with `vercel --prod` from project root

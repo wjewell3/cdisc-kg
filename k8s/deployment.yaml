@@ -48,9 +48,9 @@ spec:
             - name: DB_PATH
               value: /data/aact.db
             - name: STALE_HOURS
-              value: "48"
+              value: "720"
             - name: CORS_ORIGIN
-              value: "https://cdisc-kg.vercel.app"
+              value: "https://trials-intel.vercel.app"
             - name: AACT_USER
               valueFrom:
                 secretKeyRef:
