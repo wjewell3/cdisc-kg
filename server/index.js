@@ -3786,10 +3786,20 @@ app.get("/api/profile-cohort", async (req, res) => {
       const where = [];
       const params = [];
 
-      const from = `FROM studies s
-        JOIN designs d ON d.nct_id = s.nct_id
-        JOIN eligibilities e ON e.nct_id = s.nct_id
-        JOIN calculated_values cv ON cv.nct_id = s.nct_id`;
+      // Check which tables exist — graceful degradation if snapshot is partial
+      const existingTables = new Set(
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name)
+      );
+      const hasDesigns = existingTables.has("designs");
+      const hasEligibilities = existingTables.has("eligibilities");
+      const hasCV = existingTables.has("calculated_values");
+      const hasCountries = existingTables.has("countries");
+
+      const joins = [];
+      if (hasDesigns) joins.push("JOIN designs d ON d.nct_id = s.nct_id");
+      if (hasEligibilities) joins.push("JOIN eligibilities e ON e.nct_id = s.nct_id");
+      if (hasCV) joins.push("JOIN calculated_values cv ON cv.nct_id = s.nct_id");
+      const from = `FROM studies s ${joins.join(" ")}`;
 
       if (condition) {
         const vals = condition.split(",").map(c => c.trim()).filter(Boolean);
@@ -3802,24 +3812,24 @@ app.get("/api/profile-cohort", async (req, res) => {
         where.push(`s.phase IN (${phases.map(() => "?").join(",")})`);
         params.push(...phases);
       }
-      if (allocation) { where.push(`d.allocation = ?`); params.push(allocation); }
-      if (masking) { where.push(`d.masking = ?`); params.push(masking); }
-      if (intervention_model) { where.push(`d.intervention_model = ?`); params.push(intervention_model); }
-      if (primary_purpose) { where.push(`d.primary_purpose = ?`); params.push(primary_purpose); }
-      if (gender && gender !== "ALL") { where.push(`e.gender = ?`); params.push(gender); }
-      if (healthy_volunteers) {
+      if (allocation && hasDesigns) { where.push(`d.allocation = ?`); params.push(allocation); }
+      if (masking && hasDesigns) { where.push(`d.masking = ?`); params.push(masking); }
+      if (intervention_model && hasDesigns) { where.push(`d.intervention_model = ?`); params.push(intervention_model); }
+      if (primary_purpose && hasDesigns) { where.push(`d.primary_purpose = ?`); params.push(primary_purpose); }
+      if (gender && gender !== "ALL" && hasEligibilities) { where.push(`e.gender = ?`); params.push(gender); }
+      if (healthy_volunteers && hasEligibilities) {
         where.push(`e.healthy_volunteers = ?`);
         params.push(healthy_volunteers === "true" ? 1 : 0);
       }
-      if (age_group) {
+      if (age_group && hasEligibilities) {
         if (age_group === "child") where.push(`e.child = 1`);
         else if (age_group === "adult") where.push(`e.adult = 1`);
         else if (age_group === "older_adult") where.push(`e.older_adult = 1`);
       }
-      if (geography === "us_only") where.push(`cv.has_us_facility = 1`);
-      else if (geography === "international") where.push(`(cv.has_us_facility = 0 OR cv.has_us_facility IS NULL)`);
-      if (multi_site === "single") where.push(`cv.has_single_facility = 1`);
-      else if (multi_site === "multi") where.push(`(cv.has_single_facility = 0 OR cv.has_single_facility IS NULL)`);
+      if (geography === "us_only" && hasCV) where.push(`cv.has_us_facility = 1`);
+      else if (geography === "international" && hasCV) where.push(`(cv.has_us_facility = 0 OR cv.has_us_facility IS NULL)`);
+      if (multi_site === "single" && hasCV) where.push(`cv.has_single_facility = 1`);
+      else if (multi_site === "multi" && hasCV) where.push(`(cv.has_single_facility = 0 OR cv.has_single_facility IS NULL)`);
       if (intervention_type) {
         where.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.intervention_type = ?)`);
         params.push(intervention_type);
@@ -3827,46 +3837,56 @@ app.get("/api/profile-cohort", async (req, res) => {
 
       const wc = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-      const cohortSize = db.prepare(`SELECT COUNT(DISTINCT s.nct_id) AS cnt ${from} ${wc}`).get(...params)?.cnt || 0;
+      // ── Materialize cohort once — avoids repeating expensive JOINs ──
+      const cvCols = hasCV
+        ? "cv.actual_duration, cv.number_of_facilities, cv.has_us_facility"
+        : "NULL AS actual_duration, NULL AS number_of_facilities, NULL AS has_us_facility";
+      db.exec(`DROP TABLE IF EXISTS _cohort`);
+      db.prepare(`CREATE TEMP TABLE _cohort AS
+        SELECT s.nct_id, s.enrollment, s.overall_status, s.why_stopped,
+               ${cvCols}
+        ${from} ${wc}`).run(...params);
+
+      const cohortSize = db.prepare(`SELECT COUNT(*) AS cnt FROM _cohort`).get()?.cnt || 0;
       if (cohortSize === 0) {
+        db.exec(`DROP TABLE IF EXISTS _cohort`);
         return res.json({ cohort_size: 0, enrollment: null, duration_months: null, termination: null, site_footprint: null });
       }
 
-      // Helper: percentiles via ordered OFFSET (SQLite lacks PERCENTILE_CONT)
-      const pctiles = (expr, extraFilter) => {
-        const fw = wc
-          ? `${wc} AND ${extraFilter}`
-          : `WHERE ${extraFilter}`;
-        const n = db.prepare(`SELECT COUNT(*) AS cnt ${from} ${fw}`).get(...params)?.cnt || 0;
+      // Helper: percentiles from temp table (single sort per metric, no JOINs)
+      const pctiles = (col, filter) => {
+        const f = `FROM _cohort WHERE ${filter}`;
+        const stats = db.prepare(`SELECT COUNT(*) AS n, ROUND(AVG(${col}), 1) AS mean ${f}`).get();
+        const n = stats?.n || 0;
         if (n < 5) return null;
-        const pct = (p) => db.prepare(`SELECT ${expr} AS val ${from} ${fw} ORDER BY ${expr} LIMIT 1 OFFSET ?`).get(...params, Math.floor(n * p))?.val ?? null;
-        const mean = db.prepare(`SELECT ROUND(AVG(${expr}), 1) AS m ${from} ${fw}`).get(...params)?.m ?? null;
-        return { p10: pct(0.10), p25: pct(0.25), p50: pct(0.50), p75: pct(0.75), p90: pct(0.90), mean, n };
+        const offsets = [0.10, 0.25, 0.50, 0.75, 0.90].map(p => Math.floor(n * p));
+        const pctVals = offsets.map(off =>
+          db.prepare(`SELECT ${col} AS val ${f} ORDER BY ${col} LIMIT 1 OFFSET ?`).get(off)?.val ?? null
+        );
+        return { p10: pctVals[0], p25: pctVals[1], p50: pctVals[2], p75: pctVals[3], p90: pctVals[4], mean: stats.mean != null ? parseFloat(stats.mean) : null, n };
       };
 
-      const enrollment = pctiles("s.enrollment", "s.enrollment IS NOT NULL AND s.enrollment > 0");
-      const duration_months = pctiles("cv.actual_duration", "cv.actual_duration IS NOT NULL AND cv.actual_duration > 0");
+      const enrollment = pctiles("enrollment", "enrollment IS NOT NULL AND enrollment > 0");
+      const duration_months = pctiles("actual_duration", "actual_duration IS NOT NULL AND actual_duration > 0");
 
       // Termination
-      const terminated = db.prepare(
-        `SELECT COUNT(DISTINCT s.nct_id) AS cnt ${from} ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'TERMINATED'`
-      ).get(...params)?.cnt || 0;
+      const terminated = db.prepare(`SELECT COUNT(*) AS cnt FROM _cohort WHERE overall_status = 'TERMINATED'`).get()?.cnt || 0;
       const stopReasons = db.prepare(
-        `SELECT s.why_stopped AS reason, COUNT(*) AS count ${from}
-         ${wc ? wc + " AND" : "WHERE"} s.overall_status = 'TERMINATED' AND s.why_stopped IS NOT NULL AND s.why_stopped != ''
-         GROUP BY s.why_stopped ORDER BY count DESC LIMIT 8`
-      ).all(...params);
+        `SELECT why_stopped AS reason, COUNT(*) AS count FROM _cohort
+         WHERE overall_status = 'TERMINATED' AND why_stopped IS NOT NULL AND why_stopped != ''
+         GROUP BY why_stopped ORDER BY count DESC LIMIT 8`
+      ).all();
 
       // Site footprint
-      const sitePctiles = pctiles("cv.number_of_facilities", "cv.number_of_facilities IS NOT NULL AND cv.number_of_facilities > 0");
-      const usTrials = db.prepare(
-        `SELECT COUNT(DISTINCT s.nct_id) AS cnt ${from} ${wc ? wc + " AND" : "WHERE"} cv.has_us_facility = 1`
-      ).get(...params)?.cnt || 0;
-      const topCountries = db.prepare(
-        `SELECT co.name AS country, COUNT(DISTINCT s.nct_id) AS trials
-         ${from} JOIN countries co ON co.nct_id = s.nct_id ${wc}
+      const sitePctiles = hasCV ? pctiles("number_of_facilities", "number_of_facilities IS NOT NULL AND number_of_facilities > 0") : null;
+      const usTrials = hasCV ? (db.prepare(`SELECT COUNT(*) AS cnt FROM _cohort WHERE has_us_facility = 1`).get()?.cnt || 0) : 0;
+      const topCountries = hasCountries ? db.prepare(
+        `SELECT co.name AS country, COUNT(DISTINCT co.nct_id) AS trials
+         FROM countries co WHERE co.nct_id IN (SELECT nct_id FROM _cohort)
          GROUP BY co.name ORDER BY trials DESC LIMIT 10`
-      ).all(...params);
+      ).all() : [];
+
+      db.exec(`DROP TABLE IF EXISTS _cohort`);
 
       return res.json({
         cohort_size: cohortSize,
@@ -3887,6 +3907,7 @@ app.get("/api/profile-cohort", async (req, res) => {
       });
     } catch (e) {
       console.error("[profile-cohort] sqlite:", e.message);
+      try { db.exec(`DROP TABLE IF EXISTS _cohort`); } catch {}
     }
   }
 
