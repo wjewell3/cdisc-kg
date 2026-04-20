@@ -1476,6 +1476,49 @@ app.get("/api/graph/therapeutic-adjacency", async (req, res) => {
 });
 
 /**
+ * GET /api/graph/condition-feasibility?condition=Breast+Cancer
+ * Experienced sponsors + top countries for a condition — graph-traversal driven
+ * site selection intelligence for trial feasibility.
+ * Returns: { sponsors: [{sponsor, trials, completed}], countries: [{country, trials}] }
+ */
+app.get("/api/graph/condition-feasibility", async (req, res) => {
+  const { condition } = req.query;
+  if (!condition) return res.status(400).json({ error: "condition required" });
+  try {
+    const sponsorRecords = await cypher(`
+      MATCH (c:Condition {name: $condition})<-[:TREATS]-(t:Trial)<-[:RUNS]-(sp:Sponsor)
+      WITH sp.name AS sponsor, COUNT(DISTINCT t) AS trials,
+           SUM(CASE WHEN t.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed
+      ORDER BY trials DESC LIMIT 8
+      RETURN sponsor, trials, completed
+    `, { condition });
+
+    const countryRecords = await cypher(`
+      MATCH (c:Condition {name: $condition})<-[:TREATS]-(t:Trial)-[:CONDUCTED_IN]->(co:Country)
+      WITH co.name AS country, COUNT(DISTINCT t) AS trials
+      ORDER BY trials DESC LIMIT 8
+      RETURN country, trials
+    `, { condition });
+
+    res.json({
+      condition,
+      sponsors: sponsorRecords.map(r => ({
+        sponsor: r.get("sponsor"),
+        trials: nInt(r.get("trials")),
+        completed: nInt(r.get("completed")),
+      })),
+      countries: countryRecords.map(r => ({
+        country: r.get("country"),
+        trials: nInt(r.get("trials")),
+      })),
+    });
+  } catch (e) {
+    console.error("[graph/condition-feasibility]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * GET /api/graph/site-risk?nct_id=NCT12345678
  * For a trial's sites, find termination rates at those sites from other trials.
  * Returns: [{ site, country, terminated, total, termination_rate }]

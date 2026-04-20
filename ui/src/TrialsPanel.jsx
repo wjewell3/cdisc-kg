@@ -49,7 +49,82 @@ const PHASE_CLASS = {
   "N/A": "phase-na",
 };
 
-// ── KG Integration — Therapeutic Adjacency card (Forecast tab) ──────────────
+// ── KG Integration — Feasibility Intel card (Forecast tab) ──────────────────
+// "Who runs trials in this space and where?" — direct graph traversal: 
+// Condition →TREATS← Trial ←RUNS← Sponsor, Condition →TREATS← Trial →CONDUCTED_IN→ Country
+function FeasibilityIntel({ condition }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!condition) { setData(null); return; }
+    let cancelled = false;
+    setLoading(true); setError(null);
+    const base = import.meta.env.VITE_TRIALS_API_BASE || "";
+    const url = base
+      ? `${base}/api/graph/condition-feasibility?condition=${encodeURIComponent(condition)}`
+      : `/api/graph?path=condition-feasibility&condition=${encodeURIComponent(condition)}`;
+    fetch(url, { signal: AbortSignal.timeout(15000) })
+      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error || "Failed")))
+      .then(d => { if (!cancelled) setData(d); })
+      .catch(e => { if (!cancelled) setError(e?.message || String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [condition]);
+
+  if (!condition) return null;
+
+  return (
+    <div className="fp-panel" style={{ gridColumn: "1 / -1" }}>
+      <div className="fp-panel-header">
+        <span className="fp-panel-icon">⬡</span>
+        <span className="fp-panel-title">Site Selection Intelligence</span>
+        <span className="tl-kg-badge" style={{ marginLeft: 6 }}>KG</span>
+      </div>
+      <div className="fp-panel-desc" style={{ fontSize: "0.75rem", color: "#718096", marginBottom: 4 }}>
+        Sponsors and countries with the deepest trial portfolios in <strong>{condition}</strong> — traversed from the knowledge graph for feasibility planning.
+      </div>
+      {loading && <div className="tl-loading"><div className="loading-spinner" style={{ width: 16, height: 16 }} /> <span>Querying knowledge graph…</span></div>}
+      {error && <div className="tl-error" style={{ fontSize: "0.78rem", color: "#ed8936" }}>⚠ {error}</div>}
+      {data && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {data.sponsors?.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.72rem", color: "#a0aec0", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Experienced Sponsors</div>
+              {data.sponsors.map((s, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", marginBottom: 3 }}>
+                  <span style={{ color: "#e2e8f0", fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.sponsor}</span>
+                  <span style={{ color: "#58a6ff", fontSize: "0.72rem", whiteSpace: "nowrap" }}>{s.trials} trials</span>
+                  <span style={{ color: "#48bb78", fontSize: "0.72rem", whiteSpace: "nowrap" }}>{s.completed} done</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {data.countries?.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.72rem", color: "#a0aec0", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Top Countries by Trial Volume</div>
+              {data.countries.map((c, i) => {
+                const maxTrials = data.countries[0]?.trials || 1;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", marginBottom: 3 }}>
+                    <span style={{ color: "#e2e8f0", fontWeight: 500, minWidth: 100 }}>{c.country}</span>
+                    <div style={{ flex: 1, height: 6, background: "rgba(255,255,255,0.04)", borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ width: `${(c.trials / maxTrials) * 100}%`, height: "100%", background: "#58a6ff", borderRadius: 3 }} />
+                    </div>
+                    <span style={{ color: "#718096", fontSize: "0.72rem", whiteSpace: "nowrap" }}>{c.trials}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── KG Integration — Therapeutic Adjacency card (Strategy tab) ──────────────
 function TherapeuticAdjacency({ condition }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -621,6 +696,7 @@ export default function TrialsPanel() {
           { key: "plan",    label: "Forecast & Feasibility", icon: "📈" },
           { key: "monitor", label: "Risk & Decisioning",     icon: "⚠️" },
           { key: "close",   label: "Data Readiness",         icon: "✅" },
+          { key: "strategy", label: "Strategic Intelligence", icon: "⬡" },
           { key: "browse",  label: "Browse Trials",          icon: "📋" },
         ].map(t => (
           <button
@@ -707,7 +783,7 @@ export default function TrialsPanel() {
                   <div className="ptb-desc">Historical evidence base for enrollment forecasting, site selection, and milestone prediction — distribution priors computed over trials matching your profile.</div>
                 </div>
                 <ForecastPriorsDisplay data={cohortData} benchmarkData={benchmarkData} milestoneData={milestoneData} loading={cohortLoading} error={cohortError} />
-                <TherapeuticAdjacency condition={profile.condition} />
+                <FeasibilityIntel condition={profile.condition} />
                 </>)}
 
                 {/* ── Risk & Decisioning ───────────────────────────────── */}
@@ -723,7 +799,6 @@ export default function TrialsPanel() {
                     <div className="fp-empty-text">Set a trial profile above to see risk analysis for matching trials.</div>
                   </div>
                 ) : (<>
-                <CompetitiveLandscape condition={profile.condition} />
                 <MonitorRisk filterParams={profileFilterParams} />
                 <OperationalKPIs filterParams={profileFilterParams} showViews={["failure"]} />
                 </>)}
@@ -747,9 +822,25 @@ export default function TrialsPanel() {
                 </>)}
                 </>)}
 
+                {/* ── Strategic Intelligence — KG-powered portfolio queries ── */}
+                {subView === "strategy" && (<>
+                <div className="product-tab-banner strategy-banner">
+                  <div className="ptb-product">⬡ Knowledge Graph — Strategic Intelligence</div>
+                  <div className="ptb-desc">Portfolio-level graph queries that SQL can't do efficiently — multi-hop competitive analysis, therapeutic adjacency via shared drug pipelines, sponsor gap discovery, and shortest-path exploration across 580k trials.</div>
+                </div>
+
+                {profile.condition && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <TherapeuticAdjacency condition={profile.condition} />
+                    <CompetitiveLandscape condition={profile.condition} />
+                  </div>
+                )}
+
+                <StrategicKGQuestions />
+                </>)}
+
                 {/* ── Browse Trials sub-tab ─────────────────────────── */}
                 {subView === "browse" && (<>
-                <StrategicKGQuestions showOnly={["eq1","eq2","eq3","path"]} />
                 <TrialsCharts
                   trials={(results || baseResults).results}
                   aggData={currentAgg}
