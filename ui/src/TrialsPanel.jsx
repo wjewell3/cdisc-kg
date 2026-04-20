@@ -830,10 +830,7 @@ export default function TrialsPanel() {
                 </div>
 
                 {profile.condition && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    <TherapeuticAdjacency condition={profile.condition} />
-                    <CompetitiveLandscape condition={profile.condition} />
-                  </div>
+                  <CompetitiveLandscape condition={profile.condition} />
                 )}
 
                 <StrategicKGQuestions />
