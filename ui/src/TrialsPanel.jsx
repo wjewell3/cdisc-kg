@@ -139,7 +139,7 @@ export default function TrialsPanel() {
   const [insightTarget, setInsightTarget] = useState(null); // { type, name } for InsightPanel
   const [subView, setSubView] = useState("plan"); // sub-tab: plan | monitor | close | browse
   const okpiRef = useRef(null);
-  const [profile, setProfile] = useState({ ...EMPTY_PROFILE });
+  const [profile, setProfile] = useState({ ...EMPTY_PROFILE, condition: "Breast Cancer", phase: "PHASE3", _trigger: 1 });
   const { data: cohortData, benchmarkData, milestoneData, loading: cohortLoading, error: cohortError, fetchCohort } = ForecastPriors({ profile });
 
   const currentAgg = chartAggData || aggData;
