@@ -3457,13 +3457,13 @@ app.get("/api/safety-signals", async (req, res) => {
       });
     } catch (e) {
       console.error("[safety-signals] sqlite:", e.message);
-      return res.json(EMPTY_SAFETY);
+      // Fall through to PG when SQLite table missing (e.g. reported_events)
     }
   }
 
   // ── PG fallback ──
   const pool = getPgPool();
-  if (!pool) return res.status(503).json({ error: "Database unavailable" });
+  if (!pool) return res.json(EMPTY_SAFETY);
   try {
     const params = []; const where = []; let p = 1;
     if (condition) { where.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${p})`); params.push(`%${condition}%`); p++; }
@@ -3488,7 +3488,7 @@ app.get("/api/safety-signals", async (req, res) => {
     });
   } catch (e) {
     console.error("[safety-signals] pg:", e.message);
-    res.status(500).json({ error: "Query failed" });
+    res.json(EMPTY_SAFETY);
   }
 });
 
@@ -3808,7 +3808,7 @@ app.get("/api/profile-cohort", async (req, res) => {
         for (const v of vals) params.push(`%${v}%`);
       }
       if (phase) {
-        const phases = phase.split(",").map(p => p.trim()).filter(Boolean);
+        const phases = phase.split(",").map(p => p.trim().toUpperCase().replace(/ /g, "")).filter(Boolean);
         where.push(`s.phase IN (${phases.map(() => "?").join(",")})`);
         params.push(...phases);
       }
@@ -3888,7 +3888,7 @@ app.get("/api/profile-cohort", async (req, res) => {
 
       db.exec(`DROP TABLE IF EXISTS _cohort`);
 
-      return res.json({
+      const result = {
         cohort_size: cohortSize,
         enrollment,
         duration_months,
@@ -3904,7 +3904,54 @@ app.get("/api/profile-cohort", async (req, res) => {
           us_pct: cohortSize > 0 ? parseFloat(((usTrials / cohortSize) * 100).toFixed(1)) : 0,
           top_countries: topCountries,
         },
-      });
+      };
+
+      // ── PG supplement: fill gaps when SQLite snapshot is missing tables ──
+      const needsDuration = !hasCV && !result.duration_months;
+      const needsSites = !hasCV && result.site_footprint?.median_sites == null;
+      const needsCountries = !hasCountries && result.site_footprint?.top_countries?.length === 0;
+      if (needsDuration || needsSites || needsCountries) {
+        const pool = getPgPool();
+        if (pool) {
+          try {
+            const pgParams = []; const pgWhere = []; let pi = 1;
+            if (condition) { pgWhere.push(`EXISTS (SELECT 1 FROM conditions c WHERE c.nct_id = s.nct_id AND c.name ILIKE $${pi})`); pgParams.push(`%${condition}%`); pi++; }
+            if (phase) { pgWhere.push(`s.phase = $${pi}`); pgParams.push(phase); pi++; }
+            if (intervention_type) { pgWhere.push(`EXISTS (SELECT 1 FROM interventions i WHERE i.nct_id = s.nct_id AND i.intervention_type = $${pi})`); pgParams.push(intervention_type); pi++; }
+            const pgWc = pgWhere.length ? `WHERE ${pgWhere.join(" AND ")}` : "";
+            const cohortCte = `WITH cohort AS (SELECT DISTINCT s.nct_id FROM studies s ${pgWc})`;
+            const pf = (v) => v !== null && v !== undefined ? parseFloat(v) : null;
+
+            const pgJobs = [];
+            if (needsDuration) {
+              pgJobs.push(pool.query({ text: `${cohortCte} SELECT ROUND(PERCENTILE_CONT(0.10) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p10, ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p25, ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p50, ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p75, ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY cv.actual_duration)::numeric) AS p90, ROUND(AVG(cv.actual_duration)::numeric, 1) AS mean, COUNT(*)::int AS n FROM calculated_values cv WHERE cv.nct_id IN (SELECT nct_id FROM cohort) AND cv.actual_duration IS NOT NULL AND cv.actual_duration > 0`, values: pgParams, statement_timeout: 15000 }).then(r => {
+                const d = r.rows[0];
+                if (d && d.n > 4) result.duration_months = { p10: pf(d.p10), p25: pf(d.p25), p50: pf(d.p50), p75: pf(d.p75), p90: pf(d.p90), mean: pf(d.mean), n: d.n };
+              }));
+            }
+            if (needsSites) {
+              pgJobs.push(pool.query({ text: `${cohortCte} SELECT ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY cv.number_of_facilities)::numeric) AS p25_sites, ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY cv.number_of_facilities)::numeric) AS median_sites, ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY cv.number_of_facilities)::numeric) AS p75_sites FROM calculated_values cv WHERE cv.nct_id IN (SELECT nct_id FROM cohort) AND cv.number_of_facilities IS NOT NULL AND cv.number_of_facilities > 0`, values: pgParams, statement_timeout: 15000 }).then(r => {
+                const s = r.rows[0];
+                if (s) { result.site_footprint.median_sites = pf(s.median_sites); result.site_footprint.p25_sites = pf(s.p25_sites); result.site_footprint.p75_sites = pf(s.p75_sites); }
+              }));
+              pgJobs.push(pool.query({ text: `${cohortCte} SELECT COUNT(*)::int AS cnt FROM calculated_values cv WHERE cv.nct_id IN (SELECT nct_id FROM cohort) AND cv.has_us_facility = true`, values: pgParams, statement_timeout: 15000 }).then(r => {
+                const usCnt = r.rows[0]?.cnt || 0;
+                result.site_footprint.us_pct = cohortSize > 0 ? parseFloat(((usCnt / cohortSize) * 100).toFixed(1)) : 0;
+              }));
+            }
+            if (needsCountries) {
+              pgJobs.push(pool.query({ text: `${cohortCte} SELECT co.name AS country, COUNT(DISTINCT co.nct_id)::int AS trials FROM countries co WHERE co.nct_id IN (SELECT nct_id FROM cohort) GROUP BY co.name ORDER BY trials DESC LIMIT 10`, values: pgParams, statement_timeout: 15000 }).then(r => {
+                result.site_footprint.top_countries = r.rows;
+              }));
+            }
+            await Promise.all(pgJobs);
+          } catch (e) {
+            console.warn("[profile-cohort] pg supplement:", e.message);
+          }
+        }
+      }
+
+      return res.json(result);
     } catch (e) {
       console.error("[profile-cohort] sqlite:", e.message);
       try { db.exec(`DROP TABLE IF EXISTS _cohort`); } catch {}
