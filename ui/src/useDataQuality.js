@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 const STORAGE_KEY = "cdisc_dq_rules";
 const DEFAULT_RULES = { groupings: [], bounds: { enrollment: { min: null, max: null } } };
@@ -14,11 +14,18 @@ function loadRules() {
 }
 
 function persist(rules) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rules)); } catch {}
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
+  } catch (e) {
+    console.warn("[DQ Rules] localStorage write failed:", e.message);
+  }
 }
 
 export function useDataQuality() {
   const [rules, setRules] = useState(loadRules);
+
+  // Safety net: sync to localStorage on every state change
+  useEffect(() => { persist(rules); }, [rules]);
 
   const addGrouping = useCallback(({ field, canonical, rawValues, note = "" }) => {
     setRules((prev) => {

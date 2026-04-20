@@ -145,6 +145,14 @@ function ConditionTypeahead({ value, onChange, onEnter }) {
     }
   }, [popular, loadingPop]);
 
+  // Re-open on click when input already focused but dropdown closed
+  const handleClick = useCallback(() => {
+    if (!open) {
+      setOpen(true);
+      if (query.length >= 2) fetchSuggestions(query);
+    }
+  }, [open, query, fetchSuggestions]);
+
   const handleChange = (e) => {
     const q = e.target.value;
     setQuery(q);
@@ -190,6 +198,7 @@ function ConditionTypeahead({ value, onChange, onEnter }) {
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
+        onClick={handleClick}
         placeholder="e.g. Breast Cancer, Diabetes, NSCLC"
         autoComplete="off"
       />

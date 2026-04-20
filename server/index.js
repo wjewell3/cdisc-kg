@@ -3395,9 +3395,11 @@ app.post("/api/ask", async (req, res) => {
 // ── Safety Signal Analysis (Monitor) ─────────────────────────────────────────
 app.get("/api/safety-signals", async (req, res) => {
   const { condition = "", phase = "", sponsor = "", intervention = "" } = req.query;
-  if (!condition && !phase && !sponsor && !intervention) {
-    return res.status(400).json({ error: "At least one filter required for safety signal analysis." });
-  }
+
+  const EMPTY_SAFETY = {
+    trials_with_events: 0, total_affected: 0, total_at_risk: 0,
+    by_type: [], by_organ_system: [], top_serious_events: [], sae_by_condition: [],
+  };
 
   // ── SQLite path ──
   if (db) {
@@ -3455,6 +3457,7 @@ app.get("/api/safety-signals", async (req, res) => {
       });
     } catch (e) {
       console.error("[safety-signals] sqlite:", e.message);
+      return res.json(EMPTY_SAFETY);
     }
   }
 

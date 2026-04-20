@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { executeConditionSearch } from "./trialsEngine";
 
 const LABEL_COLORS = {
   Condition: "#39d2c0", Trial: "#8b949e", Intervention: "#a78bfa",
@@ -65,6 +66,131 @@ const ENTITY_QUESTIONS = [
 
 function trialsApiBase() {
   return import.meta.env.VITE_TRIALS_API_BASE || "";
+}
+
+// ── Condition Typeahead (reused for path from/to) ────────────────────────────
+function ConditionTypeahead({ value, onChange, placeholder }) {
+  const [query, setQuery] = useState(value);
+  const [suggestions, setSuggestions] = useState([]);
+  const [popular, setPopular] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const [loadingPop, setLoadingPop] = useState(false);
+  const debounceRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false); setActive(-1);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const fetchSuggestions = useCallback((q) => {
+    clearTimeout(debounceRef.current);
+    if (!q || q.length < 2) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      const results = await executeConditionSearch({}, q);
+      setSuggestions(results.slice(0, 12));
+      setActive(-1);
+    }, 250);
+  }, []);
+
+  const handleFocus = useCallback(async () => {
+    setOpen(true);
+    if (popular.length === 0 && !loadingPop) {
+      setLoadingPop(true);
+      const results = await executeConditionSearch({}, "");
+      setPopular(results.slice(0, 12));
+      setLoadingPop(false);
+    }
+  }, [popular, loadingPop]);
+
+  const handleClick = useCallback(() => {
+    if (!open) {
+      setOpen(true);
+      if (query.length >= 2) fetchSuggestions(query);
+    }
+  }, [open, query, fetchSuggestions]);
+
+  const handleChange = (e) => {
+    const q = e.target.value;
+    setQuery(q);
+    onChange(q);
+    fetchSuggestions(q);
+  };
+
+  const select = ([val]) => {
+    setQuery(val);
+    onChange(val);
+    setSuggestions([]);
+    setOpen(false);
+    setActive(-1);
+  };
+
+  const displayed = query.length >= 2 ? suggestions : popular;
+
+  const handleKeyDown = (e) => {
+    if (!open || displayed.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive(a => Math.min(a + 1, displayed.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive(a => Math.max(a - 1, -1));
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      select(displayed[active]);
+    } else if (e.key === "Escape") {
+      setOpen(false); setActive(-1);
+    }
+  };
+
+  return (
+    <div className="skg-typeahead" ref={wrapRef} style={{ position: "relative", flex: 1 }}>
+      <input
+        className="skg-path-input"
+        type="text"
+        value={query}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onFocus={handleFocus}
+        onClick={handleClick}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      {open && displayed.length > 0 && (
+        <ul className="skg-suggestions" style={{
+          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+          background: "#161b22", border: "1px solid #30363d", borderRadius: 6,
+          listStyle: "none", margin: "2px 0 0", padding: 0, maxHeight: 220, overflowY: "auto",
+        }}>
+          {query.length < 2 && (
+            <li style={{ padding: "4px 10px", color: "#8b949e", fontSize: 11, fontWeight: 600 }}>Popular conditions</li>
+          )}
+          {displayed.map(([val, count], i) => (
+            <li
+              key={val}
+              style={{
+                padding: "6px 10px", cursor: "pointer", display: "flex", justifyContent: "space-between",
+                background: i === active ? "#21262d" : "transparent", color: "#c9d1d9", fontSize: 13,
+              }}
+              onMouseDown={() => select([val, count])}
+              onMouseEnter={() => setActive(i)}
+            >
+              <span>{val}</span>
+              <span style={{ color: "#8b949e", fontSize: 11 }}>{count?.toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export default function StrategicKGQuestions({ showOnly, hideHeader } = {}) {
@@ -204,18 +330,16 @@ export default function StrategicKGQuestions({ showOnly, hideHeader } = {}) {
       <div className="skg-path-explorer">
         <form className="skg-path-form" onSubmit={runPath}>
           <span className="skg-path-icon">⤳</span>
-          <input
-            className="skg-path-input"
-            placeholder="From condition (e.g. Alzheimer Disease)"
+          <ConditionTypeahead
             value={pathFrom}
-            onChange={e => setPathFrom(e.target.value)}
+            onChange={setPathFrom}
+            placeholder="From condition (e.g. Alzheimer Disease)"
           />
           <span className="skg-path-arrow">→</span>
-          <input
-            className="skg-path-input"
-            placeholder="To condition (e.g. Breast Cancer)"
+          <ConditionTypeahead
             value={pathTo}
-            onChange={e => setPathTo(e.target.value)}
+            onChange={setPathTo}
+            placeholder="To condition (e.g. Breast Cancer)"
           />
           <button className="skg-path-go" type="submit" disabled={!pathFrom.trim() || !pathTo.trim() || pathLoading}>
             Find Path
@@ -223,7 +347,6 @@ export default function StrategicKGQuestions({ showOnly, hideHeader } = {}) {
         </form>
         <div className="skg-path-hint">
           Finds the shortest chain of relationships connecting two conditions — shows <em>what trials and drugs link them</em>.
-          Spelling must be exact (e.g. &quot;Alzheimer Disease&quot;, not &quot;Alzheimer&apos;s&quot;).
         </div>
       </div>
       )}
