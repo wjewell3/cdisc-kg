@@ -279,8 +279,8 @@ export default function ForecastPriors({ profile }) {
       // Process benchmark
       if (benchRes.ok) {
         const bd = await benchRes.json();
-        const anticipated = bd.summary?.find(s => s.enrollment_type === "Anticipated");
-        const actual = bd.summary?.find(s => s.enrollment_type === "Actual");
+        const anticipated = bd.summary?.find(s => s.enrollment_type === "ESTIMATED");
+        const actual = bd.summary?.find(s => s.enrollment_type === "ACTUAL");
         const gapPct = anticipated?.avg_enrollment && actual?.avg_enrollment
           ? parseFloat((((anticipated.avg_enrollment - actual.avg_enrollment) / actual.avg_enrollment) * 100).toFixed(0))
           : 0;
@@ -288,12 +288,12 @@ export default function ForecastPriors({ profile }) {
         if (bd.by_allocation) {
           const grouped = {};
           for (const r of bd.by_allocation) {
-            if (!grouped[r.design_val]) grouped[r.design_val] = {};
-            grouped[r.design_val][r.enrollment_type] = r.avg_enrollment;
+            if (!grouped[r.design]) grouped[r.design] = {};
+            grouped[r.design][r.enrollment_type] = r.avg_enrollment;
           }
           for (const [design, vals] of Object.entries(grouped)) {
-            if (vals.Anticipated || vals.Actual) {
-              byAlloc.push({ design, anticipated: vals.Anticipated || null, actual: vals.Actual || null });
+            if (vals.ESTIMATED || vals.ACTUAL) {
+              byAlloc.push({ design, anticipated: vals.ESTIMATED || null, actual: vals.ACTUAL || null });
             }
           }
         }

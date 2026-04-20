@@ -99,8 +99,8 @@ export default function CloseTrial({ filterParams }) {
         )}
       </div>
 
-      {/* ── Outcome completeness ── */}
-      {data.outcomes && (
+      {/* ── Outcome completeness — only show when snapshot data is available ── */}
+      {data.outcomes && (data.outcomes.trials_with_planned > 0 || data.outcomes.trials_with_reported > 0) && (
         <div className="okpi-kpis" style={{ marginBottom: 16 }}>
           <div className="okpi-kpi">
             <div className="okpi-kpi-value">{data.outcomes.avg_planned?.toFixed(1) ?? "—"}</div>
