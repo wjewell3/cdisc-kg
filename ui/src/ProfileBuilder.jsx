@@ -137,21 +137,30 @@ function ConditionTypeahead({ value, onChange, onEnter }) {
 
   const handleFocus = useCallback(async () => {
     setOpen(true);
-    if (popular.length === 0 && !loadingPop) {
+    if (query.length >= 2) {
+      // Immediate search (skip debounce) so dropdown appears instantly
+      const results = await executeConditionSearch({}, query);
+      setSuggestions(results.slice(0, 12));
+      setActive(-1);
+    } else if (popular.length === 0 && !loadingPop) {
       setLoadingPop(true);
       const results = await executeConditionSearch({}, "");
       setPopular(results.slice(0, 12));
       setLoadingPop(false);
     }
-  }, [popular, loadingPop]);
+  }, [popular, loadingPop, query]);
 
   // Re-open on click when input already focused but dropdown closed
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback(async () => {
     if (!open) {
       setOpen(true);
-      if (query.length >= 2) fetchSuggestions(query);
+      if (query.length >= 2) {
+        const results = await executeConditionSearch({}, query);
+        setSuggestions(results.slice(0, 12));
+        setActive(-1);
+      }
     }
-  }, [open, query, fetchSuggestions]);
+  }, [open, query]);
 
   const handleChange = (e) => {
     const q = e.target.value;
