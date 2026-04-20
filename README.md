@@ -141,7 +141,7 @@ cdisc-kg/
 ├── ui/                        # React + Vite frontend (Vercel)
 │   └── src/
 │       ├── App.jsx            # Route/tab orchestration — Trial Intelligence (default), Standards Graph (+ embedded Q&A), Data Catalog, SDTM Training
-│       ├── TrialsPanel.jsx    # Main orchestrator — AskBar → KG Exploration → cross-filter charts → geographic map → KPI panels → trial results + entity insight
+│       ├── TrialsPanel.jsx    # Main orchestrator — 5 sub-tabs: Forecast & Feasibility (FeasibilityIntel KG card + SQL priors), Risk & Decisioning (TrialsLikeThis KG card + risk scoring), Data Readiness, Strategic Intelligence (CompetitiveLandscape KG card + StrategicKGQuestions), Browse Trials (charts + map + results)
 │       ├── StrategicKGQuestions.jsx # KG exploration panel — one-click + entity-input strategic questions (gaps, landscape, portfolio, clusters, path explorer)
 │       ├── TrialsCharts.jsx   # 6 SVG bar/donut/histogram charts (phase, status, enrollment, sponsors, conditions, interventions) + StatsBanner
 │       ├── TrialsMap.jsx      # Geographic trial map — country click-to-filter, standalone section below charts
@@ -227,6 +227,7 @@ Proxied via Vercel: `https://cdisc-kg.vercel.app/api/...`
 | `GET /api/graph/sponsor-overlap?sponsor=...` | Sponsors sharing conditions/interventions with the given sponsor |
 | `GET /api/graph/strategic-gaps?sponsor=...` | Therapeutic areas where a sponsor has no trials but competitors do |
 | `GET /api/graph/condition-landscape?condition=...` | All sponsors and interventions for a condition |
+| `GET /api/graph/condition-feasibility?condition=...` | Experienced sponsors (with completion rates) and top countries for a condition — used by Forecast tab's FeasibilityIntel card |
 | `GET /api/graph/therapeutic-adjacency?condition=...` | Conditions that share interventions (potential repurposing signals) |
 | `GET /api/graph/repurposing-path?from=...&to=...` | Shortest graph path between two conditions or interventions |
 | `GET /api/graph/sponsor-network?sponsor=...` | Sponsor relationship network via shared conditions/interventions |
@@ -390,3 +391,28 @@ Able to communicate, receive, and understand information and ideas with diverse 
 Able to work upright and stationary for typical working hours.
 Ability to use and learn standard office equipment and technology with proficiency.
 Able to perform successfully under pressure while prioritizing and handling multiple projects or activities.
+
+products:
+https://www.ppd.com/our-solutions/digital-drug-development-solutions/
+Drug development digital offerings
+At Thermo Fisher Scientific, we understand the complexities and challenges you face in clinical development. That’s why we’ve developed a range of advanced digital solutions that leverage AI to provide you with clarity, confidence, and efficiency throughout your clinical trial journey.
+
+AI Medical Writing
+Improve efficiency and quality
+In the highly competitive pharmaceutical industry, speed and quality in clinical development are critical advantages. Our AI Medical Writing solution combines AI-assisted authoring with expert human oversight to accelerate the delivery of high-quality, submission-ready documents. By reducing manual effort, minimizing bottlenecks, and enhancing consistency through intelligent drafting and quality checks, we help teams manage growing document volumes and regulatory demands. The result is faster, inspection-ready documentation with predictable timelines and scalable delivery
+
+Clinical Decision Suite
+Gain clarity and confidence
+An AI-driven approach offering a unique end-to-end view, providing real-time insights and integrating milestone monitoring, risk prediction, material management, and tracking. Built on the principles of security, efficiency, and risk mitigation, it enhances efficiency, reduces complexities, and ensures faster trial completion with high-quality results.
+
+Clinical Trial Forecasting Suite
+Accelerate your trial startup
+A new AI-powered platform leverages deep learning models and proprietary data to enhance forecasting accuracy and optimize clinical trial planning. It predicts milestones, streamlines site selection, forecasts patient enrollment and anticipates delays. With continuous, adaptive learning, our algorithms remain accurate and current, offering real-time insights for proactive management and early risk mitigation.
+
+Intelligent Clinical Suite
+Achieve faster database lock
+Our sophisticated AI significantly enhances the speed, quality, and resource efficiency of clinical trials. Intelligent clinical suite offers a comprehensive approach to study execution and data management, accelerating drug time-to-market through faster actions and more efficient planning. By fostering collaboration and bringing all study stakeholders together in a seamless, connected environment, our Intelligent Clinical Suite improves communication and decision-making under one technological “roof.”
+
+StudyGage
+Predict and enhance patient participation
+Our innovative, proprietary study patient burden tool leverages over 60,000 patient study participation decisions from a diverse global sample. This transformative tool enhances traditional feasibility assessments by incorporating patient perspectives, leading to optimized study designs and improved enrollment outcomes. Seamlessly integrating into existing processes, this tool ensures more efficient and patient-centered clinical trials.
