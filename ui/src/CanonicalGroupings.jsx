@@ -53,7 +53,7 @@ export default function CanonicalGroupings() {
 
   const rebuild = async (fields) => {
     if (rebuilding) return;
-    if (!confirm(`Regenerate canonical groupings for ${fields.join(", ")} using GPT-4.1? This will overwrite the current groups for these fields.`)) return;
+    if (!confirm(`Scan for unmapped ${fields.join(", ")} values and classify them into existing groups using GPT-4.1? Existing groups will be preserved.`)) return;
     setRebuilding(true); setError(null); setNotice(null);
     try {
       const r = await fetch("/api/dq?action=canonical-rebuild", {
@@ -120,9 +120,9 @@ export default function CanonicalGroupings() {
             className="cg-rebuild-btn"
             onClick={() => rebuild(["phase", "stop_reason", "withdrawal_reason"])}
             disabled={rebuilding}
-            title="Query distinct values from SQLite, send to GPT-4.1, replace groups"
+            title="Find unmapped values and classify them into existing groups via GPT-4.1"
           >
-            {rebuilding ? "🧠 Clustering with GPT-4.1…" : "🧠 Regenerate all with AI"}
+            {rebuilding ? "🧠 Classifying with GPT-4.1…" : "🧠 Classify unmapped values"}
           </button>
           <button
             className={`cg-save-btn${dirty ? " cg-save-dirty" : ""}`}
@@ -146,8 +146,8 @@ export default function CanonicalGroupings() {
           <div className="cg-field-header">
             <h4>{field.replace(/_/g, " ")}</h4>
             <span className="cg-field-count">{(draft[field] || []).length} groups</span>
-            <button className="cg-field-rebuild" onClick={() => rebuild([field])} disabled={rebuilding} title="Regenerate this field only">
-              🧠 Rebuild
+            <button className="cg-field-rebuild" onClick={() => rebuild([field])} disabled={rebuilding} title="Find & classify unmapped values for this field">
+              🧠 Classify new
             </button>
             <button className="cg-field-add" onClick={() => addGroup(field)}>+ Group</button>
           </div>
