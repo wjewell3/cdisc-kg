@@ -131,7 +131,7 @@ function searchNodes(query) {
 }
 
 const NODE_COLORS = {
-  Standard: "#e74c3c",
+  Standard: "#ed8936",
   Class: "#e67e22",
   Domain: "#3498db",
   Variable: "#2ecc71",

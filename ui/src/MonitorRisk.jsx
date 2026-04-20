@@ -79,14 +79,14 @@ function SafetySignals({ filterParams }) {
           <div className="okpi-kpi-label">Trials with AEs</div>
         </div>
         <div className="okpi-kpi">
-          <div className="okpi-kpi-value" style={{ color: "#f85149" }}>
+          <div className="okpi-kpi-value" style={{ color: "#ed8936" }}>
             {data.total_affected?.toLocaleString() || "—"}
           </div>
           <div className="okpi-kpi-label">Subjects Affected</div>
         </div>
         {saeRate && (
           <div className="okpi-kpi">
-            <div className="okpi-kpi-value" style={{ color: parseFloat(saeRate) > 10 ? "#f85149" : "#d29922" }}>
+            <div className="okpi-kpi-value" style={{ color: parseFloat(saeRate) > 10 ? "#ed8936" : "#d29922" }}>
               {saeRate}%
             </div>
             <div className="okpi-kpi-label">Overall AE Rate</div>
@@ -100,7 +100,7 @@ function SafetySignals({ filterParams }) {
           <MiniBar
             data={data.by_type.map(r => ({ label: r.event_type || "Unknown", value: r.affected }))}
             title="Adverse Events by Type"
-            highlightFn={d => d.label === "serious" ? "#f85149" : "#d29922"}
+            highlightFn={d => d.label === "serious" ? "#ed8936" : "#d29922"}
           />
         )}
 
@@ -119,7 +119,7 @@ function SafetySignals({ filterParams }) {
             data={data.top_serious_events.map(r => ({ label: r.term, value: r.affected }))}
             title="Top Serious Adverse Events"
             maxItems={15}
-            highlightFn={() => "#f85149"}
+            highlightFn={() => "#ed8936"}
           />
         )}
 
@@ -132,7 +132,7 @@ function SafetySignals({ filterParams }) {
             }))}
             title="SAE Rate by Condition"
             valueLabel="%"
-            highlightFn={d => d.value > 15 ? "#f85149" : d.value > 5 ? "#d29922" : "#39d2c0"}
+            highlightFn={d => d.value > 15 ? "#ed8936" : d.value > 5 ? "#d29922" : "#39d2c0"}
           />
         )}
       </div>

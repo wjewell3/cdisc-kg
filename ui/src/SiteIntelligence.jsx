@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import "./SiteIntelligence.css";
 
-const PALETTE = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
+const PALETTE = ["#58a6ff", "#79c0ff", "#d29922", "#ed8936", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
 
 function MiniBar({ data, title, maxItems = 8, palette = PALETTE }) {
   const items = data.slice(0, maxItems);

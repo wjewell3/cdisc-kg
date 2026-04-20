@@ -28,7 +28,7 @@ const CLASS_ORDER = [
   "class:trial_design",
 ];
 
-const CORE_COLORS = { Req: "#f85149", Exp: "#e3b341", Perm: "#8b949e" };
+const CORE_COLORS = { Req: "#ed8936", Exp: "#e3b341", Perm: "#8b949e" };
 const CORE_TITLES = {
   Req: "Required — FDA will reject without this",
   Exp: "Expected — should be present, explain if absent",

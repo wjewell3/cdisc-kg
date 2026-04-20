@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import GeographicIntelligence from "./GeographicIntelligence";
 
-const PALETTE = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
+const PALETTE = ["#58a6ff", "#79c0ff", "#d29922", "#ed8936", "#a371f7", "#39d2c0", "#f778ba", "#8b949e"];
 
 function trialsApiBase() {
   return import.meta.env.VITE_TRIALS_API_BASE || "";
