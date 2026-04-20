@@ -14,7 +14,7 @@ RUN apk add --no-cache tini
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY index.js snapshot.js graph-loader.js ./
+COPY index.js snapshot.js graph-loader.js atc-map.json ./
 
 # Data volume — SQLite DB will be mounted here
 VOLUME ["/data"]
