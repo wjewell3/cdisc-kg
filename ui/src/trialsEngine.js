@@ -374,6 +374,20 @@ ORDER BY termination_pct DESC
 LIMIT 20`,
   },
   {
+    id: "g6",
+    text: "Which ATC drug classes are used most in oncology trials?",
+    description: "Classification traversal — MedDRA therapeutic area → conditions → trials → ATC drug classes",
+    tags: ["Graph", "Classification", "ATC", "MedDRA"],
+    isGraph: true,
+    cypher: `MATCH (ta:TherapeuticArea)<-[:IN_THERAPEUTIC_AREA]-(c:Condition)<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)-[:CLASSIFIED_AS]->(dc:DrugClass)
+WHERE ta.name CONTAINS 'Neoplasms'
+WITH dc.name AS drug_class, COUNT(DISTINCT t) AS trials, COUNT(DISTINCT i) AS interventions,
+     COLLECT(DISTINCT c.name)[0..3] AS sample_conditions
+RETURN drug_class, trials, interventions, sample_conditions
+ORDER BY trials DESC
+LIMIT 20`,
+  },
+  {
     id: "t1",
     text: "Phase 3 Alzheimer's trials",
     description: "Cross-study CNS pipeline — 500+ studies in the KG",

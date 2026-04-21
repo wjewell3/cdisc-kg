@@ -2450,6 +2450,127 @@ app.get("/api/graph/sponsor-completion", async (req, res) => {
   }
 });
 
+// ── Therapeutic Area Landscape (MedDRA SOC) ──────────────────────────────────
+// List all therapeutic areas, or drill into one SOC to see conditions, sponsors, interventions.
+app.get("/api/graph/therapeutic-areas", async (req, res) => {
+  const { name, limit = "20" } = req.query;
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    if (!name) {
+      // List all therapeutic areas with condition + trial counts
+      const records = await cypher(`
+        MATCH (ta:TherapeuticArea)<-[:IN_THERAPEUTIC_AREA]-(c:Condition)<-[:TREATS]-(t:Trial)
+        WITH ta.name AS therapeutic_area, ta.soc_code AS soc_code,
+             COUNT(DISTINCT c) AS conditions, COUNT(DISTINCT t) AS trials
+        RETURN therapeutic_area, soc_code, conditions, trials
+        ORDER BY trials DESC
+      `);
+      return res.json({
+        source: "knowledge_graph",
+        description: "MedDRA System Organ Classes mapped to AACT conditions via condition-map.json",
+        items: records.map(r => ({
+          name: r.get("therapeutic_area"),
+          soc_code: r.get("soc_code"),
+          conditions: nInt(r.get("conditions")),
+          trials: nInt(r.get("trials")),
+        })),
+      });
+    }
+
+    // Drill into a specific therapeutic area
+    const [condRecs, sponsorRecs, intRecs] = await Promise.all([
+      cypher(`
+        MATCH (ta:TherapeuticArea {name: $name})<-[:IN_THERAPEUTIC_AREA]-(c:Condition)<-[:TREATS]-(t:Trial)
+        RETURN c.name AS condition, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT toInteger($limit)
+      `, { name, limit }),
+      cypher(`
+        MATCH (ta:TherapeuticArea {name: $name})<-[:IN_THERAPEUTIC_AREA]-(c:Condition)<-[:TREATS]-(t:Trial)<-[:RUNS]-(s:Sponsor)
+        RETURN s.name AS sponsor, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT toInteger($limit)
+      `, { name, limit }),
+      cypher(`
+        MATCH (ta:TherapeuticArea {name: $name})<-[:IN_THERAPEUTIC_AREA]-(c:Condition)<-[:TREATS]-(t:Trial)-[:USES]->(i:Intervention)
+        RETURN i.name AS intervention, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT toInteger($limit)
+      `, { name, limit }),
+    ]);
+
+    res.json({
+      source: "knowledge_graph",
+      therapeutic_area: name,
+      conditions: condRecs.map(r => ({ name: r.get("condition"), trials: nInt(r.get("trials")) })),
+      top_sponsors: sponsorRecs.map(r => ({ name: r.get("sponsor"), trials: nInt(r.get("trials")) })),
+      top_interventions: intRecs.map(r => ({ name: r.get("intervention"), trials: nInt(r.get("trials")) })),
+    });
+  } catch (e) {
+    console.error("[graph/therapeutic-areas]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Drug Class Landscape (WHO ATC) ──────────────────────────────────────────
+// List all drug classes, or drill into one ATC class to see interventions, conditions, sponsors.
+app.get("/api/graph/drug-classes", async (req, res) => {
+  const { name, limit = "20" } = req.query;
+  if (!neo4j) return res.status(503).json({ error: "Knowledge graph not available" });
+
+  try {
+    if (!name) {
+      // List all drug classes with intervention + trial counts
+      const records = await cypher(`
+        MATCH (dc:DrugClass)<-[:CLASSIFIED_AS]-(i:Intervention)<-[:USES]-(t:Trial)
+        WITH dc.name AS drug_class, dc.level AS level,
+             COUNT(DISTINCT i) AS interventions, COUNT(DISTINCT t) AS trials
+        RETURN drug_class, level, interventions, trials
+        ORDER BY trials DESC
+        LIMIT 50
+      `);
+      return res.json({
+        source: "knowledge_graph",
+        description: "WHO ATC drug classification mapped to AACT interventions via atc-map.json",
+        items: records.map(r => ({
+          name: r.get("drug_class"),
+          level: r.get("level"),
+          interventions: nInt(r.get("interventions")),
+          trials: nInt(r.get("trials")),
+        })),
+      });
+    }
+
+    // Drill into a specific drug class
+    const [intRecs, condRecs, sponsorRecs] = await Promise.all([
+      cypher(`
+        MATCH (dc:DrugClass {name: $name})<-[:CLASSIFIED_AS]-(i:Intervention)<-[:USES]-(t:Trial)
+        RETURN i.name AS intervention, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT toInteger($limit)
+      `, { name, limit }),
+      cypher(`
+        MATCH (dc:DrugClass {name: $name})<-[:CLASSIFIED_AS]-(i:Intervention)<-[:USES]-(t:Trial)-[:TREATS]->(c:Condition)
+        RETURN c.name AS condition, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT toInteger($limit)
+      `, { name, limit }),
+      cypher(`
+        MATCH (dc:DrugClass {name: $name})<-[:CLASSIFIED_AS]-(i:Intervention)<-[:USES]-(t:Trial)<-[:RUNS]-(s:Sponsor)
+        RETURN s.name AS sponsor, COUNT(DISTINCT t) AS trials
+        ORDER BY trials DESC LIMIT toInteger($limit)
+      `, { name, limit }),
+    ]);
+
+    res.json({
+      source: "knowledge_graph",
+      drug_class: name,
+      interventions: intRecs.map(r => ({ name: r.get("intervention"), trials: nInt(r.get("trials")) })),
+      top_conditions: condRecs.map(r => ({ name: r.get("condition"), trials: nInt(r.get("trials")) })),
+      top_sponsors: sponsorRecs.map(r => ({ name: r.get("sponsor"), trials: nInt(r.get("trials")) })),
+    });
+  } catch (e) {
+    console.error("[graph/drug-classes]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Failure Analysis ─────────────────────────────────────────────────────────
 // Returns termination rate + clustered why_stopped reasons for a filtered cohort.
 // Answers: "What's the real termination rate for Phase 3 oncology trials, and why?"

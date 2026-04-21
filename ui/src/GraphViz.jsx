@@ -12,18 +12,22 @@ import cytoscape from "cytoscape";
 
 // ── Schema layout — radii √-proportional to node counts ──────────────────────
 const NODES = [
-  { id: "Sponsor",      label: "Sponsor",      count: "49.9k",  x: 82,  y: 118, color: "#818cf8", r: 16 },
-  { id: "Trial",        label: "Trial",         count: "580k",   x: 285, y: 118, color: "#38bdf8", r: 44 },
-  { id: "Condition",    label: "Condition",     count: "129k",   x: 500, y: 58,  color: "#34d399", r: 22 },
-  { id: "Intervention", label: "Intervention",  count: "512k",   x: 500, y: 168, color: "#fbbf24", r: 41 },
-  { id: "Country",      label: "Country",       count: "225",    x: 285, y: 232, color: "#f472b6", r: 8  },
+  { id: "Sponsor",          label: "Sponsor",          count: "49.9k",  x: 62,  y: 118, color: "#818cf8", r: 16 },
+  { id: "Trial",            label: "Trial",             count: "580k",   x: 250, y: 118, color: "#38bdf8", r: 44 },
+  { id: "Condition",        label: "Condition",         count: "129k",   x: 440, y: 48,  color: "#34d399", r: 22 },
+  { id: "Intervention",     label: "Intervention",      count: "512k",   x: 440, y: 188, color: "#fbbf24", r: 41 },
+  { id: "Country",          label: "Country",           count: "225",    x: 250, y: 245, color: "#f472b6", r: 8  },
+  { id: "TherapeuticArea",  label: "Therapeutic\nArea", count: "22",     x: 560, y: 48,  color: "#a78bfa", r: 7  },
+  { id: "DrugClass",        label: "Drug\nClass",       count: "118",    x: 560, y: 188, color: "#fb923c", r: 8  },
 ];
 
 const EDGES = [
-  { from: "Sponsor",  to: "Trial",        label: "RUNS",         count: "580k" },
-  { from: "Trial",    to: "Condition",     label: "TREATS",       count: "1M"   },
-  { from: "Trial",    to: "Intervention",  label: "USES",         count: "964k" },
-  { from: "Trial",    to: "Country",       label: "CONDUCTED_IN", count: "754k" },
+  { from: "Sponsor",      to: "Trial",           label: "RUNS",                  count: "580k" },
+  { from: "Trial",        to: "Condition",        label: "TREATS",                count: "1M"   },
+  { from: "Trial",        to: "Intervention",     label: "USES",                  count: "964k" },
+  { from: "Trial",        to: "Country",          label: "CONDUCTED_IN",          count: "754k" },
+  { from: "Condition",    to: "TherapeuticArea",  label: "IN_THERAPEUTIC_AREA",   count: ""     },
+  { from: "Intervention", to: "DrugClass",        label: "CLASSIFIED_AS",         count: ""     },
 ];
 
 const NODE_MAP = Object.fromEntries(NODES.map(n => [n.id, n]));
@@ -105,6 +109,21 @@ const QUERY_PATHS = {
       { type: "node", id: "Trial",     label: "all trials",     note: "" },
     ],
     description: "For each condition (≥100 trials), compute terminated ÷ total — surfaces high-risk therapeutic areas.",
+  },
+  g6: {
+    title: "Therapeutic Area → Drug Classes",
+    steps: [
+      { type: "node", id: "TherapeuticArea", label: "Oncology (SOC)",    note: "start" },
+      { type: "edge", label: "IN_THERAPEUTIC_AREA", dir: "←" },
+      { type: "node", id: "Condition",        label: "cancer conditions", note: "" },
+      { type: "edge", label: "TREATS",    dir: "←" },
+      { type: "node", id: "Trial",            label: "oncology trials",   note: "" },
+      { type: "edge", label: "USES",      dir: "→" },
+      { type: "node", id: "Intervention",     label: "drugs used",        note: "" },
+      { type: "edge", label: "CLASSIFIED_AS", dir: "→" },
+      { type: "node", id: "DrugClass",        label: "ATC classes",       note: "result" },
+    ],
+    description: "Start from a MedDRA therapeutic area → traverse conditions → trials → interventions → discover ATC drug classes. Classification hierarchy in action.",
   },
 };
 
@@ -327,7 +346,7 @@ export default function GraphViz({ queryId, filterStats }) {
 
   // Compute effective counts: filter stats override defaults when present
   const effectiveCounts = useMemo(() => {
-    const defaults = { Trial: "580k", Sponsor: "49.9k", Condition: "129k", Intervention: "512k", Country: "225" };
+    const defaults = { Trial: "580k", Sponsor: "49.9k", Condition: "129k", Intervention: "512k", Country: "225", TherapeuticArea: "22", DrugClass: "118" };
     if (!filterStats) return defaults;
     return {
       Trial: filterStats.total != null ? fmtCount(filterStats.total) : defaults.Trial,
@@ -335,6 +354,8 @@ export default function GraphViz({ queryId, filterStats }) {
       Condition: filterStats.conditions != null ? fmtCount(filterStats.conditions) : defaults.Condition,
       Intervention: filterStats.interventions != null ? fmtCount(filterStats.interventions) : defaults.Intervention,
       Country: filterStats.countries != null ? fmtCount(filterStats.countries) : defaults.Country,
+      TherapeuticArea: defaults.TherapeuticArea,
+      DrugClass: defaults.DrugClass,
     };
   }, [filterStats]);
 
@@ -507,6 +528,8 @@ export default function GraphViz({ queryId, filterStats }) {
         <span className="gvl-dot" style={{ background: "#34d399" }} /> Condition
         <span className="gvl-dot" style={{ background: "#fbbf24" }} /> Intervention
         <span className="gvl-dot" style={{ background: "#f472b6" }} /> Country
+        <span className="gvl-dot" style={{ background: "#a78bfa" }} /> Therapeutic Area <span style={{ fontSize: 9, opacity: 0.6 }}>(MedDRA)</span>
+        <span className="gvl-dot" style={{ background: "#fb923c" }} /> Drug Class <span style={{ fontSize: 9, opacity: 0.6 }}>(ATC)</span>
       </div>
     </div>
   );
