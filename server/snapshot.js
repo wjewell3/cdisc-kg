@@ -472,8 +472,10 @@ async function main() {
      FROM eligibilities ORDER BY nct_id`,
     `SELECT COUNT(*) AS count FROM eligibilities`,
     (rows) => { for (const r of rows) insElig.run(
-      r.nct_id, r.gender, r.minimum_age, r.maximum_age, r.healthy_volunteers,
-      r.criteria, r.adult ? 1 : 0, r.child ? 1 : 0, r.older_adult ? 1 : 0
+      r.nct_id, r.gender, r.minimum_age, r.maximum_age,
+      r.healthy_volunteers == null ? null : String(r.healthy_volunteers),
+      r.criteria == null ? null : String(r.criteria),
+      r.adult ? 1 : 0, r.child ? 1 : 0, r.older_adult ? 1 : 0
     ); }
   );
 
