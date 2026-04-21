@@ -2820,7 +2820,7 @@ app.get("/api/enrollment-benchmark", async (req, res) => {
       ORDER BY val
     `).all(...params, ...designParams).map(r => r.val).filter(Boolean);
 
-    res.json({
+    return res.json({
       summary: enrollSummary.map(r => ({
         enrollment_type: r.enrollment_type || 'Unknown',
         trial_count: r.trial_count,
