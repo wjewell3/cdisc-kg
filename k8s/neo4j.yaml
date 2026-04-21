@@ -43,7 +43,10 @@ spec:
               name: bolt
           env:
             - name: NEO4J_AUTH
-              value: "neo4j/REDACTED"
+              valueFrom:
+                secretKeyRef:
+                  name: neo4j-secret
+                  key: auth
             - name: NEO4J_server_memory_heap_initial__size
               value: "2G"
             - name: NEO4J_server_memory_heap_max__size
