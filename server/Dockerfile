@@ -14,7 +14,7 @@ RUN apk add --no-cache tini
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY index.js snapshot.js graph-loader.js atc-map.json ./
+COPY index.js snapshot.js graph-loader.js canonical.js atc-map.json canonical-groupings.json ./
 
 # Data volume — SQLite DB will be mounted here
 VOLUME ["/data"]
@@ -28,4 +28,3 @@ EXPOSE 3001
 # Use tini as PID 1 for proper signal handling
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "index.js"]
-// cache bust 1776733894
