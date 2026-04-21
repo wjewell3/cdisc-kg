@@ -4187,4 +4187,4 @@ app.get("/api/complexity-readiness", async (req, res) => {
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
 });
-// rebuild trigger 1776733599
+// rebuild trigger 1776737000
