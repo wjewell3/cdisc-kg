@@ -94,6 +94,15 @@ async function main() {
 
   // Write to a temp file, then rename — so the running server sees an atomic swap
   const TMP_PATH = DB_PATH + ".tmp";
+
+  // Incremental mode: if DB_PATH exists, copy it to TMP_PATH and fill gaps.
+  // If it doesn't exist, start fresh.
+  const { existsSync, copyFileSync } = await import("fs");
+  if (existsSync(DB_PATH)) {
+    console.log("[snapshot] existing db found — copying for incremental fill");
+    copyFileSync(DB_PATH, TMP_PATH);
+  }
+
   const db = new Database(TMP_PATH);
 
   // WAL mode + big cache for fast bulk inserts
@@ -335,7 +344,20 @@ async function main() {
 
   // ── Ingest tables ───────────────────────────────────────────────────────────
 
+  /** Check if a SQLite table exists and has rows */
+  function tableHasData(tableName) {
+    try {
+      const row = db.prepare(`SELECT 1 FROM ${tableName} LIMIT 1`).get();
+      return !!row;
+    } catch { return false; }
+  }
+
   async function ingest(label, sql, countSql, insertFn) {
+    // Skip tables that already have data (incremental mode)
+    if (tableHasData(label)) {
+      console.log(`[snapshot] ${label} already populated — skipping`);
+      return 0;
+    }
     const t = Date.now();
     console.log(`[snapshot] ingesting ${label}…`);
     let total = 0;
@@ -580,18 +602,22 @@ async function main() {
   `);
 
   // ── Populate FTS ────────────────────────────────────────────────────────────
-  console.log("[snapshot] building FTS index…");
-  db.exec(`
-    INSERT INTO studies_fts (nct_id, brief_title, conditions_text, interventions_text, summary_text)
-    SELECT
-      s.nct_id,
-      COALESCE(s.brief_title, ''),
-      COALESCE((SELECT group_concat(name, ' ') FROM conditions WHERE nct_id = s.nct_id), ''),
-      COALESCE((SELECT group_concat(name, ' ') FROM interventions WHERE nct_id = s.nct_id), ''),
-      COALESCE(bs.description, '')
-    FROM studies s
-    LEFT JOIN brief_summaries bs ON bs.nct_id = s.nct_id;
-  `);
+  if (tableHasData("studies_fts")) {
+    console.log("[snapshot] FTS index already populated — skipping");
+  } else {
+    console.log("[snapshot] building FTS index…");
+    db.exec(`
+      INSERT INTO studies_fts (nct_id, brief_title, conditions_text, interventions_text, summary_text)
+      SELECT
+        s.nct_id,
+        COALESCE(s.brief_title, ''),
+        COALESCE((SELECT group_concat(name, ' ') FROM conditions WHERE nct_id = s.nct_id), ''),
+        COALESCE((SELECT group_concat(name, ' ') FROM interventions WHERE nct_id = s.nct_id), ''),
+        COALESCE(bs.description, '')
+      FROM studies s
+      LEFT JOIN brief_summaries bs ON bs.nct_id = s.nct_id;
+    `);
+  }
 
   // ── Write metadata ──────────────────────────────────────────────────────────
   const metaIns = db.prepare(`INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)`);
