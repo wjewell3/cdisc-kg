@@ -139,6 +139,16 @@ export default function CanonicalGroupings() {
             Last updated: {new Date(draft._meta.updated).toLocaleString()} · source: {draft._meta.source || "seed"}
           </div>
         )}
+        {draft._meta?.vocabularies && (
+          <div className="cg-vocabularies">
+            <span className="cg-vocab-label">Anchored vocabularies:</span>
+            {Object.entries(draft._meta.vocabularies).map(([key, v]) => (
+              <a key={key} className="cg-vocab-pill" href={v.uri_base} target="_blank" rel="noopener noreferrer" title={`${v.name}${v.version ? ` v${v.version}` : ''}`}>
+                {key.replace(/_/g, ' ')}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
 
       {fields.map(field => (
@@ -209,6 +219,17 @@ function GroupEditor({ group, onChange, onDelete }) {
     <div className="cg-group">
       <div className="cg-group-header">
         <span className="cg-canonical">{group.canonical}</span>
+        {group.standard && (
+          <a
+            className="cg-standard-badge"
+            href={group.standard.uri}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${group.standard.vocabulary} ${group.standard.code} — ${group.standard.term}`}
+          >
+            {group.standard.vocabulary} {group.standard.code}
+          </a>
+        )}
         <span className="cg-group-count">{(group.rawValues || []).length} raw</span>
         <div className="cg-group-actions">
           <button className="cg-edit-group" onClick={() => setEditing(true)} title="Edit">✎</button>

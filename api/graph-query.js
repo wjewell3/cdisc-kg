@@ -15,10 +15,12 @@ GRAPH SCHEMA:
 Node labels and their properties:
   - Trial { nct_id, title, status, phase, study_type, enrollment, enrollment_type, start_date, completion_date, has_dmc, why_stopped, duration_months, facility_count, results_reported, months_to_report, sae_subjects, us_facility, single_facility }
   - Sponsor { name }
-  - Condition { name }
+  - Condition { name, meddra_pt }
   - Intervention { name }
   - Site { key, name, city, state, country }
   - Country { name }
+  - DrugClass { name, level }  // level: "therapeutic_class" or "sub_class"
+  - TherapeuticArea { name, soc_code, vocabulary }  // MedDRA System Organ Class
 
 Relationships:
   - (Sponsor)-[:RUNS]->(Trial)
@@ -27,6 +29,9 @@ Relationships:
   - (Trial)-[:AT]->(Site)
   - (Site)-[:IN_COUNTRY]->(Country)
   - (Trial)-[:CONDUCTED_IN]->(Country)
+  - (Intervention)-[:CLASSIFIED_AS]->(DrugClass)  // WHO ATC classification
+  - (DrugClass)-[:BELONGS_TO]->(DrugClass)  // sub_class → therapeutic_class
+  - (Condition)-[:IN_THERAPEUTIC_AREA]->(TherapeuticArea)  // MedDRA SOC classification
 
 IMPORTANT RULES:
 1. Return ONLY the Cypher query — no markdown, no explanation, no backticks.

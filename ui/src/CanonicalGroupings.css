@@ -84,6 +84,53 @@
   color: #6e7681;
 }
 
+.cg-vocabularies {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.cg-vocab-label {
+  font-size: 10px;
+  color: #6e7681;
+}
+.cg-vocab-pill {
+  display: inline-block;
+  background: rgba(56, 139, 253, 0.12);
+  border: 1px solid rgba(56, 139, 253, 0.3);
+  color: #58a6ff;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  text-decoration: none;
+  letter-spacing: 0.3px;
+}
+.cg-vocab-pill:hover {
+  background: rgba(56, 139, 253, 0.2);
+  color: #79c0ff;
+}
+
+.cg-standard-badge {
+  display: inline-block;
+  background: rgba(56, 139, 253, 0.1);
+  border: 1px solid rgba(56, 139, 253, 0.25);
+  color: #58a6ff;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-decoration: none;
+  margin-left: 6px;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+.cg-standard-badge:hover {
+  background: rgba(56, 139, 253, 0.2);
+  color: #79c0ff;
+}
+
 .cg-loading {
   padding: 20px;
   color: #8b949e;

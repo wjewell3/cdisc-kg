@@ -397,6 +397,56 @@ async function main() {
     log(`  ATC enrichment failed (non-fatal): ${e.message}`);
   }
 
+  // ── MedDRA Condition Classification enrichment ──
+  log("Enriching Conditions with MedDRA SOC classes...");
+  try {
+    const { readFileSync } = await import("fs");
+    const { dirname, join } = await import("path");
+    const { fileURLToPath } = await import("url");
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const condData = JSON.parse(readFileSync(join(__dirname, "condition-map.json"), "utf8"));
+    const condMap = condData.conditions;
+
+    // Collect unique SOC classes
+    const socSet = new Map(); // soc_name → soc_code
+    const condMappings = []; // { condition, meddra_pt, soc, soc_code }
+    for (const [cond, info] of Object.entries(condMap)) {
+      if (!info) continue;
+      socSet.set(info.soc, info.soc_code);
+      condMappings.push({ condition: cond, meddra_pt: info.meddra_pt, soc: info.soc, soc_code: info.soc_code });
+    }
+
+    // Create TherapeuticArea nodes (MedDRA SOC level)
+    await run("CREATE CONSTRAINT therapeutic_area_name IF NOT EXISTS FOR (t:TherapeuticArea) REQUIRE t.name IS UNIQUE");
+    const socNodes = [];
+    for (const [soc, code] of socSet) {
+      socNodes.push({ name: soc, soc_code: code, vocabulary: "MedDRA" });
+    }
+    await runBatch(`
+      UNWIND $batch AS s
+      MERGE (t:TherapeuticArea {name: s.name})
+      SET t.soc_code = s.soc_code, t.vocabulary = s.vocabulary
+    `, socNodes);
+
+    // Match Condition nodes to SOC mappings (case-insensitive)
+    let condMatched = 0;
+    for (const mapping of condMappings) {
+      const result = await run(`
+        MATCH (c:Condition)
+        WHERE toLower(c.name) = $condition OR toLower(c.name) CONTAINS $condition
+        WITH c LIMIT 1
+        MATCH (t:TherapeuticArea {name: $soc})
+        MERGE (c)-[:IN_THERAPEUTIC_AREA]->(t)
+        SET c.meddra_pt = $meddra_pt
+        RETURN COUNT(*) AS cnt
+      `, { condition: mapping.condition, soc: mapping.soc, meddra_pt: mapping.meddra_pt });
+      condMatched += result.records[0]?.get("cnt")?.toNumber?.() || 0;
+    }
+    log(`  ${socNodes.length} TherapeuticArea nodes, ${condMatched} IN_THERAPEUTIC_AREA edges`);
+  } catch (e) {
+    log(`  MedDRA condition enrichment failed (non-fatal): ${e.message}`);
+  }
+
   // ── Summary ──
   const counts = await run(`
     MATCH (n) RETURN labels(n)[0] AS label, COUNT(n) AS count ORDER BY count DESC

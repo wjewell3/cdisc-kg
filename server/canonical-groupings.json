@@ -3,43 +3,56 @@
     "version": 1,
     "source": "seed",
     "updated": "2026-04-20T00:00:00Z",
-    "note": "Canonical groupings for categorical fields. Raw values are matched case-insensitively after trim. Regenerate via POST /api/dq/canonical/rebuild."
+    "note": "Canonical groupings for categorical fields. Raw values are matched case-insensitively after trim. Regenerate via POST /api/dq/canonical/rebuild.",
+    "vocabularies": {
+      "CDISC_CT": { "name": "CDISC Controlled Terminology", "version": "2024-06-28", "uri_base": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=" },
+      "MedDRA": { "name": "Medical Dictionary for Regulatory Activities", "version": "27.0", "uri_base": "https://www.meddra.org/" },
+      "WHO_ATC": { "name": "WHO Anatomical Therapeutic Chemical Classification", "version": "2024", "uri_base": "https://www.whocc.no/atc_ddd_index/?code=" },
+      "ICH_E6": { "name": "ICH E6(R2) Good Clinical Practice", "uri_base": "https://www.ich.org/page/efficacy-guidelines" }
+    }
   },
   "phase": [
     {
       "canonical": "Early Phase 1",
       "rawValues": ["EARLY_PHASE1", "Early Phase 1", "Phase 0", "early phase 1", "early phase1"],
-      "note": "CDISC CT C54721 — Exploratory / Phase 0 trials."
+      "note": "Exploratory / Phase 0 trials.",
+      "standard": { "vocabulary": "CDISC_CT", "codelist": "C66737", "code": "C54721", "term": "Early Phase 1 Study", "uri": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=C54721" }
     },
     {
       "canonical": "Phase 1",
       "rawValues": ["PHASE1", "Phase 1", "Phase1", "phase 1", "I", "Phase I"],
-      "note": "CDISC CT C15600 — First-in-human safety and dosing."
+      "note": "First-in-human safety and dosing.",
+      "standard": { "vocabulary": "CDISC_CT", "codelist": "C66737", "code": "C15600", "term": "Phase I Trial", "uri": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=C15600" }
     },
     {
       "canonical": "Phase 1/Phase 2",
       "rawValues": ["PHASE1/PHASE2", "Phase 1/Phase 2", "Phase1/Phase2", "I/II", "Phase I/II", "Phase I/Phase II"],
-      "note": "CDISC CT C15693 — Combined Phase 1 and Phase 2."
+      "note": "Combined Phase 1 and Phase 2.",
+      "standard": { "vocabulary": "CDISC_CT", "codelist": "C66737", "code": "C15693", "term": "Phase I/II Trial", "uri": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=C15693" }
     },
     {
       "canonical": "Phase 2",
       "rawValues": ["PHASE2", "Phase 2", "Phase2", "phase 2", "II", "Phase II"],
-      "note": "CDISC CT C15601 — Efficacy and side effects."
+      "note": "Efficacy and side effects.",
+      "standard": { "vocabulary": "CDISC_CT", "codelist": "C66737", "code": "C15601", "term": "Phase II Trial", "uri": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=C15601" }
     },
     {
       "canonical": "Phase 2/Phase 3",
       "rawValues": ["PHASE2/PHASE3", "Phase 2/Phase 3", "Phase2/Phase3", "II/III", "Phase II/III", "Phase II/Phase III"],
-      "note": "CDISC CT C15694 — Combined Phase 2 and Phase 3."
+      "note": "Combined Phase 2 and Phase 3.",
+      "standard": { "vocabulary": "CDISC_CT", "codelist": "C66737", "code": "C15694", "term": "Phase II/III Trial", "uri": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=C15694" }
     },
     {
       "canonical": "Phase 3",
       "rawValues": ["PHASE3", "Phase 3", "Phase3", "phase 3", "III", "Phase III"],
-      "note": "CDISC CT C15602 — Large-scale confirmatory."
+      "note": "Large-scale confirmatory.",
+      "standard": { "vocabulary": "CDISC_CT", "codelist": "C66737", "code": "C15602", "term": "Phase III Trial", "uri": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=C15602" }
     },
     {
       "canonical": "Phase 4",
       "rawValues": ["PHASE4", "Phase 4", "Phase4", "phase 4", "IV", "Phase IV"],
-      "note": "CDISC CT C49686 — Post-marketing surveillance."
+      "note": "Post-marketing surveillance.",
+      "standard": { "vocabulary": "CDISC_CT", "codelist": "C66737", "code": "C49686", "term": "Phase IV Trial", "uri": "https://ncithesaurus.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=C49686" }
     },
     {
       "canonical": "Not Applicable",
@@ -97,7 +110,8 @@
         "serious adverse events", "safety signal", "safety review", "risk-benefit",
         "unfavorable risk-benefit", "sae"
       ],
-      "note": "Safety / toxicity / SAE terminations."
+      "note": "Safety / toxicity / SAE terminations.",
+      "standard": { "vocabulary": "ICH_E6", "code": "1.50", "term": "Serious Adverse Event", "uri": "https://www.ich.org/page/efficacy-guidelines" }
     },
     {
       "canonical": "Study design issues",
@@ -153,7 +167,8 @@
         "AE", "SAE", "Serious Adverse Event", "serious adverse event",
         "toxicity", "Toxicity", "drug-related AE", "treatment-related AE"
       ],
-      "note": "AE / SAE / toxicity withdrawals."
+      "note": "AE / SAE / toxicity withdrawals.",
+      "standard": { "vocabulary": "ICH_E6", "code": "1.2", "term": "Adverse Event", "uri": "https://www.ich.org/page/efficacy-guidelines" }
     },
     {
       "canonical": "Death",
