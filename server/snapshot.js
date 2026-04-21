@@ -92,18 +92,17 @@ async function main() {
     }
   }
 
-  // Write to a temp file, then rename — so the running server sees an atomic swap
-  const TMP_PATH = DB_PATH + ".tmp";
-
-  // Incremental mode: if DB_PATH exists, copy it to TMP_PATH and fill gaps.
-  // If it doesn't exist, start fresh.
-  const { existsSync, copyFileSync } = await import("fs");
-  if (existsSync(DB_PATH)) {
-    console.log("[snapshot] existing db found — copying for incremental fill");
-    copyFileSync(DB_PATH, TMP_PATH);
+  // Incremental mode: open the existing db in-place if it exists (fill gaps).
+  // Only create from scratch if no db exists.
+  const { existsSync } = await import("fs");
+  const incremental = existsSync(DB_PATH);
+  if (incremental) {
+    console.log("[snapshot] existing db found — opening for incremental fill");
+  } else {
+    console.log("[snapshot] no existing db — building from scratch");
   }
 
-  const db = new Database(TMP_PATH);
+  const db = new Database(DB_PATH);
 
   // WAL mode + big cache for fast bulk inserts
   db.pragma("journal_mode = WAL");
@@ -626,14 +625,6 @@ async function main() {
 
   db.close();
   await pool.end();
-
-  // Atomic swap — remove any stale WAL/SHM files first so SQLite doesn't try
-  // to apply them to the new database and cause "disk image is malformed".
-  const { renameSync, rmSync } = await import("fs");
-  for (const suffix of ["-wal", "-shm"]) {
-    try { rmSync(DB_PATH + suffix); } catch { /* ignore if absent */ }
-  }
-  renameSync(TMP_PATH, DB_PATH);
 
   console.log(`[snapshot] complete — total time ${elapsed(t0)}`);
   console.log(`[snapshot] database written to ${DB_PATH}`);
