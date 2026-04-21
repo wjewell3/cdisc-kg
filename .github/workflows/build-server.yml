@@ -33,6 +33,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify checkout
+        run: |
+          echo "=== HEAD ==="
+          git log --oneline -1
+          echo "=== index.js first 3 lines ==="
+          head -3 server/index.js
+          echo "=== index.js line 2823 ==="
+          sed -n '2820,2825p' server/index.js
+
       - name: Build and push ARM64
         uses: docker/build-push-action@v5
         with:
@@ -44,8 +53,7 @@ jobs:
           tags: |
             ghcr.io/${{ env.IMAGE_NAME }}:latest
             ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+
 
       - name: Make package public
         run: |
