@@ -21,10 +21,12 @@ export default async function handler(req, res) {
     const path = action === "canonical-rebuild" ? "/api/dq/canonical/rebuild" : "/api/dq/canonical";
     const url = `${OKE_BASE}${path}`;
     try {
-      const init = { method: req.method, headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(60000) };
+      const init = { method: req.method, headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(action === "canonical-rebuild" ? 120000 : 60000) };
       if (req.method === "POST") init.body = JSON.stringify(req.body || {});
       const upstream = await fetch(url, init);
-      const data = await upstream.json().catch(() => ({}));
+      const text = await upstream.text();
+      let data;
+      try { data = JSON.parse(text); } catch (_) { return res.status(502).json({ error: "Upstream returned non-JSON", detail: text.slice(0, 200) }); }
       return res.status(upstream.status).json(data);
     } catch (e) {
       console.error("canonical proxy failed:", e.message);
