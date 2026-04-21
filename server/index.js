@@ -1,5 +1,5 @@
 /**
- * index.js — Express API server for CDISC-KG trials. [BUILD_MARKER_20260421]
+ * index.js — Express API server for CDISC-KG trials.
  *
  * Queries a local SQLite snapshot of AACT (built by snapshot.js).
  * Falls back to live AACT PostgreSQL if the snapshot is missing or stale.
