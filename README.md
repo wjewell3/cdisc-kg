@@ -289,22 +289,7 @@ job description:
 
 Data Domain Manager, Trial Data
 Thermo Fisher Scientific
-Thermo Fisher Scientific
-
-This job is no longer accepting applications
-
-See open jobs at Thermo Fisher Scientific.
-See open jobs similar to "Data Domain Manager, Trial Data" North Carolina Biotechnology Center.
-
 North Carolina, USA
-
-USD 130k-180k / year
-
-Posted on Mar 22, 2026
-Work Schedule
-
-Standard (Mon-Fri)
-Environmental Conditions
 
 Office
 Job Description
@@ -387,12 +372,7 @@ Experience in a CRO, eClinical data provider, pharmaceutical/biotech company, or
 Experience in regulated data environments (e.g., clinical/GxP/Part 11/GDPR/HIPAA).
 Existing understanding of data landscape within assigned domain.
 Experience in making data AI/ML ready.
-At Thermo Fisher Scientific, we are committed to fostering a healthy and harmonious workplace for our employees. We understand the importance of creating an environment that allows individuals to excel. Please see below for the required qualifications for this position, which also includes the possibility of equivalent experience:
 
-Able to communicate, receive, and understand information and ideas with diverse groups of people in a comprehensible and reasonable manner.
-Able to work upright and stationary for typical working hours.
-Ability to use and learn standard office equipment and technology with proficiency.
-Able to perform successfully under pressure while prioritizing and handling multiple projects or activities.
 
 products:
 https://www.ppd.com/our-solutions/digital-drug-development-solutions/
