@@ -63,6 +63,14 @@ function openDb() {
       ["idx_ctr_name",          "CREATE INDEX IF NOT EXISTS idx_ctr_name ON countries(name)"],
       ["idx_ctr_nct",           "CREATE INDEX IF NOT EXISTS idx_ctr_nct ON countries(nct_id)"],
       ["idx_fac_country_city",  "CREATE INDEX IF NOT EXISTS idx_fac_country_city ON facilities(country, city)"],
+      // snapshot.js builds these (idx_*_nct) right after the pending_results ingest —
+      // but if that ingest ever crashes (as it did on the AACT column rename), the
+      // index step never runs and the facet JOINs full-scan 0.6–1.2M rows each,
+      // making /stats ~17s cold and starving /health. Self-heal here (same names,
+      // so no duplication when the snapshot already built them).
+      ["idx_sponsor_nct", "CREATE INDEX IF NOT EXISTS idx_sponsor_nct ON sponsors(nct_id)"],
+      ["idx_cond_nct",    "CREATE INDEX IF NOT EXISTS idx_cond_nct ON conditions(nct_id)"],
+      ["idx_intv_nct",    "CREATE INDEX IF NOT EXISTS idx_intv_nct ON interventions(nct_id)"],
     ];
     for (const [name, sql] of indexes) {
       const exists = d.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`).get(name);
