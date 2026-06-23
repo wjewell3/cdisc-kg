@@ -1,8 +1,10 @@
-# NOTE: Neo4j runs on an ephemeral emptyDir (node storage), NOT a block-volume
-# PVC. OCI block volumes have a 50 GB minimum, and the graph is fully rebuildable
-# from /data/aact.db via the graph-loader Job, so persisting it isn't worth a
-# second 50 GB volume on the free tier. On pod restart, re-run
-# k8s/graph-loader-job.yaml to repopulate the graph.
+# NOTE: Neo4j data lives on a hostPath (the node's local disk), NOT a block-volume
+# PVC. OCI block volumes have a 50 GB minimum and the graph is only ~3 GB, so a
+# second 50 GB volume isn't worth it. hostPath survives pod restarts/redeploys on
+# this SINGLE-NODE cluster (the pod always lands on the same node), unlike emptyDir.
+# Caveat: only safe while single-node; data is lost only if the node is reimaged —
+# then re-run k8s/graph-loader-job.yaml. The graph is always rebuildable from
+# /data/aact.db via that Job.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -67,8 +69,9 @@ spec:
             periodSeconds: 10
       volumes:
         - name: data
-          emptyDir:
-            sizeLimit: 10Gi
+          hostPath:
+            path: /var/lib/neo4j-data
+            type: DirectoryOrCreate
 
 ---
 apiVersion: v1
