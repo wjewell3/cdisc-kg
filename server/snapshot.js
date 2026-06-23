@@ -579,7 +579,8 @@ async function main() {
   // pending_results (QC submission events)
   const insPR = db.prepare(`INSERT INTO pending_results (nct_id, event, event_date_type, event_date) VALUES (?,?,?,?)`);
   await ingest("pending_results",
-    `SELECT nct_id, event, event_date_type, event_date::text FROM pending_results ORDER BY nct_id`,
+    // AACT renamed this column event_date_type -> event_date_description; alias back to our local schema name.
+    `SELECT nct_id, event, event_date_description AS event_date_type, event_date::text FROM pending_results ORDER BY nct_id`,
     `SELECT COUNT(*) AS count FROM pending_results`,
     (rows) => { for (const r of rows) insPR.run(r.nct_id, r.event, r.event_date_type, r.event_date); }
   );
