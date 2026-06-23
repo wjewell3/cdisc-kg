@@ -19,7 +19,20 @@ import Database from "better-sqlite3";
 import { existsSync, statSync } from "fs";
 import pg from "pg";
 import neo4jDriver from "neo4j-driver";
-import { canonicalize, mergeByCanonical, getCatalog, save as saveCatalog, rebuildField, reload as reloadCatalog, hasGemini, nextGeminiKey, GEMINI_MODEL } from "./canonical.js";
+import { canonicalize, mergeByCanonical, getCatalog, save as saveCatalog, rebuildField, reload as reloadCatalog, hasGemini, nextGeminiKey, GEMINI_MODEL, geminiFetch } from "./canonical.js";
+
+// Retrying wrapper for the server-side LLM calls (briefings, narration). Same shape
+// as fetch(url, opts) so existing call sites are unchanged, but it rotates a fresh
+// Gemini key per attempt and retries transient 429/503/500 (free-tier overload).
+async function llmFetch(url, opts = {}) {
+  let res;
+  for (let i = 0; i < 4; i++) {
+    res = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${nextGeminiKey()}` } });
+    if ((res.status === 429 || res.status === 503 || res.status === 500) && i < 3) { await new Promise((r) => setTimeout(r, 800)); continue; }
+    break;
+  }
+  return res;
+}
 
 const {
   DB_PATH = "/data/aact.db",
@@ -1010,7 +1023,7 @@ Write a 3–5 paragraph operational risk briefing covering:
 3. Enrollment risks vs. comparable performance
 4. Key watch-out signals and recommended mitigations`;
 
-      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+      const response = await llmFetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${nextGeminiKey()}`,
@@ -1087,7 +1100,7 @@ For grouping rules (merging synonymous values into one canonical label):
 For enrollment range bounds:
 {"ruleType":"bounds","min":<integer or null>,"max":<integer or null>}`;
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+    const response = await llmFetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${nextGeminiKey()}`,
@@ -1352,7 +1365,7 @@ ${topSiteList ? `Top sites: ${topSiteList}` : ""}
 Write 3 paragraphs: (1) portfolio overview and key characteristics, (2) operational performance patterns and what they indicate, (3) strategic insights or risks a clinical operations manager should know.`;
 
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+    const response = await llmFetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { "Authorization": `Bearer ${nextGeminiKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3397,7 +3410,7 @@ app.post("/api/ask", async (req, res) => {
 
   let classification;
   try {
-    const llmResp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+    const llmResp = await llmFetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { "Authorization": `Bearer ${nextGeminiKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3581,7 +3594,7 @@ app.post("/api/ask", async (req, res) => {
           return `${c.type}: ${JSON.stringify(c.data).slice(0, 300)}`;
         }).join("\n");
 
-        const briefResp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+        const briefResp = await llmFetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
           method: "POST",
           headers: { "Authorization": `Bearer ${nextGeminiKey()}`, "Content-Type": "application/json" },
           body: JSON.stringify({

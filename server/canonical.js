@@ -21,7 +21,7 @@ const USER_PATH = process.env.CANONICAL_PATH || "/data/canonical-groupings.json"
 // daily RPD). Returns the raw fetch Response so streaming callers can read .body.
 const GEMINI_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
   .split(",").map((k) => k.trim()).filter(Boolean);
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 let _gKeyIdx = 0;
 export function hasGemini() { return GEMINI_KEYS.length > 0; }
 export function nextGeminiKey() { return GEMINI_KEYS.length ? GEMINI_KEYS[_gKeyIdx++ % GEMINI_KEYS.length] : ""; }
