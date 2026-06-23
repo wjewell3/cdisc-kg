@@ -43,8 +43,10 @@ jobs:
           tags: |
             ghcr.io/${{ env.IMAGE_NAME }}:latest
             ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # GHA layer cache was serving a stale image (COPY layer not invalidating on
+          # source change), shipping old code under :latest/:sha. Disable it — the
+          # server image builds in ~2-3min, correctness matters more than cache.
+          no-cache: true
 
       - name: Make package public
         run: |

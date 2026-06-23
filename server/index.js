@@ -285,6 +285,22 @@ function sqliteStats({ q, condition, intervention, phase, status, sponsor, min_e
   };
 }
 
+// ── Stats memoization ─────────────────────────────────────────────────────────
+// Faceted /stats aggregates the whole snapshot (7 facets over 0.6–3M rows) — ~10s
+// cold even with indexes, and it's identical for a given filter set until the
+// snapshot changes (daily). Cache by params; invalidate when the snapshot reloads.
+const _statsCache = new Map();
+let _statsCacheKey = null;
+function cachedSqliteStats(params) {
+  if (_statsCacheKey !== snapshotAge) { _statsCache.clear(); _statsCacheKey = snapshotAge; }
+  const key = JSON.stringify(params);
+  const hit = _statsCache.get(key);
+  if (hit) return hit;
+  const result = sqliteStats(params);
+  _statsCache.set(key, result);
+  return result;
+}
+
 // ── PostgreSQL fallback functions (same logic as original Vercel api/trials.js) ──
 
 function buildPgWhere({ q = "", condition = "", intervention = "", phase = "", status = "", sponsor = "" }) {
@@ -378,7 +394,7 @@ app.get("/api/trials", async (req, res) => {
   try {
     if (mode === "stats") {
       const result = db
-        ? sqliteStats({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment })
+        ? cachedSqliteStats({ q, condition, intervention, phase, status, sponsor, min_enrollment, max_enrollment })
         : await pgStats({ q, condition, intervention, phase, status, sponsor });
       return res.json(result);
     }
@@ -4315,5 +4331,14 @@ app.get("/api/complexity-readiness", async (req, res) => {
 
 app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
+  // Warm the unfiltered /stats cache so the first homepage load is instant instead
+  // of paying the ~10s cold aggregation. Deferred so it doesn't delay listen.
+  if (db) setTimeout(() => {
+    try {
+      const t = Date.now();
+      cachedSqliteStats({ q: "", condition: "", intervention: "", phase: "", status: "", sponsor: "", min_enrollment: "", max_enrollment: "" });
+      console.log(`[server] warmed /stats cache in ${((Date.now() - t) / 1000).toFixed(1)}s`);
+    } catch (e) { console.error("[server] stats warm-up failed:", e.message); }
+  }, 100);
 });
-// rebuild trigger 1776737000
+// rebuild trigger 1776737100
