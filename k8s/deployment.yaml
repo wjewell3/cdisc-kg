@@ -23,6 +23,8 @@ metadata:
     app: trials-api
 spec:
   replicas: 1               # Only 1 replica — SQLite PVC is ReadWriteOnce
+  strategy:
+    type: Recreate          # RWO volume can't be multi-attached; tear down old pod before starting new
   selector:
     matchLabels:
       app: trials-api
@@ -88,12 +90,19 @@ spec:
               port: 3001
             initialDelaySeconds: 10
             periodSeconds: 30
+            # better-sqlite3 is synchronous; a heavy query over the full snapshot
+            # can block Node's event loop past the default 1s, starving /health.
+            # Give it headroom so transient blocking doesn't trigger a restart.
+            timeoutSeconds: 5
+            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /health
               port: 3001
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: data
           persistentVolumeClaim:
