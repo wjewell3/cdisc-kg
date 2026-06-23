@@ -5,7 +5,7 @@
 // review-pulse's pattern. The leading underscore keeps Vercel from routing this file.
 const GEMINI_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
   .split(",").map((k) => k.trim()).filter(Boolean);
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 let _keyIdx = 0;
 
@@ -16,7 +16,7 @@ export function hasGemini() { return GEMINI_KEYS.length > 0; }
 export async function geminiFetch({ messages, max_tokens, temperature = 0.1, stream = false, signal }) {
   if (!GEMINI_KEYS.length) throw new Error("GEMINI_API_KEYS not configured");
   let lastErr;
-  for (let attempt = 0; attempt < GEMINI_KEYS.length + 1; attempt++) {
+  for (let attempt = 0; attempt < GEMINI_KEYS.length + 3; attempt++) {
     const key = GEMINI_KEYS[_keyIdx++ % GEMINI_KEYS.length];
     const res = await fetch(GEMINI_URL, {
       method: "POST",
@@ -30,7 +30,12 @@ export async function geminiFetch({ messages, max_tokens, temperature = 0.1, str
         ...(stream ? { stream: true } : {}),
       }),
     });
-    if (res.status === 429) { lastErr = new Error("Gemini 429 (rate limit) — rotating key"); continue; }
+    // 429 = per-key daily quota (rotate key); 503/500 = transient overload (brief backoff + retry).
+    if (res.status === 429 || res.status === 503 || res.status === 500) {
+      lastErr = new Error(`Gemini ${res.status} — retrying`);
+      if (res.status !== 429) await new Promise((r) => setTimeout(r, 800));
+      continue;
+    }
     return res;
   }
   throw lastErr || new Error("Gemini: all keys exhausted");

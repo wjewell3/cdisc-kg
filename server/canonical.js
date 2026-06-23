@@ -21,7 +21,7 @@ const USER_PATH = process.env.CANONICAL_PATH || "/data/canonical-groupings.json"
 // daily RPD). Returns the raw fetch Response so streaming callers can read .body.
 const GEMINI_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
   .split(",").map((k) => k.trim()).filter(Boolean);
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 let _gKeyIdx = 0;
 export function hasGemini() { return GEMINI_KEYS.length > 0; }
 export function nextGeminiKey() { return GEMINI_KEYS.length ? GEMINI_KEYS[_gKeyIdx++ % GEMINI_KEYS.length] : ""; }
@@ -30,14 +30,19 @@ export async function geminiFetch({ messages, max_tokens, temperature = 0.1, str
   if (!GEMINI_KEYS.length) throw new Error("GEMINI_API_KEYS not configured");
   const url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
   let lastErr;
-  for (let attempt = 0; attempt < GEMINI_KEYS.length + 1; attempt++) {
+  for (let attempt = 0; attempt < GEMINI_KEYS.length + 3; attempt++) {
     const key = GEMINI_KEYS[_gKeyIdx++ % GEMINI_KEYS.length];
     const res = await fetch(url, {
       method: "POST", signal,
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: GEMINI_MODEL, messages, temperature, ...(max_tokens ? { max_tokens } : {}), ...(stream ? { stream: true } : {}) }),
     });
-    if (res.status === 429) { lastErr = new Error("Gemini 429 (rate limit) — rotating key"); continue; }
+    // 429 = per-key daily quota (rotate key); 503/500 = transient overload (brief backoff + retry).
+    if (res.status === 429 || res.status === 503 || res.status === 500) {
+      lastErr = new Error(`Gemini ${res.status} — retrying`);
+      if (res.status !== 429) await new Promise((r) => setTimeout(r, 800));
+      continue;
+    }
     return res;
   }
   throw lastErr || new Error("Gemini: all keys exhausted");
