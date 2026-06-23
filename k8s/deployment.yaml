@@ -79,7 +79,7 @@ spec:
               mountPath: /data
           resources:
             requests:
-              cpu: "250m"
+              cpu: "100m"          # node is CPU-constrained (shared with review-pulse); 250m wouldn't schedule
               memory: "256Mi"
             limits:
               cpu: "1"
