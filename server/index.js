@@ -372,6 +372,31 @@ const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
+// ── Analytics response cache ──────────────────────────────────────────────────
+// These endpoints aggregate the whole snapshot (some scan 3M+ facility rows, ~30s
+// cold) and fire on every page load. better-sqlite3 is synchronous, so a cold one
+// blocks the single event loop, starves /health, and the liveness probe kills the
+// pod — cascading into ingress 503s/timeouts. Results are identical for a given
+// query until the snapshot reloads, so cache the 200 responses by full URL.
+const _respCache = new Map();
+let _respCacheKey = null;
+const CACHEABLE_PATHS = [
+  "/api/failure-analysis", "/api/sponsor-performance", "/api/enrollment-benchmark",
+  "/api/geographic-intelligence", "/api/safety-signals", "/api/milestone-funnel",
+  "/api/results-readiness", "/api/trial-complexity", "/api/profile-cohort",
+  "/api/complexity-readiness",
+];
+app.use(CACHEABLE_PATHS, (req, res, next) => {
+  if (req.method !== "GET") return next();
+  if (_respCacheKey !== snapshotAge) { _respCache.clear(); _respCacheKey = snapshotAge; }
+  const key = req.originalUrl;
+  const hit = _respCache.get(key);
+  if (hit !== undefined) return res.json(hit);
+  const orig = res.json.bind(res);
+  res.json = (body) => { if (res.statusCode === 200) _respCache.set(key, body); return orig(body); };
+  next();
+});
+
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
