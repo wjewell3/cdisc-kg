@@ -1,0 +1,26 @@
+# Routes external traffic to trials-api via the cluster's shared ingress-nginx
+# controller (one free OCI flexible 10 Mbps LB at 129.159.83.167) instead of a
+# dedicated per-service LoadBalancer.
+#
+#   http://129.159.83.167/cdisc/<path>  ->  rewrite to /<path>  ->  trials-api:80
+#
+# So set the Vercel proxy env to:  TRIALS_API_BASE = http://129.159.83.167/cdisc
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cdisc-kg-ingress
+  namespace: cdisc-kg
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /cdisc(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: trials-api
+                port:
+                  number: 80

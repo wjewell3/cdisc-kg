@@ -100,7 +100,11 @@ spec:
             claimName: aact-data
 
 ---
-# Service — ClusterIP (fronted by the LoadBalancer below)
+# Service — ClusterIP, exposed externally via the shared ingress-nginx controller.
+# NOTE: No dedicated OCI LoadBalancer. The cluster already runs one free flexible
+# 10 Mbps LB in front of ingress-nginx (129.159.83.167); cdisc-kg-ingress routes
+# http://<ingress-ip>/cdisc/* -> this service. A second LoadBalancer Service would
+# provision a second (billed) OCI LB, so it was removed. See k8s/ingress.yaml.
 apiVersion: v1
 kind: Service
 metadata:
@@ -113,25 +117,3 @@ spec:
     - port: 80
       targetPort: 3001
   type: ClusterIP
-
----
-# LoadBalancer — exposes the API externally
-# Uses the existing OCI LB in your cluster (same as kagent cors-proxy pattern)
-apiVersion: v1
-kind: Service
-metadata:
-  name: trials-api-lb
-  namespace: cdisc-kg
-  annotations:
-    oci.oraclecloud.com/load-balancer-type: "lb"
-    service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
-    service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
-    service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
-    service.beta.kubernetes.io/oci-load-balancer-subnet1: "ocid1.subnet.oc1.iad.aaaaaaaaihdgynbdnu6vsz4b4bqyoqgdrpxtgirt73riyxhiiouj4r5vdduq"
-spec:
-  selector:
-    app: trials-api
-  ports:
-    - port: 80
-      targetPort: 3001
-  type: LoadBalancer

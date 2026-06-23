@@ -15,6 +15,7 @@
  */
 
 import pg from "pg";
+import Cursor from "pg-cursor";
 import Database from "better-sqlite3";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
@@ -32,7 +33,7 @@ if (!AACT_USER || !AACT_PASSWORD) {
   process.exit(1);
 }
 
-const BATCH = 5000; // rows per SELECT ... LIMIT/OFFSET batch
+const BATCH = 5000; // rows fetched per cursor read
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,20 +41,26 @@ function elapsed(start) {
   return ((Date.now() - start) / 1000).toFixed(1) + "s";
 }
 
-/** Stream a full table in BATCH-sized LIMIT/OFFSET pages */
-async function* streamTable(pool, sql, countSql) {
-  if (countSql) {
-    const { rows } = await pool.query(countSql);
-    const total = parseInt(rows[0].count);
-    console.log(`  (${total.toLocaleString()} rows total)`);
-  }
-  let offset = 0;
-  while (true) {
-    const { rows } = await pool.query(`${sql} LIMIT ${BATCH} OFFSET ${offset}`);
-    if (rows.length === 0) break;
-    yield rows;
-    offset += rows.length;
-    if (rows.length < BATCH) break;
+/**
+ * Stream a full table via a server-side cursor.
+ *
+ * The query runs ONCE and rows are pulled in BATCH-sized chunks — O(n), a
+ * single sequential pass. (The previous LIMIT/OFFSET approach re-scanned the
+ * table on every page: O(n²), which crawled to a halt on multi-million-row
+ * tables like facilities once the node was CPU-constrained.)
+ */
+async function* streamTable(pool, sql, _countSql) {
+  const client = await pool.connect();
+  const cursor = client.query(new Cursor(sql));
+  try {
+    while (true) {
+      const rows = await cursor.read(BATCH);
+      if (rows.length === 0) break;
+      yield rows;
+    }
+  } finally {
+    await cursor.close().catch(() => {});
+    client.release();
   }
 }
 
@@ -76,7 +83,10 @@ async function main() {
     ssl: { rejectUnauthorized: false },
     max: 4,
     connectionTimeoutMillis: 60000,
-    statement_timeout: 600000, // 10 min for large tables
+    // A cursor keeps one query open for the whole table stream, so the old
+    // 10-min per-statement cap could abort large tables mid-stream. Disable it
+    // for this controlled, single-run batch job.
+    statement_timeout: 0,
   });
 
   // Retry initial connection (AACT PG has intermittent availability)

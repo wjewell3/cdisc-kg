@@ -1,16 +1,8 @@
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: neo4j-data
-  namespace: cdisc-kg
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: oci-bv
-
+# NOTE: Neo4j runs on an ephemeral emptyDir (node storage), NOT a block-volume
+# PVC. OCI block volumes have a 50 GB minimum, and the graph is fully rebuildable
+# from /data/aact.db via the graph-loader Job, so persisting it isn't worth a
+# second 50 GB volume on the free tier. On pod restart, re-run
+# k8s/graph-loader-job.yaml to repopulate the graph.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -62,8 +54,8 @@ spec:
               mountPath: /data
           resources:
             requests:
-              cpu: "500m"
-              memory: "4Gi"
+              cpu: "250m"        # low reservation — node CPU is tight (~90%+
+              memory: "4Gi"      # requested by other namespaces); bursts to limit
             limits:
               cpu: "2"
               memory: "8Gi"
@@ -75,8 +67,8 @@ spec:
             periodSeconds: 10
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: neo4j-data
+          emptyDir:
+            sizeLimit: 10Gi
 
 ---
 apiVersion: v1

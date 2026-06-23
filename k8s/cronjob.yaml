@@ -1,14 +1,21 @@
 ---
-# CronJob — refreshes the SQLite snapshot nightly at 2 AM UTC
-# Runs snapshot.js in a separate Job pod that mounts the same PVC.
-# The API pod picks up the new file within 10 minutes (hotswap polling).
+# CronJob — builds the SQLite snapshot from AACT by running snapshot.js in a Job
+# pod that mounts the data PVC. The API pod picks up the new file within 10 min
+# (hotswap polling).
+#
+# suspend: true — the nightly refresh is OFF by design. The snapshot is built
+# once (on demand) and kept; AACT data is static enough for this project and a
+# nightly run isn't worth the resource cost on this single small node. Trigger a
+# manual rebuild any time with:
+#   kubectl create job --from=cronjob/aact-snapshot aact-snapshot-manual -n cdisc-kg
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: aact-snapshot
   namespace: cdisc-kg
 spec:
-  schedule: "0 2 * * *"          # 2:00 AM UTC daily
+  suspend: true
+  schedule: "0 2 * * *"          # retained for manual --from triggers; not scheduled
   timeZone: "UTC"
   concurrencyPolicy: Forbid       # don't double-run
   successfulJobsHistoryLimit: 3
@@ -46,7 +53,7 @@ spec:
                   mountPath: /data
               resources:
                 requests:
-                  cpu: "500m"
+                  cpu: "150m"        # small reservation — node CPU is tight; bursts to limit
                   memory: "1Gi"
                 limits:
                   cpu: "2"
