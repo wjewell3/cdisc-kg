@@ -118,9 +118,9 @@ export default async function handler(req, res) {
 
     const { columns, rows, total } = await execResponse.json();
 
-    // Step 3: Generate narrative (optional — silently skipped if no token or LLM failure)
+    // Step 3: Generate narrative (optional — silently skipped if no LLM or failure)
     let narrative = null;
-    if (rows && rows.length > 0 && token) {
+    if (rows && rows.length > 0 && hasGemini()) {
       try {
         const resultPreview = JSON.stringify(rows.slice(0, 15), null, 2);
         narrative = await callLLM([
