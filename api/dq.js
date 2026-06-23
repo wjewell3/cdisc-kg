@@ -6,6 +6,8 @@
  * - POST /api/dq?action=canonical-rebuild   → rebuild catalog via LLM on OKE
  */
 
+import { geminiFetch, hasGemini } from "./_gemini.js";
+
 const OKE_BASE = process.env.TRIALS_API_BASE || "http://129.80.137.184";
 
 export default async function handler(req, res) {
@@ -40,8 +42,7 @@ export default async function handler(req, res) {
   const { text } = req.body || {};
   if (!text || typeof text !== "string") return res.status(400).json({ error: "text required" });
 
-  const token = process.env.GITHUB_COPILOT_TOKEN;
-  if (!token) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured in Vercel env" });
+  if (!hasGemini()) return res.status(503).json({ error: "GEMINI_API_KEYS not configured in Vercel env" });
 
   const systemPrompt = `You are a data quality rule parser for clinical trials data. Given a natural language description, extract a structured rule and respond with ONLY valid JSON — no markdown fences, no extra text.
 
@@ -52,21 +53,13 @@ For enrollment range bounds:
 {"ruleType":"bounds","min":<integer or null>,"max":<integer or null>}`;
 
   try {
-    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1",
-        max_tokens: 300,
-        temperature: 0,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: text },
-        ],
-      }),
+    const response = await geminiFetch({
+      max_tokens: 300,
+      temperature: 0,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
       signal: AbortSignal.timeout(25000),
     });
 

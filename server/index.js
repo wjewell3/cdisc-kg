@@ -19,7 +19,7 @@ import Database from "better-sqlite3";
 import { existsSync, statSync } from "fs";
 import pg from "pg";
 import neo4jDriver from "neo4j-driver";
-import { canonicalize, mergeByCanonical, getCatalog, save as saveCatalog, rebuildField, reload as reloadCatalog } from "./canonical.js";
+import { canonicalize, mergeByCanonical, getCatalog, save as saveCatalog, rebuildField, reload as reloadCatalog, hasGemini, nextGeminiKey, GEMINI_MODEL } from "./canonical.js";
 
 const {
   DB_PATH = "/data/aact.db",
@@ -967,8 +967,7 @@ app.get("/api/trial-intelligence", async (req, res) => {
 
   // 4. Optional LLM briefing via GitHub Copilot (gpt-4.1)
   let briefing = null;
-  const { GITHUB_COPILOT_TOKEN } = process.env;
-  if (GITHUB_COPILOT_TOKEN) {
+  if (hasGemini()) {
     try {
       const systemPrompt = `You are a senior clinical trial operations expert advising a CRO sponsor executive.
 Respond in concise, plain English — no bullet overload, 3-5 short paragraphs.
@@ -1011,14 +1010,14 @@ Write a 3–5 paragraph operational risk briefing covering:
 3. Enrollment risks vs. comparable performance
 4. Key watch-out signals and recommended mitigations`;
 
-      const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`,
+          "Authorization": `Bearer ${nextGeminiKey()}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4.1",
+          model: GEMINI_MODEL,
           max_tokens: 700,
           temperature: 0.3,
           messages: [
@@ -1077,7 +1076,7 @@ app.post("/api/dq/parse-rule", async (req, res) => {
   if (!text || typeof text !== "string") return res.status(400).json({ error: "text required" });
 
   const { GITHUB_COPILOT_TOKEN } = process.env;
-  if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured" });
+  if (!hasGemini()) return res.status(503).json({ error: "GEMINI_API_KEYS not configured" });
 
   try {
     const systemPrompt = `You are a data quality rule parser for clinical trials data. Given a natural language description, extract a structured rule and respond with ONLY valid JSON — no markdown fences, no extra text.
@@ -1088,14 +1087,14 @@ For grouping rules (merging synonymous values into one canonical label):
 For enrollment range bounds:
 {"ruleType":"bounds","min":<integer or null>,"max":<integer or null>}`;
 
-    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`,
+        "Authorization": `Bearer ${nextGeminiKey()}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4.1",
+        model: GEMINI_MODEL,
         max_tokens: 300,
         temperature: 0,
         messages: [
@@ -1139,7 +1138,7 @@ app.post("/api/dq/canonical", (req, res) => {
 // Body: { fields: ["stop_reason","withdrawal_reason","phase", ...], limit?: 300 }
 app.post("/api/dq/canonical/rebuild", async (req, res) => {
   const { GITHUB_COPILOT_TOKEN } = process.env;
-  if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured" });
+  if (!hasGemini()) return res.status(503).json({ error: "GEMINI_API_KEYS not configured" });
 
   const { fields = ["phase", "stop_reason", "withdrawal_reason"], limit = 300 } = req.body || {};
   const lim = Math.min(500, Math.max(20, parseInt(limit, 10) || 300));
@@ -1319,8 +1318,7 @@ app.get("/api/entity-intelligence", async (req, res) => {
     return res.status(400).json({ error: "valid type and name required" });
   }
   if (!db) return res.status(503).json({ error: "SQLite snapshot required" });
-  const GITHUB_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
-  if (!GITHUB_COPILOT_TOKEN) return res.status(503).json({ error: "LLM not configured" });
+  if (!hasGemini()) return res.status(503).json({ error: "LLM not configured" });
 
   let insight;
   try {
@@ -1354,11 +1352,11 @@ ${topSiteList ? `Top sites: ${topSiteList}` : ""}
 Write 3 paragraphs: (1) portfolio overview and key characteristics, (2) operational performance patterns and what they indicate, (3) strategic insights or risks a clinical operations manager should know.`;
 
   try {
-    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+      headers: { "Authorization": `Bearer ${nextGeminiKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4.1", max_tokens: 600, temperature: 0.35,
+        model: GEMINI_MODEL, max_tokens: 600, temperature: 0.35,
         messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMsg }],
       }),
     });
@@ -3386,8 +3384,7 @@ app.post("/api/ask", async (req, res) => {
   const { question } = req.body || {};
   if (!question || typeof question !== "string") return res.status(400).json({ error: "question required" });
 
-  const GITHUB_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
-  if (!GITHUB_COPILOT_TOKEN) {
+  if (!hasGemini()) {
     // Fallback: treat as general search
     return res.json({
       question,
@@ -3400,11 +3397,11 @@ app.post("/api/ask", async (req, res) => {
 
   let classification;
   try {
-    const llmResp = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+    const llmResp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+      headers: { "Authorization": `Bearer ${nextGeminiKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4.1",
+        model: GEMINI_MODEL,
         max_tokens: 300,
         temperature: 0,
         messages: [
@@ -3574,7 +3571,7 @@ app.post("/api/ask", async (req, res) => {
     }
 
     // ── Generate narrative briefing if we have data ──
-    if (cards.length > 0 && GITHUB_COPILOT_TOKEN) {
+    if (cards.length > 0 && hasGemini()) {
       try {
         const cardSummary = cards.map(c => {
           if (c.type === "kpi") return `${c.label}: ${c.value}`;
@@ -3584,11 +3581,11 @@ app.post("/api/ask", async (req, res) => {
           return `${c.type}: ${JSON.stringify(c.data).slice(0, 300)}`;
         }).join("\n");
 
-        const briefResp = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+        const briefResp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
           method: "POST",
-          headers: { "Authorization": `Bearer ${GITHUB_COPILOT_TOKEN}`, "Content-Type": "application/json" },
+          headers: { "Authorization": `Bearer ${nextGeminiKey()}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "gpt-4.1",
+            model: GEMINI_MODEL,
             max_tokens: 250,
             temperature: 0.3,
             messages: [

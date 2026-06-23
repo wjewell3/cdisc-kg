@@ -9,6 +9,8 @@
  * Returns: { cypher, columns, rows, total, narrative }
  */
 
+import { geminiFetch, hasGemini } from "./_gemini.js";
+
 const GRAPH_SCHEMA_PROMPT = `You have access to a Neo4j knowledge graph of 580k+ clinical trials from ClinicalTrials.gov.
 
 GRAPH SCHEMA:
@@ -47,26 +49,11 @@ IMPORTANT RULES:
 
 const OKE_BASE = (process.env.TRIALS_API_BASE || "").replace(/\/$/, "");
 
-async function callLLM(token, messages, maxTokens = 400, temperature = 0) {
-  const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4.1",
-      max_tokens: maxTokens,
-      temperature,
-      messages,
-    }),
-  });
+async function callLLM(messages, maxTokens = 400, temperature = 0) {
+  const response = await geminiFetch({ messages, max_tokens: maxTokens, temperature });
   if (!response.ok) {
     const text = await response.text();
-    if (response.status === 403) {
-      throw new Error(`GitHub Copilot API token expired or quota exceeded. Preset questions work without it — freeform questions require a valid token.`);
-    }
-    throw new Error(`GitHub Copilot API ${response.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Gemini API ${response.status}: ${text.slice(0, 200)}`);
   }
   const data = await response.json();
   return data.choices?.[0]?.message?.content || "";
@@ -85,7 +72,6 @@ export default async function handler(req, res) {
   }
   if (!OKE_BASE) return res.status(503).json({ error: "TRIALS_API_BASE not configured" });
 
-  const token = process.env.GITHUB_COPILOT_TOKEN;
   const sanitized = question.trim().slice(0, 500);
 
   try {
@@ -95,9 +81,9 @@ export default async function handler(req, res) {
       generatedCypher = presetCypher.trim();
     } else {
       // Freeform question — LLM required
-      if (!token) return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured — freeform questions require an LLM token. Preset questions work without one." });
+      if (!hasGemini()) return res.status(503).json({ error: "GEMINI_API_KEYS not configured — freeform questions require an LLM. Preset questions work without one." });
 
-      let rawCypher = await callLLM(token, [
+      let rawCypher = await callLLM([
         { role: "system", content: GRAPH_SCHEMA_PROMPT },
         { role: "user", content: sanitized },
       ], 400, 0);
@@ -137,7 +123,7 @@ export default async function handler(req, res) {
     if (rows && rows.length > 0 && token) {
       try {
         const resultPreview = JSON.stringify(rows.slice(0, 15), null, 2);
-        narrative = await callLLM(token, [
+        narrative = await callLLM([
           { role: "system", content: "You are a clinical trials operations analyst. Summarize query results in 2-3 concise sentences. Focus on the key operational insight. No bullet points." },
           { role: "user", content: `Question: "${sanitized}"\n\nReturned ${total} rows. Top results:\n${resultPreview}` },
         ], 350, 0.3);

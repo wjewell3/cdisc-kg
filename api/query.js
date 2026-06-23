@@ -12,6 +12,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { geminiFetch, hasGemini } from "./_gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,9 +97,8 @@ export default async function handler(req, res) {
   const q = (req.query?.q || "").trim().slice(0, 600);
   if (q.length < 3) return res.status(400).json({ error: "q required (min 3 chars)" });
 
-  const token = process.env.GITHUB_COPILOT_TOKEN;
-  if (!token) {
-    return res.status(503).json({ error: "GITHUB_COPILOT_TOKEN not configured" });
+  if (!hasGemini()) {
+    return res.status(503).json({ error: "GEMINI_API_KEYS not configured" });
   }
 
   // Start SSE
@@ -115,22 +115,14 @@ export default async function handler(req, res) {
     const sdtmContext = buildSDTMContext(graphData);
     const systemPrompt = SYSTEM_PROMPT_TEMPLATE(sdtmContext);
 
-    const llmRes = await fetch("https://models.inference.ai.azure.com/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1",
-        max_tokens: 1200,
-        temperature: 0.1,
-        stream: true,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: q },
-        ],
-      }),
+    const llmRes = await geminiFetch({
+      max_tokens: 1200,
+      temperature: 0.1,
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: q },
+      ],
       signal: AbortSignal.timeout(45000),
     });
 

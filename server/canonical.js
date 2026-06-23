@@ -16,6 +16,33 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = join(__dirname, "canonical-groupings.json");
 const USER_PATH = process.env.CANONICAL_PATH || "/data/canonical-groupings.json";
 
+// ── Gemini LLM client (free-tier, OpenAI-compatible endpoint) ─────────────────
+// Matches review-pulse: round-robin over GEMINI_API_KEYS, rotate on 429 (per-key
+// daily RPD). Returns the raw fetch Response so streaming callers can read .body.
+const GEMINI_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
+  .split(",").map((k) => k.trim()).filter(Boolean);
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+let _gKeyIdx = 0;
+export function hasGemini() { return GEMINI_KEYS.length > 0; }
+export function nextGeminiKey() { return GEMINI_KEYS.length ? GEMINI_KEYS[_gKeyIdx++ % GEMINI_KEYS.length] : ""; }
+export const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+export async function geminiFetch({ messages, max_tokens, temperature = 0.1, stream = false, signal }) {
+  if (!GEMINI_KEYS.length) throw new Error("GEMINI_API_KEYS not configured");
+  const url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+  let lastErr;
+  for (let attempt = 0; attempt < GEMINI_KEYS.length + 1; attempt++) {
+    const key = GEMINI_KEYS[_gKeyIdx++ % GEMINI_KEYS.length];
+    const res = await fetch(url, {
+      method: "POST", signal,
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: GEMINI_MODEL, messages, temperature, ...(max_tokens ? { max_tokens } : {}), ...(stream ? { stream: true } : {}) }),
+    });
+    if (res.status === 429) { lastErr = new Error("Gemini 429 (rate limit) — rotating key"); continue; }
+    return res;
+  }
+  throw lastErr || new Error("Gemini: all keys exhausted");
+}
+
 let catalog = { _meta: { version: 1, source: "empty" } };
 // Fast lookup: field → Map(lower(rawValue) → canonical)
 let lookup = new Map();
@@ -183,18 +210,13 @@ Rules:
 `;
   const userPrompt = `Field: ${field}\n\nExisting canonical groups:\n${bucketList}\n\nNew unmapped values to classify (${unmapped.length}):\n${valueList}`;
 
-  const res = await fetch("https://models.inference.ai.azure.com/chat/completions", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "gpt-4.1",
-      max_tokens: 4000,
-      temperature: 0,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
+  const res = await geminiFetch({
+    max_tokens: 4000,
+    temperature: 0,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
