@@ -4358,12 +4358,23 @@ app.listen(parseInt(PORT), () => {
   console.log(`[server] listening on :${PORT} — backend: ${db ? `sqlite (${snapshotAge})` : "postgres fallback"}`);
   // Warm the unfiltered /stats cache so the first homepage load is instant instead
   // of paying the ~10s cold aggregation. Deferred so it doesn't delay listen.
-  if (db) setTimeout(() => {
+  if (db) setTimeout(async () => {
     try {
       const t = Date.now();
       cachedSqliteStats({ q: "", condition: "", intervention: "", phase: "", status: "", sponsor: "", min_enrollment: "", max_enrollment: "" });
       console.log(`[server] warmed /stats cache in ${((Date.now() - t) / 1000).toFixed(1)}s`);
     } catch (e) { console.error("[server] stats warm-up failed:", e.message); }
+    // Pre-warm the cacheable analytics endpoints (geographic ~30-56s cold) so the
+    // first user load hits the warm cache instead of blocking the event loop and
+    // cascading into ingress 503s. Readiness keeps traffic out until this finishes.
+    for (const path of CACHEABLE_PATHS) {
+      try {
+        const t = Date.now();
+        await fetch(`http://127.0.0.1:${PORT}${path}`);
+        console.log(`[server] warmed ${path} in ${((Date.now() - t) / 1000).toFixed(1)}s`);
+      } catch (e) { console.error(`[server] warm ${path} failed:`, e.message); }
+    }
+    console.log("[server] analytics warm-up complete");
   }, 100);
 });
 // rebuild trigger 1776737200
